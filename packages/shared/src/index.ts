@@ -3,4 +3,5 @@ export * from './types/medico';
 export * from './types/procedimento';
 export * from './types/execucao';
 export * from './types/preco';
+export * from './types/boleto';
 export * from './engine-contracts';

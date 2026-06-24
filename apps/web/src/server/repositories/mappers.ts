@@ -5,6 +5,7 @@ import type {
   Execucao,
   ExecucaoResultado,
   Subtotal,
+  Boleto,
 } from '@cobranca/shared';
 
 export interface MedicoRow {
@@ -151,5 +152,33 @@ export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultad
     totalValor: row.total_valor,
     status: row.status,
     alertas: row.alertas ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Boleto
+// ---------------------------------------------------------------------------
+
+export interface BoletoRow {
+  id: string;
+  execucao_resultado_id: string;
+  gateway: Boleto['gateway'];
+  id_externo: string | null;
+  status: Boleto['status'];
+  emitido_por: string;
+  emitido_em: string;
+  payload_resposta: unknown;
+}
+
+export function toBoleto(row: BoletoRow): Boleto {
+  return {
+    id: row.id,
+    execucaoResultadoId: row.execucao_resultado_id,
+    gateway: row.gateway,
+    idExterno: row.id_externo,
+    status: row.status,
+    emitidoPor: row.emitido_por,
+    emitidoEm: row.emitido_em,
+    payloadResposta: row.payload_resposta,
   };
 }

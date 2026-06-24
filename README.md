@@ -15,17 +15,18 @@ Monorepo npm workspaces: `apps/web` (UI + API routes + engine) e `packages/share
 
 ```
 apps/web/src/
-├── app/                      # rotas e API routes
+├── app/                      # rotas e API routes (incl. /api/boletos)
 ├── components/medicos/       # MedicoForm, HistoricoTimeline, MedicosManager
 ├── server/
 │   ├── engine/               # PORTE de motor_guias_v2.py — funções puras, sem I/O
-│   ├── repositories/         # medico-repository (toda escrita gera histórico)
+│   ├── gateway/              # BoletoGateway: cora-gateway (mTLS) + mock-gateway + factory
+│   ├── repositories/         # medico, execucao, boleto (toda escrita gera auditoria)
 │   ├── integration/          # cliente de procedimentos (modo local | http)
 │   ├── auth/                 # requireRole
 │   └── validation/           # schemas Zod
 └── lib/                      # env, supabase clients, api-error, api-client
-packages/shared/src/          # tipos de domínio + engine-contracts
-supabase/migrations/          # schema + RLS + seed de preços
+packages/shared/src/          # tipos de domínio + engine-contracts + boleto
+supabase/migrations/          # schema + RLS + seed de preços + tabela boletos
 ```
 
 ## Setup local
@@ -99,11 +100,54 @@ confirmar qual campo é o CPF do médico responsável (assumimos `cpf_medico`) e
 campo usado para filtrar a competência. Se os nomes reais divergirem do contrato, ajustar apenas
 `normalizarProcedimento` no client.
 
-**Fase 3 (PRD §10) — fora desta versão:** emissão automática de boleto / gateway de cobrança. É
-não-objetivo até os números serem validados em produção em paralelo com o processo manual.
+**Fase 3 — gateway de boletos (Cora mTLS) — implementada, DESLIGADA por padrão:**
 
-Total de testes: 60 (52 em apps/web, 8 em packages/shared).
+A emissão de boletos está implementada atrás de **dois gates** que precisam ser satisfeitos
+antes de funcionar em produção:
+
+1. **Gate técnico — certificado mTLS da Cora** (pendência externa):
+   A API Banking da Cora exige autenticação via mTLS (mutual TLS). O certificado e a chave
+   privada precisam ser solicitados à Cora e armazenados como base64 em env vars.
+
+2. **Gate de negócio — feature flag `GATEWAY_EMISSAO_HABILITADA`** (decisão consciente):
+   Mesmo com o certificado pronto, a flag fica `false` até que a validação em produção
+   (conferência manual vs. sistema, PRD §10) confirme que os números estão corretos.
+   Enquanto `false`, qualquer tentativa de emissão via API retorna 403.
+
+Arquitetura: adapter/porta (`BoletoGatewayPort`) com implementação Cora (`cora-gateway.ts`,
+mTLS via `node:https`) e mock (`mock-gateway.ts` para testes). Factory seleciona via
+`BOLETO_GATEWAY=cora|mock`. Trocar de provedor não exige redesenho.
+
+Regras de negócio:
+- **Nunca emite sobre alerta/sem_dados** — apenas `status='ok'`.
+- **Confirmação explícita por médico** — um resultado por vez, sem lote, sem automação ao
+  concluir execução.
+- **Tabela `boletos`** para auditoria (quem emitiu, quando, resposta crua do gateway).
+- **Idempotência**: se já existe boleto emitido para o resultado, retorna 409.
+
+### Como ligar a emissão de boletos
+
+Quando os dois gates estiverem satisfeitos, a ativação é **só de configuração**:
+
+```env
+# Gate 1: certificado mTLS da Cora
+BOLETO_GATEWAY=cora
+CORA_CERT_BASE64=<certificado .pem em base64>
+CORA_KEY_BASE64=<chave privada .key em base64>
+CORA_API_URL=https://matls-clients.api.cora.com.br
+CORA_CLIENT_ID=<client_id da aplicação OAuth2>
+
+# Gate 2: decisão de negócio
+GATEWAY_EMISSAO_HABILITADA=true
+```
+
+Pré-requisitos que **não são do dev resolver**:
+- Solicitar certificado mTLS à Cora (pendência externa).
+- Validar os números em produção antes de ligar a flag (PRD §10).
+
+Total de testes: ~70 (62+ em apps/web, 8 em packages/shared).
 
 **Bloqueadores de negócio em aberto (PRD §11):** campo de CPF e data de emissão da API da Carmem;
 fatura real para validar faixa; faixa "outros hospitais" > 80 (Engine sinaliza, não chuta);
-imobilizações na regra de teto-de-3. Ver "Checklist Results Report" em `docs/architecture.md`.
+imobilizações na regra de teto-de-3; certificado mTLS da Cora (pendência externa).
+Ver "Checklist Results Report" em `docs/architecture.md`.
