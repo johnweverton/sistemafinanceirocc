@@ -1,7 +1,7 @@
 // Trava de conferência e detecção de alertas — porte 1:1 de motor_guias_v2.py (checar).
 // PRD §5.3 (modo inconsistente), §5.6 (dado incompleto), §8.5 (variação anômala). Pura.
 import type { Procedimento, ModoMudancaData } from '@cobranca/shared';
-import { detectarModo, procedimentosValidos } from './contagem';
+import { detectarModo, procedimentosValidos, isPediatra } from './contagem';
 
 /** Limiar de variação anômala mês a mês (PRD §8.5, §11 — sugestão inicial 40%). */
 export const LIMIAR_VARIACAO = 0.4;
@@ -18,15 +18,18 @@ export function checar(
   modoCadastro: ModoMudancaData,
   guias: number,
   historicoGuias?: number | null,
+  especialidade?: string | null,
 ): string[] {
   const alertas: string[] = [];
 
-  const modoDetectado = detectarModo(procedimentos);
-  if (modoCadastro !== modoDetectado) {
-    alertas.push(
-      `MODO INCONSISTENTE — cadastro: ${modoCadastro.toUpperCase()}, ` +
-        `dado observado: ${modoDetectado.toUpperCase()}. Houve alteração recente?`,
-    );
+  if (isPediatra(especialidade)) {
+    const modoDetectado = detectarModo(procedimentos);
+    if (modoCadastro !== modoDetectado) {
+      alertas.push(
+        `MODO INCONSISTENTE — cadastro: ${modoCadastro.toUpperCase()}, ` +
+          `dado observado: ${modoDetectado.toUpperCase()}. Houve alteração recente?`,
+      );
+    }
   }
 
   // Conta apenas procedimentos válidos (com atendimento e senha) que estejam

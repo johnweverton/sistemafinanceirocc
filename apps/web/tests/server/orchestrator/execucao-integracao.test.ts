@@ -61,7 +61,7 @@ function montarCenario(): { state: FakeState } {
     // OK — credenciado, modo NÃO, dados completos
     medicoFake({ id: 'm-ok', cpf: '11111111111', nome: 'Dr. OK', modoMudancaData: 'nao' }),
     // ALERTA — usa fixture da Dra. A (modo SIM, 1 proc sem valor)
-    medicoFake({ id: 'm-alerta', cpf: '00000000001', nome: 'Dra. A', modoMudancaData: 'sim' }),
+    medicoFake({ id: 'm-alerta', cpf: '00000000001', nome: 'Dra. A', modoMudancaData: 'sim', especialidade: 'Pediatra' }),
     // SEM_DADOS — nenhum procedimento retornado
     medicoFake({ id: 'm-sem', cpf: '99999999999', nome: 'Dr. Sem Dados', modoMudancaData: 'nao' }),
   ];

@@ -12,13 +12,13 @@ import { procedimentosDraA, procedimentosDrE } from './fixtures';
 
 describe('PRD §12 — Dra. A (modo SIM, muda data)', () => {
   it('conta 17 guias e 4 cirurgias a partir de 17 procedimentos espalhados', () => {
-    const { guias, cirurgias } = contarGuias(procedimentosDraA);
+    const { guias, cirurgias } = contarGuias(procedimentosDraA, 'Pediatra');
     expect(guias).toBe(17);
     expect(cirurgias).toBe(4);
   });
 
   it('consolidado por cirurgia = 6 guias', () => {
-    expect(consolidarPorAtendimento(procedimentosDraA)).toBe(6);
+    expect(consolidarPorAtendimento(procedimentosDraA, 'Pediatria')).toBe(6);
   });
 
   it('detecta modo observado = sim (datas espalhadas)', () => {
@@ -26,12 +26,12 @@ describe('PRD §12 — Dra. A (modo SIM, muda data)', () => {
   });
 
   it('1 procedimento sem valor → alerta de dado incompleto', () => {
-    const alertas = checar(procedimentosDraA, 'sim', 17);
+    const alertas = checar(procedimentosDraA, 'sim', 17, null, 'PEDIATRA');
     expect(alertas.some((a) => a.includes('1 procedimento(s) sem valor'))).toBe(true);
   });
 
   it('cadastro SIM bate com observado SIM → sem alerta de modo', () => {
-    const alertas = checar(procedimentosDraA, 'sim', 17);
+    const alertas = checar(procedimentosDraA, 'sim', 17, null, 'PEDIATRA');
     expect(alertas.some((a) => a.includes('MODO INCONSISTENTE'))).toBe(false);
   });
 
@@ -41,7 +41,8 @@ describe('PRD §12 — Dra. A (modo SIM, muda data)', () => {
         id: 'a', cpf: '00000000001', nome: 'Dra. Ana Martins',
         statusHapvida: 'credenciado', fazOutrosHospitais: false,
         fazImobilizacoes: false, modoMudancaData: 'sim',
-      },
+        especialidade: 'Pediatra',
+      } as any,
       procedimentos: procedimentosDraA,
     });
     expect(r.guias).toBe(17);
@@ -54,7 +55,7 @@ describe('PRD §12 — Dra. A (modo SIM, muda data)', () => {
 
 describe('PRD §12 — Dr. E (modo NÃO, não muda data)', () => {
   it('conta 17 guias e 16 cirurgias a partir de 49 procedimentos na mesma data', () => {
-    const { guias, cirurgias } = contarGuias(procedimentosDrE);
+    const { guias, cirurgias } = contarGuias(procedimentosDrE, 'Pediatria');
     expect(guias).toBe(17);
     expect(cirurgias).toBe(16);
   });
@@ -64,12 +65,12 @@ describe('PRD §12 — Dr. E (modo NÃO, não muda data)', () => {
   });
 
   it('6 procedimentos sem valor → alerta de dado incompleto', () => {
-    const alertas = checar(procedimentosDrE, 'nao', 17);
+    const alertas = checar(procedimentosDrE, 'nao', 17, null, 'PEDIATRIA');
     expect(alertas.some((a) => a.includes('6 procedimento(s) sem valor'))).toBe(true);
   });
 
   it('cadastro NÃO mas se fosse SIM → alerta de modo inconsistente', () => {
-    const alertas = checar(procedimentosDrE, 'sim', 17);
+    const alertas = checar(procedimentosDrE, 'sim', 17, null, 'PEDIATRIA');
     expect(alertas.some((a) => a.includes('MODO INCONSISTENTE'))).toBe(true);
   });
 
@@ -79,12 +80,37 @@ describe('PRD §12 — Dr. E (modo NÃO, não muda data)', () => {
         id: 'e', cpf: '00000000002', nome: 'Dr. E',
         statusHapvida: 'credenciado', fazOutrosHospitais: false,
         fazImobilizacoes: false, modoMudancaData: 'nao',
-      },
+        especialidade: 'Pediatra',
+      } as any,
       procedimentos: procedimentosDrE,
     });
     expect(r.guias).toBe(17);
     expect(r.procedimentos).toBe(49);
     expect(r.cirurgias).toBe(16);
     expect(r.status).toBe('alerta'); // 6 sem valor
+  });
+});
+
+describe('Regra de Outras Especialidades (Não Pediatra)', () => {
+  it('aplica 1 guia por procedimento e ignora modoMudancaData', () => {
+    const r = processarMedico({
+      medico: {
+        id: 'x', cpf: '00000000003', nome: 'Dr. Coração',
+        statusHapvida: 'credenciado', fazOutrosHospitais: false,
+        fazImobilizacoes: false, modoMudancaData: 'sim',
+        especialidade: 'Cardiologia',
+      } as any,
+      procedimentos: procedimentosDrE, // Mesmos 49 procedimentos, mas como não é pediatra...
+    });
+    // Se fosse pediatra (Dr. E), seriam 17 guias. Como é Cardiologista, 1 guia = 1 proc.
+    // Desses 49, 1 é filtro-fantasma (sem senha), então são 48 válidos.
+    // Logo, deve contar 49 guias.
+    expect(r.guias).toBe(49);
+    expect(r.procedimentos).toBe(49);
+    expect(r.cirurgias).toBe(0); // Não se aplica
+    expect(r.guiasConsolidado).toBe(49);
+    
+    // E não deve ter alerta de "MODO INCONSISTENTE" mesmo com modo='sim' (porque o modo seria detectado como 'nao')
+    expect(r.alertas.some((a) => a.includes('MODO INCONSISTENTE'))).toBe(false);
   });
 });

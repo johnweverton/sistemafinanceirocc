@@ -43,9 +43,9 @@ export function processarMedico(
     };
   }
 
-  const { guias, cirurgias } = contarGuias(procedimentos);
-  const guiasConsolidado = consolidarPorAtendimento(procedimentos);
-  const alertas = checar(procedimentos, medico.modoMudancaData, guias, historicoGuias);
+  const { guias, cirurgias } = contarGuias(procedimentos, medico.especialidade);
+  const guiasConsolidado = consolidarPorAtendimento(procedimentos, medico.especialidade);
+  const alertas = checar(procedimentos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade);
 
   const subtotais: Subtotal[] = [];
   let totalValor = 0;

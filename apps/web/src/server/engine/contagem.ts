@@ -18,6 +18,15 @@ export function procedimentosValidos(procedimentos: Procedimento[]): Procediment
 }
 
 /**
+ * Verifica se a especialidade do médico indica que é Pediatra.
+ */
+export function isPediatra(especialidade: string | null | undefined): boolean {
+  if (!especialidade) return false;
+  const esp = especialidade.toLowerCase();
+  return esp.includes('pediatr'); // abrange pediatra, pediatria
+}
+
+/**
  * Regra única (PRD §5.2): agrupa por (numeroAtendimento, dataProcedimento),
  * cada balde vira teto(qtd/3) guias. Cobre os dois modos sem ler configuração.
  * Retorna também o número de cirurgias = quantidade de atendimentos distintos.
@@ -25,8 +34,18 @@ export function procedimentosValidos(procedimentos: Procedimento[]): Procediment
  * Espelha contar_guias() do Python:
  *   por_atend[atend][data] += 1 ; total = sum(ceil(n/3)) ; cirurgias = len(por_atend)
  */
-export function contarGuias(procedimentos: Procedimento[]): ResultadoContagem {
+
+export function contarGuias(
+  procedimentos: Procedimento[],
+  especialidade?: string | null,
+): ResultadoContagem {
   const validos = procedimentosValidos(procedimentos);
+
+  if (!isPediatra(especialidade)) {
+    // Para outras especialidades, a regra é 1 guia por procedimento.
+    return { guias: validos.length, cirurgias: 0 };
+  }
+
   const porAtend = new Map<string, Map<string, number>>();
 
   for (const p of validos) {
@@ -53,8 +72,17 @@ export function contarGuias(procedimentos: Procedimento[]): ResultadoContagem {
  * Informativo na revisão — mostra a diferença vs. a contagem por data.
  * Cada atendimento vira teto(totalProcedimentosDoAtendimento / 3) guias.
  */
-export function consolidarPorAtendimento(procedimentos: Procedimento[]): number {
+
+export function consolidarPorAtendimento(
+  procedimentos: Procedimento[],
+  especialidade?: string | null,
+): number {
   const validos = procedimentosValidos(procedimentos);
+
+  if (!isPediatra(especialidade)) {
+    return validos.length;
+  }
+
   const porAtend = new Map<string, number>();
   for (const p of validos) {
     porAtend.set(p.numeroAtendimento, (porAtend.get(p.numeroAtendimento) ?? 0) + 1);
