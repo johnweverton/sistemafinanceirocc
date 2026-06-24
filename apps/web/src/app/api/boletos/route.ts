@@ -4,10 +4,11 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarBoletosPorExecucao } from '@/server/repositories/boleto-repository';
 
-export const GET = withErrorHandler(async (req: NextRequest) => {
+export const GET = withErrorHandler(async (req: Request) => {
   await requireRole(['admin', 'financeiro']);
 
-  const execucaoId = req.nextUrl.searchParams.get('execucaoId');
+  const url = new URL(req.url);
+  const execucaoId = url.searchParams.get('execucaoId');
   if (!execucaoId) {
     throw new ApiError(400, 'Query param execucaoId é obrigatório', 'PARAM_MISSING');
   }

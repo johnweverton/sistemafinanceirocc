@@ -28,6 +28,7 @@ export interface EntradaProcessamentoMedico {
     | 'fazOutrosHospitais'
     | 'fazImobilizacoes'
     | 'modoMudancaData'
+    | 'especialidade'
   >;
   procedimentos: Procedimento[];
   /** Guias da execução anterior do mesmo médico, p/ detecção de variação anômala (PRD §8.5). */
