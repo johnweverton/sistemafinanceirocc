@@ -1,0 +1,21 @@
+{
+  "name": "sistema-cobranca-guias",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema web de cobrança por guias — Carmem Cavalcante Contabilidade",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  }
+}

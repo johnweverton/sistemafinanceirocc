@@ -1,0 +1,25 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env
+.env
+.env.local
+.env*.local
+
+# Supabase local
+.supabase/
+
+# OS / editor
+.DS_Store
+*.log
+playwright-report/
+test-results/
+
+# Tooling local (framework de agentes / skills) — não é código do produto
+.aiox-core/
+.claude/
