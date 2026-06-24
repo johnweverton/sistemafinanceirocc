@@ -50,6 +50,33 @@ export async function buscarMedico(id: string): Promise<Medico | null> {
   return data ? toMedico(data as MedicoRow) : null;
 }
 
+/** Conta médicos ativos — usado pelo Orchestrator para definir total e número de lotes. */
+export async function contarMedicosAtivos(): Promise<number> {
+  const db = getSupabaseAdmin();
+  const { count, error } = await db
+    .from('medicos')
+    .select('id', { count: 'exact', head: true })
+    .eq('ativo', true);
+  if (error) throw new ApiError(500, 'Falha ao contar médicos', 'DB_ERROR', { error: error.message });
+  return count ?? 0;
+}
+
+/**
+ * Lê uma página de médicos ativos, ordenada de forma estável (por id) para servir de
+ * cursor de lote no processamento encadeado: `offset` = quantos já foram processados.
+ */
+export async function listarMedicosAtivosPagina(offset: number, limite: number): Promise<Medico[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('medicos')
+    .select('*')
+    .eq('ativo', true)
+    .order('id', { ascending: true })
+    .range(offset, offset + limite - 1);
+  if (error) throw new ApiError(500, 'Falha ao paginar médicos', 'DB_ERROR', { error: error.message });
+  return (data as MedicoRow[]).map(toMedico);
+}
+
 export async function criarMedico(dados: NovoMedico): Promise<Medico> {
   if (!combinacaoClasseValida(dados)) {
     throw new ApiError(422, 'Combinação inválida: sem Hapvida e sem outros hospitais', 'INVALID_COMBO');

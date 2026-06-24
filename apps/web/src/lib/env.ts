@@ -14,6 +14,9 @@ const serverSchema = z.object({
   CARMEM_API_KEY: z.string().optional(),
   PROCEDIMENTOS_SOURCE: z.enum(['local', 'http']).default('local'),
   INTERNAL_SECRET: z.string().optional(),
+  // Base URL da própria app, usada pela função para se auto-invocar entre lotes.
+  // Em Vercel, derivar de VERCEL_URL; local, http://localhost:3000.
+  APP_BASE_URL: z.string().url().optional(),
 });
 
 export const publicEnv = publicSchema.parse({
@@ -29,5 +32,8 @@ export function getServerEnv() {
     CARMEM_API_KEY: process.env.CARMEM_API_KEY,
     PROCEDIMENTOS_SOURCE: process.env.PROCEDIMENTOS_SOURCE,
     INTERNAL_SECRET: process.env.INTERNAL_SECRET,
+    APP_BASE_URL:
+      process.env.APP_BASE_URL ??
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
   });
 }

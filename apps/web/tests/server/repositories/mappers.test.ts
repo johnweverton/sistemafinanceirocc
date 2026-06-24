@@ -1,0 +1,57 @@
+// Testes UNITÁRIOS dos mapeadores (pura conversão snake_case ↔ camelCase). Sem I/O.
+import { describe, it, expect } from 'vitest';
+import {
+  toExecucao,
+  toExecucaoResultado,
+  type ExecucaoRow,
+  type ExecucaoResultadoRow,
+} from '../../../src/server/repositories/mappers';
+
+describe('toExecucao', () => {
+  it('mapeia colunas snake_case para o tipo de domínio', () => {
+    const row: ExecucaoRow = {
+      id: 'e1',
+      competencia: '2026-06',
+      iniciado_por: 'u1',
+      iniciado_em: '2026-06-24T00:00:00Z',
+      finalizado_em: null,
+      status: 'processando',
+      progresso: 33,
+      total_medicos: 120,
+      total_ok: null,
+      total_alerta: null,
+      total_sem_dados: null,
+      total_geral_valor: null,
+    };
+    const e = toExecucao(row);
+    expect(e.iniciadoPor).toBe('u1');
+    expect(e.totalMedicos).toBe(120);
+    expect(e.progresso).toBe(33);
+    expect(e.status).toBe('processando');
+  });
+});
+
+describe('toExecucaoResultado', () => {
+  it('mapeia e normaliza alertas null → []', () => {
+    const row: ExecucaoResultadoRow = {
+      id: 'r1',
+      execucao_id: 'e1',
+      medico_id: 'm1',
+      cpf: '00000000001',
+      nome: 'Dra. A',
+      procedimentos: 17,
+      cirurgias: 4,
+      guias: 17,
+      guias_consolidado: 6,
+      subtotais: [{ classe: 'HAPVIDA_CRED', guias: 17, valor: 263.59, faixa: 'até 30 guias' }],
+      total_valor: 263.59,
+      status: 'alerta',
+      alertas: null,
+    };
+    const r = toExecucaoResultado(row);
+    expect(r.execucaoId).toBe('e1');
+    expect(r.guiasConsolidado).toBe(6);
+    expect(r.alertas).toEqual([]); // null vira []
+    expect(r.subtotais?.[0]?.classe).toBe('HAPVIDA_CRED');
+  });
+});

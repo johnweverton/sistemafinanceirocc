@@ -1,5 +1,11 @@
 // Mapeadores entre as linhas do Postgres (snake_case) e os tipos de domínio (camelCase).
-import type { Medico, MedicoHistorico } from '@cobranca/shared';
+import type {
+  Medico,
+  MedicoHistorico,
+  Execucao,
+  ExecucaoResultado,
+  Subtotal,
+} from '@cobranca/shared';
 
 export interface MedicoRow {
   id: string;
@@ -76,4 +82,74 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     if (col) (row as Record<string, unknown>)[col] = valor;
   }
   return row;
+}
+
+// ---------------------------------------------------------------------------
+// Execução
+// ---------------------------------------------------------------------------
+
+export interface ExecucaoRow {
+  id: string;
+  competencia: string;
+  iniciado_por: string;
+  iniciado_em: string;
+  finalizado_em: string | null;
+  status: Execucao['status'];
+  progresso: number;
+  total_medicos: number | null;
+  total_ok: number | null;
+  total_alerta: number | null;
+  total_sem_dados: number | null;
+  total_geral_valor: number | null;
+}
+
+export function toExecucao(row: ExecucaoRow): Execucao {
+  return {
+    id: row.id,
+    competencia: row.competencia,
+    iniciadoPor: row.iniciado_por,
+    iniciadoEm: row.iniciado_em,
+    finalizadoEm: row.finalizado_em,
+    status: row.status,
+    progresso: row.progresso,
+    totalMedicos: row.total_medicos,
+    totalOk: row.total_ok,
+    totalAlerta: row.total_alerta,
+    totalSemDados: row.total_sem_dados,
+    totalGeralValor: row.total_geral_valor,
+  };
+}
+
+export interface ExecucaoResultadoRow {
+  id: string;
+  execucao_id: string;
+  medico_id: string | null;
+  cpf: string;
+  nome: string;
+  procedimentos: number | null;
+  cirurgias: number | null;
+  guias: number | null;
+  guias_consolidado: number | null;
+  subtotais: Subtotal[] | null;
+  total_valor: number | null;
+  status: ExecucaoResultado['status'];
+  alertas: string[] | null;
+}
+
+export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultado {
+  return {
+    id: row.id,
+    execucaoId: row.execucao_id,
+    medicoId: row.medico_id,
+    cpf: row.cpf,
+    nome: row.nome,
+    procedimentos: row.procedimentos,
+    cirurgias: row.cirurgias,
+    guias: row.guias,
+    guiasConsolidado: row.guias_consolidado,
+    subtotais: row.subtotais,
+    totalValor: row.total_valor,
+    status: row.status,
+    alertas: row.alertas ?? [],
+  };
 }
