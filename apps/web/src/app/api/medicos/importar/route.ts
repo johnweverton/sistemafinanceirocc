@@ -1,0 +1,83 @@
+// POST /api/medicos/importar — importa lista de médicos via arquivo CSV.
+// Formato esperado: ver /templates/medicos-modelo.csv (download na tela de médicos).
+import { withErrorHandler, ApiError } from '@/lib/api-error';
+import { requireRole } from '@/server/auth/require-role';
+import { criarMedico } from '@/server/repositories/medico-repository';
+import { novoMedicoSchema } from '@/server/validation/medico-schema';
+import type { ImportarResultado } from '@/services/medicos';
+
+function parseCsv(text: string): Record<string, string>[] {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2 || !lines[0]) return [];
+  const headers = lines[0].split(',').map((h) => h.trim().replace(/^﻿/, ''));
+  return lines
+    .slice(1)
+    .filter((l) => l.trim())
+    .map((line) => {
+      const values = line.split(',').map((v) => v.trim());
+      return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
+    });
+}
+
+function rowToInput(row: Record<string, string>) {
+  return {
+    cpf: row.cpf ?? '',
+    nome: row.nome ?? '',
+    especialidade: row.especialidade || null,
+    statusHapvida: row.status_hapvida,
+    fazOutrosHospitais: row.faz_outros_hospitais === 'sim',
+    fazImobilizacoes: row.faz_imobilizacoes === 'sim',
+    modoMudancaData: (row.modo_mudanca_data as 'sim' | 'nao') || 'nao',
+    colaboradorResponsavel: row.colaborador_responsavel || null,
+    ativo: true,
+  };
+}
+
+export const POST = withErrorHandler(async (req) => {
+  await requireRole(['admin']);
+
+  const formData = await req.formData();
+  const file = formData.get('arquivo');
+  if (!file || !(file instanceof File)) {
+    throw new ApiError(422, 'Arquivo CSV não enviado (campo: arquivo)', 'ARQUIVO_INVALIDO');
+  }
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    throw new ApiError(422, 'Somente arquivos .csv são aceitos', 'FORMATO_INVALIDO');
+  }
+
+  const text = await file.text();
+  const rows = parseCsv(text);
+  if (rows.length === 0) {
+    throw new ApiError(422, 'Arquivo vazio ou sem linhas de dados após o cabeçalho', 'ARQUIVO_VAZIO');
+  }
+
+  const criados: string[] = [];
+  const erros: { linha: number; cpf: string; erro: string }[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    const linhaCsv = i + 2; // +2: 1 do header + 1 do índice base-zero
+    const input = rowToInput(row);
+    const parsed = novoMedicoSchema.safeParse(input);
+    if (!parsed.success) {
+      erros.push({
+        linha: linhaCsv,
+        cpf: row.cpf ?? '',
+        erro: parsed.error.issues.map((e) => e.message).join('; '),
+      });
+      continue;
+    }
+    try {
+      const m = await criarMedico(parsed.data);
+      criados.push(m.id);
+    } catch (e) {
+      erros.push({
+        linha: linhaCsv,
+        cpf: row.cpf ?? '',
+        erro: e instanceof Error ? e.message : 'Erro ao criar',
+      });
+    }
+  }
+
+  return Response.json({ criados: criados.length, erros } satisfies ImportarResultado);
+});

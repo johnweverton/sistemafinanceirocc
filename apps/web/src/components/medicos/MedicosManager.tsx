@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Medico } from '@cobranca/shared';
@@ -10,6 +10,7 @@ import {
   queryKeys,
   type NovoMedicoPayload,
   type AtualizarMedicoPayload,
+  type ImportarResultado,
 } from '@/services/medicos';
 import { MedicoForm } from './MedicoForm';
 
@@ -19,6 +20,22 @@ export function MedicosManager() {
   const qc = useQueryClient();
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const importar = useMutation({
+    mutationFn: (arquivo: File) => medicosService.importar(arquivo),
+    onSuccess: (resultado) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
+      setImportResult(resultado);
+      setErro(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+    onError: (e) => {
+      setErro(e instanceof ApiClientError ? e.message : 'Erro na importação');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+  });
 
   const { data: medicos, isLoading } = useQuery({
     queryKey: queryKeys.medicos(),
@@ -84,18 +101,68 @@ export function MedicosManager() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
         <h1 className="text-xl font-semibold">Médicos</h1>
-        <button
-          onClick={() => {
-            setErro(null);
-            setModo({ tipo: 'novo' });
-          }}
-          className="rounded bg-gray-900 px-4 py-2 text-sm text-white"
-        >
-          Novo médico
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/templates/medicos-modelo.csv"
+            download
+            className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Baixar modelo CSV
+          </a>
+          <label
+            className={`cursor-pointer rounded border border-gray-400 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {importar.isPending ? 'Importando…' : 'Importar CSV'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              disabled={importar.isPending}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setImportResult(null);
+                  setErro(null);
+                  importar.mutate(f);
+                }
+              }}
+            />
+          </label>
+          <button
+            onClick={() => {
+              setErro(null);
+              setImportResult(null);
+              setModo({ tipo: 'novo' });
+            }}
+            className="rounded bg-gray-900 px-4 py-2 text-sm text-white"
+          >
+            Novo médico
+          </button>
+        </div>
       </div>
+      {importResult && (
+        <div className={`rounded px-3 py-2 text-sm ${importResult.erros.length === 0 ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
+          <p className="font-medium">
+            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
+            {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s).`}
+          </p>
+          {importResult.erros.length > 0 && (
+            <ul className="mt-1 list-disc pl-4 space-y-0.5">
+              {importResult.erros.map((e) => (
+                <li key={`${e.linha}-${e.cpf}`}>
+                  Linha {e.linha} (CPF {e.cpf}): {e.erro}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button onClick={() => setImportResult(null)} className="mt-1 underline text-xs">
+            Fechar
+          </button>
+        </div>
+      )}
       {isLoading ? (
         <p className="text-sm text-gray-500">Carregando…</p>
       ) : (
