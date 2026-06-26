@@ -10,7 +10,8 @@
 import type { Procedimento, PapelMedico } from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
 import { ApiError } from '@/lib/api-error';
-import { buscarProcedimentosLocal } from './fixtures-local';
+import type { MedicoDescoberto } from '@/server/repositories/medico-repository';
+import { buscarProcedimentosLocal, listarCpfsLocal } from './fixtures-local';
 
 const RETRY_MAX = 3;
 const TIMEOUT_MS = 30_000;
@@ -128,4 +129,43 @@ export async function buscarProcedimentos(
     return buscarViaHttp(cpf, competencia);
   }
   return buscarProcedimentosLocal(cpf, competencia);
+}
+
+/**
+ * Lista todos os CPFs com procedimentos na competência — endpoint de descoberta.
+ * Modo local: retorna fixture registrada (vazia por padrão, use registrarFixtureCpfs em testes).
+ * Modo http: GET /api/medicos/cpfs?competencia=AAAA-MM → [{ cpf, nome, especialidade }].
+ * Erros de rede não interrompem a execução — orquestrador segue com a lista local.
+ */
+export async function listarCpfsComProcedimentos(
+  competencia: string,
+): Promise<MedicoDescoberto[]> {
+  const { PROCEDIMENTOS_SOURCE } = getServerEnv();
+  if (PROCEDIMENTOS_SOURCE !== 'http') {
+    return listarCpfsLocal(competencia);
+  }
+
+  const env = getServerEnv();
+  if (!env.CARMEM_API_URL || !env.CARMEM_API_KEY) return [];
+
+  try {
+    const baseLimpa = env.CARMEM_API_URL.endsWith('/') ? env.CARMEM_API_URL.slice(0, -1) : env.CARMEM_API_URL;
+    const url = new URL(`${baseLimpa}/api/medicos/cpfs`);
+    url.searchParams.set('competencia', competencia);
+
+    const resp = await fetch(url, {
+      headers: { 'X-API-Key': env.CARMEM_API_KEY },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) return []; // endpoint pode não existir ainda — silencia
+    const json = await resp.json();
+    if (!Array.isArray(json)) return [];
+    return (json as Record<string, unknown>[]).map((obj) => ({
+      cpf: String(obj.cpf ?? ''),
+      nome: String(obj.nome ?? ''),
+      especialidade: obj.especialidade != null ? String(obj.especialidade) : null,
+    })).filter((m) => /^\d{11}$/.test(m.cpf));
+  } catch {
+    return []; // falha de rede não derruba a execução
+  }
 }

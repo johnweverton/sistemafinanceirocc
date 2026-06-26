@@ -15,6 +15,8 @@ export interface Medico {
   modoMudancaData: ModoMudancaData; // trava de conferência, NÃO entra no cálculo (PRD §5.3)
   colaboradorResponsavel: string | null;
   ativo: boolean;
+  /** true = médico auto-descoberto, parâmetros de faturamento ainda não configurados. */
+  necessitaConfiguracao: boolean;
   createdAt: string;
   updatedAt: string;
 }

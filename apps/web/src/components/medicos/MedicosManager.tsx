@@ -92,7 +92,15 @@ export function MedicosManager() {
             exigeMotivo
             salvando={atualizar.isPending}
             onSubmit={(dados, motivo) =>
-              atualizar.mutate({ id: modo.medico.id, p: { ...dados, motivo } })
+              atualizar.mutate({
+                id: modo.medico.id,
+                p: {
+                  ...dados,
+                  motivo,
+                  // Se era stub, marca como configurado ao salvar
+                  ...(modo.medico.necessitaConfiguracao ? { necessitaConfiguracao: false } : {}),
+                },
+              })
             }
           />
         </div>
@@ -171,6 +179,25 @@ export function MedicosManager() {
         </div>
       )}
 
+      {/* Banner: médicos aguardando configuração */}
+      {(() => {
+        const pendentes = (medicos ?? []).filter((m) => m.necessitaConfiguracao);
+        if (pendentes.length === 0) return null;
+        return (
+          <div className="alert-warning flex items-start gap-3">
+            <span className="mt-0.5 text-base">!</span>
+            <div>
+              <p className="font-medium">
+                {pendentes.length} médico{pendentes.length !== 1 ? 's' : ''} descoberto{pendentes.length !== 1 ? 's' : ''} via sistema da Carmem aguardam configuração.
+              </p>
+              <p className="mt-0.5 text-xs opacity-80">
+                Configure os parâmetros de faturamento para que entrem no próximo cálculo.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       {isLoading ? (
         <div className="card p-8 text-center">
           <p className="text-sm text-cc-muted">Carregando...</p>
@@ -194,17 +221,23 @@ export function MedicosManager() {
             </thead>
             <tbody>
               {(medicos ?? []).map((m) => (
-                <tr key={m.id}>
+                <tr key={m.id} className={m.necessitaConfiguracao ? 'opacity-70' : ''}>
                   <td className="font-medium">{m.nome}</td>
                   <td className="font-mono text-cc-ink-2 tabular">{formatCpf(m.cpf)}</td>
                   <td>
-                    <span className="badge-slate">{tipoSeguro(m)}</span>
+                    {m.necessitaConfiguracao ? (
+                      <span className="badge-amber">Aguarda config</span>
+                    ) : (
+                      <span className="badge-slate">{tipoSeguro(m)}</span>
+                    )}
                   </td>
                   <td className="text-cc-ink-2">
-                    {m.modoMudancaData === 'sim' ? 'Muda data' : 'Normal'}
+                    {m.necessitaConfiguracao ? '-' : m.modoMudancaData === 'sim' ? 'Muda data' : 'Normal'}
                   </td>
                   <td>
-                    {m.ativo ? (
+                    {m.necessitaConfiguracao ? (
+                      <span className="badge-amber">Pendente</span>
+                    ) : m.ativo ? (
                       <span className="badge-green">Ativo</span>
                     ) : (
                       <span className="badge-slate">Inativo</span>
@@ -218,7 +251,7 @@ export function MedicosManager() {
                       }}
                       className="link-action"
                     >
-                      Editar
+                      {m.necessitaConfiguracao ? 'Configurar' : 'Editar'}
                     </button>
                   </td>
                 </tr>

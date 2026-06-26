@@ -19,7 +19,10 @@ export interface NovoMedicoPayload {
   ativo: boolean;
 }
 
-export type AtualizarMedicoPayload = Partial<NovoMedicoPayload> & { motivo: string };
+export type AtualizarMedicoPayload = Partial<NovoMedicoPayload> & {
+  motivo: string;
+  necessitaConfiguracao?: boolean;
+};
 
 export const medicosService = {
   listar: () => apiFetch<Medico[]>('/medicos'),

@@ -10,6 +10,10 @@ export interface FakeState {
   procedimentosPorCpf: Record<string, Procedimento[]>;
   guiasAnterioresPorCpf: Record<string, number | null>;
   chamadasProximoLote: number;
+  /** CPFs retornados pela fase de descoberta (simula API Carmem). */
+  cpfsParaDescobrir: { cpf: string; nome: string; especialidade: string | null }[];
+  /** CPFs que foram descobertos/criados como stubs pelo fake. */
+  stubsCriados: string[];
   /** Se setado, buscarProcedimentos lança para esses CPFs (simula falha de rede). */
   cpfsComFalha: Set<string>;
 }
@@ -22,6 +26,8 @@ export function novoEstado(medicos: Medico[]): FakeState {
     procedimentosPorCpf: {},
     guiasAnterioresPorCpf: {},
     chamadasProximoLote: 0,
+    cpfsParaDescobrir: [],
+    stubsCriados: [],
     cpfsComFalha: new Set(),
   };
 }
@@ -35,6 +41,7 @@ export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; no
     modoMudancaData: 'nao',
     colaboradorResponsavel: null,
     ativo: true,
+    necessitaConfiguracao: false,
     createdAt: '2026-06-01T00:00:00Z',
     updatedAt: '2026-06-01T00:00:00Z',
     ...over,
@@ -115,6 +122,15 @@ export function fakeDeps(
       if (opts.autoEncadear) {
         await processarProximoLote(id, deps);
       }
+    },
+    descobrirMedicos: async (_competencia) => {
+      // Simula descoberta: para cada CPF em cpfsParaDescobrir que ainda não está em
+      // medicosAtivos, registra como stub criado (sem alterar medicosAtivos — stubs
+      // têm necessitaConfiguracao=true e não entram no processamento).
+      const cpfsConhecidos = new Set(state.medicosAtivos.map((m) => m.cpf));
+      const novos = state.cpfsParaDescobrir.filter((m) => !cpfsConhecidos.has(m.cpf));
+      for (const m of novos) state.stubsCriados.push(m.cpf);
+      return novos.length;
     },
   };
   return deps;

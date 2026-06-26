@@ -19,6 +19,7 @@ export interface MedicoRow {
   modo_mudanca_data: Medico['modoMudancaData'];
   colaborador_responsavel: string | null;
   ativo: boolean;
+  necessita_configuracao: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +36,7 @@ export function toMedico(row: MedicoRow): Medico {
     modoMudancaData: row.modo_mudanca_data,
     colaboradorResponsavel: row.colaborador_responsavel,
     ativo: row.ativo,
+    necessitaConfiguracao: row.necessita_configuracao ?? false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -76,6 +78,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     modoMudancaData: 'modo_mudanca_data',
     colaboradorResponsavel: 'colaborador_responsavel',
     ativo: 'ativo',
+    necessitaConfiguracao: 'necessita_configuracao',
   };
   const row: Partial<MedicoRow> = {};
   for (const [campo, valor] of Object.entries(dados)) {

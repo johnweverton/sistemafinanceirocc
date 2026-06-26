@@ -9,10 +9,12 @@
 // teste unitário com mocks sem tocar Supabase nem a API da Carmem.
 import type { Execucao, Medico, Procedimento, ResultadoMedico } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
-import { buscarProcedimentos } from '@/server/integration/procedimentos-client';
+import { buscarProcedimentos, listarCpfsComProcedimentos } from '@/server/integration/procedimentos-client';
 import {
   contarMedicosAtivos,
   listarMedicosAtivosPagina,
+  descobrirMedicos,
+  type MedicoDescoberto,
 } from '@/server/repositories/medico-repository';
 import {
   criarExecucao,
@@ -49,6 +51,12 @@ export interface OrchestratorDeps {
   listarResultados: (execucaoId: string) => Promise<ResultadoMedico[]>;
   /** Encadeia o próximo lote (HTTP interno). Pode ser no-op em teste. */
   agendarProximoLote: (execucaoId: string) => Promise<void>;
+  /**
+   * Fase de descoberta: lista CPFs da API da Carmem para a competência e cria stubs
+   * para os que ainda não existem localmente. Retorna quantos stubs foram criados.
+   * Falha silenciosa — a execução segue mesmo sem descobrir novos médicos.
+   */
+  descobrirMedicos: (competencia: string) => Promise<number>;
   batchSize: number;
 }
 
@@ -80,6 +88,14 @@ export function depsPadrao(): OrchestratorDeps {
         alertas: r.alertas,
       })),
     agendarProximoLote: agendarProximoLoteHttp,
+    descobrirMedicos: async (competencia: string): Promise<number> => {
+      try {
+        const cpfs: MedicoDescoberto[] = await listarCpfsComProcedimentos(competencia);
+        return await descobrirMedicos(cpfs);
+      } catch {
+        return 0; // descoberta falhou — execução segue com médicos já cadastrados
+      }
+    },
     batchSize: BATCH_SIZE,
   };
 }
@@ -108,6 +124,10 @@ export async function iniciarExecucao(
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
 ): Promise<Execucao> {
+  // Fase de descoberta: cria stubs para médicos novos antes de contar o total.
+  // Silenciosa — falha não bloqueia a execução.
+  try { await deps.descobrirMedicos(competencia); } catch { /* segue sem descoberta */ }
+
   const total = await deps.contarMedicosAtivos();
   return deps.criarExecucao(competencia, usuarioId, total);
 }

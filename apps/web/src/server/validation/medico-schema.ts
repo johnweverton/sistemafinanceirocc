@@ -27,6 +27,7 @@ export const atualizarMedicoSchema = z
     modoMudancaData: modoMudancaDataSchema.optional(),
     colaboradorResponsavel: z.string().nullable().optional(),
     ativo: z.boolean().optional(),
+    necessitaConfiguracao: z.boolean().optional(),
     motivo: z.string().min(1, 'Motivo é obrigatório para alterar um médico'),
   })
   .strict();

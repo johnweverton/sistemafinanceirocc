@@ -50,6 +50,41 @@ describe('iniciarExecucao', () => {
   });
 });
 
+describe('iniciarExecucao — fase de descoberta', () => {
+  it('cria stubs para CPFs novos da Carmem antes de contar o total', async () => {
+    const state = novoEstado([
+      medicoFake({ id: '1', cpf: '00000000001', nome: 'Ja cadastrado' }),
+    ]);
+    // A Carmem reporta dois médicos: um já existe, outro é novo.
+    state.cpfsParaDescobrir = [
+      { cpf: '00000000001', nome: 'Ja cadastrado', especialidade: null },
+      { cpf: '00000000099', nome: 'Descoberto Novo', especialidade: 'Pediatria' },
+    ];
+    const deps = fakeDeps(state, 20, processarProximoLote);
+    await iniciarExecucao('2026-06', 'user-1', deps);
+
+    expect(state.stubsCriados).toEqual(['00000000099']); // só o novo
+    // Total da execução conta apenas o configurado (stub não entra no cálculo)
+    const exec = [...state.execucoes.values()][0]!;
+    expect(exec.totalMedicos).toBe(1);
+  });
+
+  it('falha na descoberta nao bloqueia a execucao', async () => {
+    const state = novoEstado([
+      medicoFake({ id: '1', cpf: '00000000001', nome: 'A' }),
+    ]);
+    const deps = fakeDeps(state, 20, processarProximoLote);
+    // Substitui descobrirMedicos por uma versão que lança
+    const depsComFalha = {
+      ...deps,
+      descobrirMedicos: async () => { throw new Error('API Carmem indisponivel'); },
+    };
+    const exec = await iniciarExecucao('2026-06', 'user-1', depsComFalha);
+    expect(exec.status).toBe('processando'); // execução criada normalmente
+    expect(exec.totalMedicos).toBe(1);
+  });
+});
+
 describe('processarProximoLote — decisão de continuar/concluir', () => {
   it('com mais médicos que o lote, processa um lote, NÃO conclui e agenda o próximo', async () => {
     const medicos = Array.from({ length: 5 }, (_, i) =>

@@ -43,6 +43,18 @@ export async function listarMedicos(filtro: MedicoFiltro = {}): Promise<Medico[]
   return (data as MedicoRow[]).map(toMedico);
 }
 
+/** Retorna médicos auto-descobertos que ainda aguardam configuração dos parâmetros. */
+export async function listarAguardandoConfiguracao(): Promise<Medico[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('medicos')
+    .select('*')
+    .eq('necessita_configuracao', true)
+    .order('nome', { ascending: true });
+  if (error) throw new ApiError(500, 'Falha ao listar médicos pendentes', 'DB_ERROR', { error: error.message });
+  return (data as MedicoRow[]).map(toMedico);
+}
+
 export async function buscarMedico(id: string): Promise<Medico | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.from('medicos').select('*').eq('id', id).maybeSingle();
@@ -50,13 +62,14 @@ export async function buscarMedico(id: string): Promise<Medico | null> {
   return data ? toMedico(data as MedicoRow) : null;
 }
 
-/** Conta médicos ativos — usado pelo Orchestrator para definir total e número de lotes. */
+/** Conta médicos ativos e configurados — hot path do orquestrador. */
 export async function contarMedicosAtivos(): Promise<number> {
   const db = getSupabaseAdmin();
   const { count, error } = await db
     .from('medicos')
     .select('id', { count: 'exact', head: true })
-    .eq('ativo', true);
+    .eq('ativo', true)
+    .eq('necessita_configuracao', false);
   if (error) throw new ApiError(500, 'Falha ao contar médicos', 'DB_ERROR', { error: error.message });
   return count ?? 0;
 }
@@ -65,16 +78,64 @@ export async function contarMedicosAtivos(): Promise<number> {
  * Lê uma página de médicos ativos, ordenada de forma estável (por id) para servir de
  * cursor de lote no processamento encadeado: `offset` = quantos já foram processados.
  */
+/** Página de médicos ativos e configurados — cursor estável para o orquestrador. */
 export async function listarMedicosAtivosPagina(offset: number, limite: number): Promise<Medico[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from('medicos')
     .select('*')
     .eq('ativo', true)
+    .eq('necessita_configuracao', false)
     .order('id', { ascending: true })
     .range(offset, offset + limite - 1);
   if (error) throw new ApiError(500, 'Falha ao paginar médicos', 'DB_ERROR', { error: error.message });
   return (data as MedicoRow[]).map(toMedico);
+}
+
+export interface MedicoDescoberto {
+  cpf: string;
+  nome: string;
+  especialidade: string | null;
+}
+
+/**
+ * Cria stubs para CPFs novos recebidos da API da Carmem.
+ * Idempotente: CPFs já existentes são ignorados. Retorna quantos stubs foram criados.
+ * Os valores de faturamento padrão (nao_credenciado/false) são placeholders — o médico
+ * NÃO entra em execuções até necessita_configuracao = false (operador configura via UI).
+ */
+export async function descobrirMedicos(novos: MedicoDescoberto[]): Promise<number> {
+  if (novos.length === 0) return 0;
+  const db = getSupabaseAdmin();
+
+  // Verifica quais CPFs já existem para não duplicar.
+  const cpfs = novos.map((m) => m.cpf);
+  const { data: existentes } = await db
+    .from('medicos')
+    .select('cpf')
+    .in('cpf', cpfs);
+
+  const cpfsExistentes = new Set((existentes ?? []).map((r: { cpf: string }) => r.cpf));
+  const paraInserir = novos.filter((m) => !cpfsExistentes.has(m.cpf));
+  if (paraInserir.length === 0) return 0;
+
+  const rows = paraInserir.map((m) => ({
+    cpf: m.cpf,
+    nome: m.nome,
+    especialidade: m.especialidade,
+    // Valores placeholder — não entram no cálculo enquanto necessita_configuracao = true.
+    status_hapvida: 'nao_credenciado' as const,
+    faz_outros_hospitais: false,
+    faz_imobilizacoes: false,
+    modo_mudanca_data: 'nao' as const,
+    colaborador_responsavel: null,
+    ativo: true,
+    necessita_configuracao: true,
+  }));
+
+  const { error } = await db.from('medicos').insert(rows);
+  if (error) throw new ApiError(500, 'Falha ao criar stubs de médicos', 'DB_ERROR', { error: error.message });
+  return paraInserir.length;
 }
 
 export async function criarMedico(dados: NovoMedico): Promise<Medico> {
