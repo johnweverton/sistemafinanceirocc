@@ -17,7 +17,6 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
-  /* Numeros tabulares em contextos financeiros */
   .tabular {
     font-feature-settings: 'tnum';
     font-variant-numeric: tabular-nums;
@@ -29,7 +28,7 @@
   .input {
     @apply w-full rounded-lg border border-cc-hairline bg-cc-surface px-3 py-2 text-sm text-cc-ink placeholder:text-cc-muted
       transition-colors
-      focus:border-cc-accent focus:outline-none focus:ring-2 focus:ring-cc-accent-ring
+      focus:border-cc-navy focus:outline-none focus:ring-2 focus:ring-cc-accent-ring
       disabled:cursor-not-allowed disabled:bg-cc-bg disabled:text-cc-muted;
   }
 
@@ -39,13 +38,13 @@
       transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-cc-accent text-white hover:bg-cc-accent-hover;
+    @apply btn bg-cc-navy text-white hover:bg-cc-accent-hover;
   }
   .btn-secondary {
-    @apply btn border border-cc-hairline bg-cc-surface text-cc-ink-2 hover:bg-cc-bg hover:text-cc-ink;
+    @apply btn border border-cc-hairline bg-cc-surface text-cc-blue hover:border-cc-blue hover:text-cc-navy;
   }
   .btn-ghost {
-    @apply btn text-cc-ink-2 hover:bg-cc-bg hover:text-cc-ink;
+    @apply btn text-cc-blue hover:bg-cc-accent-soft hover:text-cc-navy;
   }
   .btn-danger {
     @apply btn border border-red-200 bg-cc-danger-soft text-cc-danger hover:border-red-300;
@@ -56,7 +55,7 @@
 
   /* Labels de formulario */
   .field-label {
-    @apply block text-xs font-medium uppercase tracking-wide text-cc-ink-2;
+    @apply block text-xs font-semibold uppercase tracking-wide text-cc-blue;
   }
 
   /* Card padrao */
@@ -66,56 +65,34 @@
 
   /* Badge de status */
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-medium;
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-semibold;
   }
-  .badge-green {
-    @apply badge bg-cc-success-soft text-cc-success;
-  }
-  .badge-amber {
-    @apply badge bg-cc-warning-soft text-cc-warning;
-  }
-  .badge-red {
-    @apply badge bg-cc-danger-soft text-cc-danger;
-  }
-  .badge-slate {
-    @apply badge bg-cc-bg text-cc-ink-2;
-  }
+  .badge-green  { @apply badge bg-cc-success-soft text-cc-success; }
+  .badge-amber  { @apply badge bg-cc-warning-soft text-cc-warning; }
+  .badge-red    { @apply badge bg-cc-danger-soft text-cc-danger; }
+  .badge-slate  { @apply badge bg-cc-accent-soft text-cc-blue; }
 
-  /* Cabecalho de pagina padrao */
-  .page-header {
-    @apply mb-6 flex flex-wrap items-center justify-between gap-3;
-  }
-  .page-title {
-    @apply text-xl font-semibold tracking-tight text-cc-ink;
-  }
+  /* Cabecalho de pagina */
+  .page-header { @apply mb-6 flex flex-wrap items-center justify-between gap-3; }
+  .page-title  { @apply text-xl font-semibold tracking-tight text-cc-ink; }
 
   /* Link de acao */
   .link-action {
-    @apply text-sm font-medium text-cc-accent hover:text-cc-accent-hover hover:underline underline-offset-2;
+    @apply text-sm font-medium text-cc-blue hover:text-cc-navy hover:underline underline-offset-2;
   }
 
   /* Tabela padrao */
-  .data-table {
-    @apply w-full text-left text-sm;
-  }
+  .data-table { @apply w-full text-left text-sm; }
   .data-table th {
     @apply px-4 py-3 text-2xs font-semibold uppercase tracking-wider text-cc-muted;
   }
-  .data-table td {
-    @apply px-4 py-3 text-sm text-cc-ink;
-  }
+  .data-table td { @apply px-4 py-3 text-sm text-cc-ink; }
   .data-table tbody tr {
     @apply border-t border-cc-hairline transition-colors hover:bg-cc-bg/70;
   }
 
-  /* Alerta inline */
-  .alert-error {
-    @apply rounded-lg border border-red-200 bg-cc-danger-soft px-4 py-3 text-sm text-cc-danger;
-  }
-  .alert-success {
-    @apply rounded-lg border border-emerald-200 bg-cc-success-soft px-4 py-3 text-sm text-cc-success;
-  }
-  .alert-warning {
-    @apply rounded-lg border border-amber-200 bg-cc-warning-soft px-4 py-3 text-sm text-cc-warning;
-  }
+  /* Alertas */
+  .alert-error   { @apply rounded-lg border border-red-200 bg-cc-danger-soft px-4 py-3 text-sm text-cc-danger; }
+  .alert-success { @apply rounded-lg border border-emerald-200 bg-cc-success-soft px-4 py-3 text-sm text-cc-success; }
+  .alert-warning { @apply rounded-lg border border-amber-200 bg-cc-warning-soft px-4 py-3 text-sm text-cc-warning; }
 }

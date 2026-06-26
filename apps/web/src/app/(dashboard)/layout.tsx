@@ -1,17 +1,20 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-cc-bg">
       <header className="sticky top-0 z-10 border-b border-cc-hairline bg-cc-surface/95 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-screen-lg items-center justify-between px-5">
-          <Link href="/medicos" className="flex items-center gap-2.5 group">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cc-accent text-xs font-bold text-white tracking-tight shadow-cc-sm">
-              CC
-            </span>
-            <span className="text-sm font-semibold text-cc-ink tracking-tight">
-              Carmem Cavalcante
-            </span>
+          <Link href="/medicos" className="flex items-center">
+            <Image
+              src="/logo.svg"
+              alt="Carmem Cavalcante"
+              width={140}
+              height={40}
+              className="h-8 w-auto"
+              priority
+            />
           </Link>
           <nav className="flex items-center gap-1">
             <NavLink href="/medicos">Medicos</NavLink>
@@ -30,7 +33,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   return (
     <Link
       href={href}
-      className="rounded-md px-3 py-1.5 text-sm font-medium text-cc-ink-2 transition-colors hover:bg-cc-bg hover:text-cc-ink"
+      className="rounded-md px-3 py-1.5 text-sm font-medium text-cc-blue transition-colors hover:bg-cc-accent-soft hover:text-cc-navy"
     >
       {children}
     </Link>

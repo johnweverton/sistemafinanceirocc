@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -28,19 +29,19 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-cc-bg p-4">
       <div className="w-full max-w-sm">
-        {/* Logo mark */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-cc-accent shadow-cc-md">
-            <span className="text-sm font-bold text-white tracking-tight">CC</span>
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-cc-ink">
-            Carmem Cavalcante
-          </h1>
-          <p className="mt-1 text-sm text-cc-muted">Contabilidade e Cobranca por Guias</p>
+        <div className="mb-8 flex justify-center">
+          <Image
+            src="/logo.svg"
+            alt="Carmem Cavalcante"
+            width={200}
+            height={60}
+            className="h-14 w-auto"
+            priority
+          />
         </div>
 
-        {/* Card do formulario */}
         <div className="card p-6">
+          <p className="mb-5 text-sm text-cc-blue">Acesse sua conta para continuar.</p>
           <form onSubmit={entrar} className="space-y-4">
             <div>
               <label htmlFor="email" className="field-label mb-1.5">
@@ -73,11 +74,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {erro && (
-              <p role="alert" className="alert-error py-2">
-                {erro}
-              </p>
-            )}
+            {erro && <p role="alert" className="alert-error py-2">{erro}</p>}
 
             <button
               type="submit"
@@ -89,7 +86,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-cc-muted">
+        <p className="mt-5 text-center text-xs text-cc-muted">
           Acesso restrito a colaboradores autorizados.
         </p>
       </div>
