@@ -1,7 +1,7 @@
 'use client';
-import { useState } from 'react';
-import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { gsap } from 'gsap';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -10,6 +10,36 @@ export default function LoginPage() {
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+
+  const logoRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const rodapeRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+
+      tl.fromTo(
+        logoRef.current,
+        { opacity: 0, y: 32, scale: 0.94 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.85 },
+      )
+        .fromTo(
+          cardRef.current,
+          { opacity: 0, y: 20 },
+          { opacity: 1, y: 0, duration: 0.65 },
+          '-=0.45',
+        )
+        .fromTo(
+          rodapeRef.current,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.5 },
+          '-=0.3',
+        );
+    });
+
+    return () => ctx.revert();
+  }, []);
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
@@ -29,18 +59,17 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-cc-bg p-4">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex justify-center">
-          <Image
+        {/* Logo com animacao GSAP */}
+        <div ref={logoRef} className="mb-8 flex justify-center opacity-0">
+          <img
             src="/logo.svg"
-            alt="Carmem Cavalcante"
-            width={200}
-            height={60}
-            className="h-14 w-auto"
-            priority
+            alt="Carmem Cavalcante Contabilidade"
+            className="h-20 w-auto"
           />
         </div>
 
-        <div className="card p-6">
+        {/* Card do formulario */}
+        <div ref={cardRef} className="card p-6 opacity-0">
           <p className="mb-5 text-sm text-cc-blue">Acesse sua conta para continuar.</p>
           <form onSubmit={entrar} className="space-y-4">
             <div>
@@ -86,7 +115,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-5 text-center text-xs text-cc-muted">
+        <p ref={rodapeRef} className="mt-5 text-center text-xs text-cc-muted opacity-0">
           Acesso restrito a colaboradores autorizados.
         </p>
       </div>
