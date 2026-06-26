@@ -7,8 +7,6 @@ import { ProgressoExecucao } from './ProgressoExecucao';
 import { RelatorioGrupos } from './RelatorioGrupos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
 
-// Tela de disparo de competência (PRD §8.3). Após disparar, acompanha o progresso
-// e mostra o relatório em 3 grupos quando concluir.
 export function NovaExecucao() {
   const qc = useQueryClient();
   const [competencia, setCompetencia] = useState('');
@@ -22,46 +20,56 @@ export function NovaExecucao() {
       setErro(null);
       void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucoes() });
     },
-    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao disparar'),
+    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao disparar execucao'),
   });
 
   if (execucaoId) {
     return <Acompanhamento execucaoId={execucaoId} onNova={() => setExecucaoId(null)} />;
   }
 
+  const competenciaValida = /^\d{4}-\d{2}$/.test(competencia);
+
   return (
-    <section className="space-y-4">
-      <h1 className="text-xl font-semibold">Nova execução</h1>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (/^\d{4}-\d{2}$/.test(competencia)) disparar.mutate(competencia);
-        }}
-        className="flex items-end gap-3"
-      >
-        <label className="block">
-          <span className="text-sm font-medium">Competência (AAAA-MM)</span>
-          <input
-            name="competencia"
-            value={competencia}
-            onChange={(e) => setCompetencia(e.target.value)}
-            placeholder="2026-06"
-            className="mt-1 rounded border px-3 py-2"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={!/^\d{4}-\d{2}$/.test(competencia) || disparar.isPending}
-          className="rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
+    <section className="space-y-6">
+      <div className="page-header">
+        <h1 className="page-title">Nova execucao</h1>
+      </div>
+
+      <div className="card max-w-md p-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (competenciaValida) disparar.mutate(competencia);
+          }}
+          className="space-y-4"
         >
-          {disparar.isPending ? 'Disparando…' : 'Processar'}
-        </button>
-      </form>
-      {erro && (
-        <p role="alert" className="text-sm text-red-600">
-          {erro}
-        </p>
-      )}
+          <div>
+            <label htmlFor="competencia" className="field-label mb-1.5">
+              Competencia
+            </label>
+            <input
+              id="competencia"
+              name="competencia"
+              value={competencia}
+              onChange={(e) => setCompetencia(e.target.value)}
+              placeholder="2026-06"
+              className="input font-mono"
+              maxLength={7}
+            />
+            <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM</p>
+          </div>
+
+          {erro && <p role="alert" className="alert-error">{erro}</p>}
+
+          <button
+            type="submit"
+            disabled={!competenciaValida || disparar.isPending}
+            className="btn-primary w-full py-2.5"
+          >
+            {disparar.isPending ? 'Disparando...' : 'Processar competencia'}
+          </button>
+        </form>
+      </div>
     </section>
   );
 }
@@ -69,12 +77,18 @@ export function NovaExecucao() {
 function Acompanhamento({ execucaoId, onNova }: { execucaoId: string; onNova: () => void }) {
   const { execucao } = useExecucaoRealtime(execucaoId);
   const concluido = execucao?.status === 'concluido';
+
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Execução {execucao?.competencia ?? ''}</h1>
-        <button onClick={onNova} className="text-sm text-gray-600 underline">
-          Nova execução
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Execucao em andamento</h1>
+          {execucao?.competencia && (
+            <p className="mt-0.5 text-sm text-cc-ink-2 tabular font-mono">{execucao.competencia}</p>
+          )}
+        </div>
+        <button onClick={onNova} className="btn-ghost btn btn-sm">
+          Nova execucao
         </button>
       </div>
       <ProgressoExecucao execucaoId={execucaoId} />

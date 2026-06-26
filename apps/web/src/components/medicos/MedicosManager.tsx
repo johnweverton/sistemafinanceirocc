@@ -32,7 +32,7 @@ export function MedicosManager() {
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
     onError: (e) => {
-      setErro(e instanceof ApiClientError ? e.message : 'Erro na importação');
+      setErro(e instanceof ApiClientError ? e.message : 'Erro na importacao');
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
   });
@@ -66,33 +66,35 @@ export function MedicosManager() {
 
   if (modo.tipo === 'novo') {
     return (
-      <section className="space-y-4">
-        <Cabecalho titulo="Novo médico" onVoltar={() => setModo({ tipo: 'lista' })} />
-        {erro && <Erro msg={erro} />}
-        <MedicoForm
-          salvando={criar.isPending}
-          onSubmit={(dados) => criar.mutate(dados)}
-        />
+      <section className="space-y-6">
+        <PageHeader titulo="Novo medico" onVoltar={() => setModo({ tipo: 'lista' })} />
+        {erro && <p role="alert" className="alert-error">{erro}</p>}
+        <div className="card p-6">
+          <MedicoForm salvando={criar.isPending} onSubmit={(dados) => criar.mutate(dados)} />
+        </div>
       </section>
     );
   }
 
   if (modo.tipo === 'editar') {
     return (
-      <section className="space-y-4">
-        <Cabecalho titulo={`Editar — ${modo.medico.nome}`} onVoltar={() => setModo({ tipo: 'lista' })} />
-        {erro && <Erro msg={erro} />}
-        <MedicoForm
-          inicial={modo.medico}
-          exigeMotivo
-          salvando={atualizar.isPending}
-          onSubmit={(dados, motivo) =>
-            atualizar.mutate({ id: modo.medico.id, p: { ...dados, motivo } })
-          }
-        />
-        <div className="pt-4">
-          <Link href={`/medicos/${modo.medico.id}/historico`} className="text-sm text-blue-600 underline">
-            Ver histórico de alterações
+      <section className="space-y-6">
+        <PageHeader titulo={`Editar medico`} onVoltar={() => setModo({ tipo: 'lista' })} />
+        <p className="text-sm text-cc-ink-2 -mt-3">{modo.medico.nome}</p>
+        {erro && <p role="alert" className="alert-error">{erro}</p>}
+        <div className="card p-6">
+          <MedicoForm
+            inicial={modo.medico}
+            exigeMotivo
+            salvando={atualizar.isPending}
+            onSubmit={(dados, motivo) =>
+              atualizar.mutate({ id: modo.medico.id, p: { ...dados, motivo } })
+            }
+          />
+        </div>
+        <div>
+          <Link href={`/medicos/${modo.medico.id}/historico`} className="link-action">
+            Ver historico de alteracoes
           </Link>
         </div>
       </section>
@@ -100,21 +102,19 @@ export function MedicosManager() {
   }
 
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <h1 className="text-xl font-semibold">Médicos</h1>
+    <section className="space-y-5">
+      <div className="page-header">
+        <h1 className="page-title">Medicos</h1>
         <div className="flex flex-wrap items-center gap-2">
           <a
             href="/templates/medicos-modelo.csv"
             download
-            className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="btn btn-secondary btn-sm"
           >
             Baixar modelo CSV
           </a>
-          <label
-            className={`cursor-pointer rounded border border-gray-400 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {importar.isPending ? 'Importando…' : 'Importar CSV'}
+          <label className={`btn btn-secondary btn-sm cursor-pointer ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}>
+            {importar.isPending ? 'Importando...' : 'Importar CSV'}
             <input
               ref={fileInputRef}
               type="file"
@@ -137,20 +137,23 @@ export function MedicosManager() {
               setImportResult(null);
               setModo({ tipo: 'novo' });
             }}
-            className="rounded bg-gray-900 px-4 py-2 text-sm text-white"
+            className="btn-primary btn-sm btn"
           >
-            Novo médico
+            Novo medico
           </button>
         </div>
       </div>
+
+      {erro && <p role="alert" className="alert-error">{erro}</p>}
+
       {importResult && (
-        <div className={`rounded px-3 py-2 text-sm ${importResult.erros.length === 0 ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
+        <div className={importResult.erros.length === 0 ? 'alert-success' : 'alert-warning'}>
           <p className="font-medium">
-            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
-            {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s).`}
+            Importacao concluida: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
+            {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s) encontrado(s).`}
           </p>
           {importResult.erros.length > 0 && (
-            <ul className="mt-1 list-disc pl-4 space-y-0.5">
+            <ul className="mt-2 list-disc pl-4 space-y-1 text-xs">
               {importResult.erros.map((e) => (
                 <li key={`${e.linha}-${e.cpf}`}>
                   Linha {e.linha} (CPF {e.cpf}): {e.erro}
@@ -158,41 +161,54 @@ export function MedicosManager() {
               ))}
             </ul>
           )}
-          <button onClick={() => setImportResult(null)} className="mt-1 underline text-xs">
+          <button onClick={() => setImportResult(null)} className="mt-2 text-xs underline underline-offset-2">
             Fechar
           </button>
         </div>
       )}
+
       {isLoading ? (
-        <p className="text-sm text-gray-500">Carregando…</p>
+        <div className="card p-8 text-center">
+          <p className="text-sm text-cc-muted">Carregando...</p>
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded border bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-100">
+        <div className="card overflow-hidden">
+          <table className="data-table">
+            <thead className="border-b border-cc-hairline bg-cc-bg/60">
               <tr>
-                <th className="px-3 py-2">Nome</th>
-                <th className="px-3 py-2">CPF</th>
-                <th className="px-3 py-2">TIPO</th>
-                <th className="px-3 py-2">Modo</th>
-                <th className="px-3 py-2">Ativo</th>
-                <th className="px-3 py-2" />
+                <th>Nome</th>
+                <th>CPF</th>
+                <th>Tipo</th>
+                <th>Modo</th>
+                <th>Status</th>
+                <th className="text-right">Acoes</th>
               </tr>
             </thead>
             <tbody>
               {(medicos ?? []).map((m) => (
-                <tr key={m.id} className="border-t">
-                  <td className="px-3 py-2">{m.nome}</td>
-                  <td className="px-3 py-2 font-mono">{m.cpf}</td>
-                  <td className="px-3 py-2">{tipoSeguro(m)}</td>
-                  <td className="px-3 py-2 uppercase">{m.modoMudancaData}</td>
-                  <td className="px-3 py-2">{m.ativo ? 'Sim' : 'Não'}</td>
-                  <td className="px-3 py-2 text-right">
+                <tr key={m.id}>
+                  <td className="font-medium">{m.nome}</td>
+                  <td className="font-mono text-cc-ink-2 tabular">{formatCpf(m.cpf)}</td>
+                  <td>
+                    <span className="badge-slate">{tipoSeguro(m)}</span>
+                  </td>
+                  <td className="text-cc-ink-2">
+                    {m.modoMudancaData === 'sim' ? 'Muda data' : 'Normal'}
+                  </td>
+                  <td>
+                    {m.ativo ? (
+                      <span className="badge-green">Ativo</span>
+                    ) : (
+                      <span className="badge-slate">Inativo</span>
+                    )}
+                  </td>
+                  <td className="text-right">
                     <button
                       onClick={() => {
                         setErro(null);
                         setModo({ tipo: 'editar', medico: m });
                       }}
-                      className="text-blue-600 underline"
+                      className="link-action"
                     >
                       Editar
                     </button>
@@ -201,8 +217,8 @@ export function MedicosManager() {
               ))}
               {(medicos ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-gray-500">
-                    Nenhum médico cadastrado.
+                  <td colSpan={6} className="py-10 text-center text-cc-muted">
+                    Nenhum medico cadastrado ainda.
                   </td>
                 </tr>
               )}
@@ -214,29 +230,26 @@ export function MedicosManager() {
   );
 }
 
+function formatCpf(cpf: string): string {
+  if (cpf.length !== 11) return cpf;
+  return `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}`;
+}
+
 function tipoSeguro(m: Medico): string {
   try {
     return String(tipoDoMedico(m));
   } catch {
-    return '—';
+    return 'n/d';
   }
 }
 
-function Cabecalho({ titulo, onVoltar }: { titulo: string; onVoltar: () => void }) {
+function PageHeader({ titulo, onVoltar }: { titulo: string; onVoltar: () => void }) {
   return (
-    <div className="flex items-center justify-between">
-      <h1 className="text-xl font-semibold">{titulo}</h1>
-      <button onClick={onVoltar} className="text-sm text-gray-600 underline">
-        Voltar
+    <div className="page-header">
+      <h1 className="page-title">{titulo}</h1>
+      <button onClick={onVoltar} className="btn-ghost btn btn-sm">
+        Voltar a lista
       </button>
     </div>
-  );
-}
-
-function Erro({ msg }: { msg: string }) {
-  return (
-    <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-      {msg}
-    </p>
   );
 }

@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
-// Login via Supabase Auth (PRD §8.1). Sem cadastro público — usuários são criados pelo admin.
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -19,7 +18,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
     setCarregando(false);
     if (error) {
-      setErro('E-mail ou senha inválidos.');
+      setErro('E-mail ou senha invalidos. Tente novamente.');
       return;
     }
     router.replace('/medicos');
@@ -27,49 +26,73 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={entrar} className="w-full max-w-sm space-y-4 rounded-lg bg-white p-6 shadow">
-        <h1 className="text-xl font-semibold">Cobrança por Guias</h1>
-        <p className="text-sm text-gray-500">Carmem Cavalcante Contabilidade</p>
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium">
-            E-mail
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded border px-3 py-2"
-          />
+    <main className="flex min-h-screen items-center justify-center bg-cc-bg p-4">
+      <div className="w-full max-w-sm">
+        {/* Logo mark */}
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-cc-accent shadow-cc-md">
+            <span className="text-sm font-bold text-white tracking-tight">CC</span>
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-cc-ink">
+            Carmem Cavalcante
+          </h1>
+          <p className="mt-1 text-sm text-cc-muted">Contabilidade e Cobranca por Guias</p>
         </div>
-        <div>
-          <label htmlFor="senha" className="block text-sm font-medium">
-            Senha
-          </label>
-          <input
-            id="senha"
-            type="password"
-            required
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            className="mt-1 w-full rounded border px-3 py-2"
-          />
+
+        {/* Card do formulario */}
+        <div className="card p-6">
+          <form onSubmit={entrar} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="field-label mb-1.5">
+                E-mail
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input"
+                placeholder="voce@exemplo.com"
+              />
+            </div>
+            <div>
+              <label htmlFor="senha" className="field-label mb-1.5">
+                Senha
+              </label>
+              <input
+                id="senha"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={senha}
+                onChange={(e) => setSenha(e.target.value)}
+                className="input"
+                placeholder="sua senha"
+              />
+            </div>
+
+            {erro && (
+              <p role="alert" className="alert-error py-2">
+                {erro}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={carregando}
+              className="btn-primary w-full py-2.5"
+            >
+              {carregando ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
         </div>
-        {erro && (
-          <p role="alert" className="text-sm text-red-600">
-            {erro}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={carregando}
-          className="w-full rounded bg-gray-900 py-2 text-white disabled:opacity-50"
-        >
-          {carregando ? 'Entrando…' : 'Entrar'}
-        </button>
-      </form>
+
+        <p className="mt-6 text-center text-xs text-cc-muted">
+          Acesso restrito a colaboradores autorizados.
+        </p>
+      </div>
     </main>
   );
 }

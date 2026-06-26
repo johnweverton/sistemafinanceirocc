@@ -7,7 +7,12 @@ function brl(v: number | null): string {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-// Histórico de execuções passadas (PRD §8.5).
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'concluido') return <span className="badge-green">Concluido</span>;
+  if (status === 'processando') return <span className="badge-amber">Processando</span>;
+  return <span className="badge-red">Erro</span>;
+}
+
 export function HistoricoExecucoes() {
   const { data, isLoading } = useQuery({
     queryKey: execucaoQueryKeys.execucoes(),
@@ -15,40 +20,45 @@ export function HistoricoExecucoes() {
   });
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Execuções</h1>
-        <Link href="/execucoes/nova" className="rounded bg-gray-900 px-4 py-2 text-sm text-white">
-          Nova execução
+    <section className="space-y-5">
+      <div className="page-header">
+        <h1 className="page-title">Execucoes</h1>
+        <Link href="/execucoes/nova" className="btn-primary btn-sm btn">
+          Nova execucao
         </Link>
       </div>
+
       {isLoading ? (
-        <p className="text-sm text-gray-500">Carregando…</p>
+        <div className="card p-8 text-center">
+          <p className="text-sm text-cc-muted">Carregando...</p>
+        </div>
       ) : (
-        <div className="overflow-x-auto rounded border bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-100">
+        <div className="card overflow-hidden">
+          <table className="data-table">
+            <thead className="border-b border-cc-hairline bg-cc-bg/60">
               <tr>
-                <th className="px-3 py-2">Competência</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">OK</th>
-                <th className="px-3 py-2">Revisão</th>
-                <th className="px-3 py-2">Sem dados</th>
-                <th className="px-3 py-2">Total</th>
-                <th className="px-3 py-2" />
+                <th>Competencia</th>
+                <th>Status</th>
+                <th className="text-right">Ok</th>
+                <th className="text-right">Revisao</th>
+                <th className="text-right">Sem dados</th>
+                <th className="text-right">Total</th>
+                <th className="text-right">Acao</th>
               </tr>
             </thead>
             <tbody>
               {(data ?? []).map((e) => (
-                <tr key={e.id} className="border-t">
-                  <td className="px-3 py-2">{e.competencia}</td>
-                  <td className="px-3 py-2">{e.status}</td>
-                  <td className="px-3 py-2">{e.totalOk ?? '—'}</td>
-                  <td className="px-3 py-2">{e.totalAlerta ?? '—'}</td>
-                  <td className="px-3 py-2">{e.totalSemDados ?? '—'}</td>
-                  <td className="px-3 py-2">{brl(e.totalGeralValor)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <Link href={`/execucoes/${e.id}`} className="text-blue-600 underline">
+                <tr key={e.id}>
+                  <td className="font-mono font-medium tabular">{e.competencia}</td>
+                  <td>
+                    <StatusBadge status={e.status} />
+                  </td>
+                  <td className="text-right tabular text-cc-ink-2">{e.totalOk ?? '-'}</td>
+                  <td className="text-right tabular text-cc-warning">{e.totalAlerta ?? '-'}</td>
+                  <td className="text-right tabular text-cc-muted">{e.totalSemDados ?? '-'}</td>
+                  <td className="text-right tabular font-medium">{brl(e.totalGeralValor)}</td>
+                  <td className="text-right">
+                    <Link href={`/execucoes/${e.id}`} className="link-action">
                       Abrir
                     </Link>
                   </td>
@@ -56,8 +66,8 @@ export function HistoricoExecucoes() {
               ))}
               {(data ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-gray-500">
-                    Nenhuma execução ainda.
+                  <td colSpan={7} className="py-10 text-center text-cc-muted">
+                    Nenhuma execucao registrada ainda.
                   </td>
                 </tr>
               )}
