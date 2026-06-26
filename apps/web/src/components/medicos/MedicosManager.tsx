@@ -37,9 +37,13 @@ export function MedicosManager() {
     },
   });
 
-  const { data: medicos, isLoading } = useQuery({
+  const { data: medicos, isLoading, isError } = useQuery({
     queryKey: queryKeys.medicos(),
     queryFn: () => medicosService.listar(),
+    retry: (count, err) => {
+      if (err instanceof ApiClientError && (err.status === 401 || err.status === 403)) return false;
+      return count < 2;
+    },
   });
 
   const criar = useMutation({
@@ -67,7 +71,7 @@ export function MedicosManager() {
   if (modo.tipo === 'novo') {
     return (
       <section className="space-y-6">
-        <PageHeader titulo="Novo medico" onVoltar={() => setModo({ tipo: 'lista' })} />
+        <PageHeader titulo="Novo médico" onVoltar={() => setModo({ tipo: 'lista' })} />
         {erro && <p role="alert" className="alert-error">{erro}</p>}
         <div className="card p-6">
           <MedicoForm salvando={criar.isPending} onSubmit={(dados) => criar.mutate(dados)} />
@@ -79,7 +83,7 @@ export function MedicosManager() {
   if (modo.tipo === 'editar') {
     return (
       <section className="space-y-6">
-        <PageHeader titulo={`Editar medico`} onVoltar={() => setModo({ tipo: 'lista' })} />
+        <PageHeader titulo="Editar médico" onVoltar={() => setModo({ tipo: 'lista' })} />
         <p className="text-sm text-cc-ink-2 -mt-3">{modo.medico.nome}</p>
         {erro && <p role="alert" className="alert-error">{erro}</p>}
         <div className="card p-6">
@@ -94,7 +98,7 @@ export function MedicosManager() {
         </div>
         <div>
           <Link href={`/medicos/${modo.medico.id}/historico`} className="link-action">
-            Ver historico de alteracoes
+            Ver histórico de alterações
           </Link>
         </div>
       </section>
@@ -104,7 +108,7 @@ export function MedicosManager() {
   return (
     <section className="space-y-5">
       <div className="page-header">
-        <h1 className="page-title">Medicos</h1>
+        <h1 className="page-title">Médicos</h1>
         <div className="flex flex-wrap items-center gap-2">
           <a
             href="/templates/medicos-modelo.csv"
@@ -139,7 +143,7 @@ export function MedicosManager() {
             }}
             className="btn-primary btn-sm btn"
           >
-            Novo medico
+            Novo médico
           </button>
         </div>
       </div>
@@ -149,7 +153,7 @@ export function MedicosManager() {
       {importResult && (
         <div className={importResult.erros.length === 0 ? 'alert-success' : 'alert-warning'}>
           <p className="font-medium">
-            Importacao concluida: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
+            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
             {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s) encontrado(s).`}
           </p>
           {importResult.erros.length > 0 && (
@@ -171,6 +175,10 @@ export function MedicosManager() {
         <div className="card p-8 text-center">
           <p className="text-sm text-cc-muted">Carregando...</p>
         </div>
+      ) : isError ? (
+        <div className="card p-8 text-center">
+          <p className="text-sm text-cc-danger">Nao foi possivel carregar a lista de medicos. Recarregue a pagina.</p>
+        </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="data-table">
@@ -181,7 +189,7 @@ export function MedicosManager() {
                 <th>Tipo</th>
                 <th>Modo</th>
                 <th>Status</th>
-                <th className="text-right">Acoes</th>
+                <th className="text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -218,7 +226,7 @@ export function MedicosManager() {
               {(medicos ?? []).length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-10 text-center text-cc-muted">
-                    Nenhum medico cadastrado ainda.
+                    Nenhum médico cadastrado ainda.
                   </td>
                 </tr>
               )}
@@ -248,7 +256,7 @@ function PageHeader({ titulo, onVoltar }: { titulo: string; onVoltar: () => void
     <div className="page-header">
       <h1 className="page-title">{titulo}</h1>
       <button onClick={onVoltar} className="btn-ghost btn btn-sm">
-        Voltar a lista
+        Voltar à lista
       </button>
     </div>
   );

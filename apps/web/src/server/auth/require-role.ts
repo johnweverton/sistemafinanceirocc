@@ -19,15 +19,23 @@ export async function requireRole(papeis: Papel[]): Promise<SessaoUsuario> {
   } = await supabase.auth.getUser();
   if (!user) throw new ApiError(401, 'Não autenticado', 'UNAUTHENTICATED');
 
-  // Lê o perfil via service role para não depender de policy de leitura cruzada.
   const admin = getSupabaseAdmin();
-  const { data: profile, error } = await admin
+  const { data: profile } = await admin
     .from('profiles')
     .select('papel, colaborador_responsavel')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !profile) throw new ApiError(403, 'Perfil não encontrado', 'NO_PROFILE');
+  // Se não existe perfil ainda, cria automaticamente como admin (sistema interno).
+  if (!profile) {
+    await admin.from('profiles').insert({
+      id: user.id,
+      papel: 'admin',
+      colaborador_responsavel: null,
+    });
+    return { userId: user.id, papel: 'admin', colaboradorResponsavel: null };
+  }
+
   if (!papeis.includes(profile.papel as Papel)) {
     throw new ApiError(403, 'Sem permissão para esta ação', 'FORBIDDEN');
   }
