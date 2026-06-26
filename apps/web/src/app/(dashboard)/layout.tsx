@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { LogoutButton } from '@/components/layout/LogoutButton';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,6 +20,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <nav className="flex items-center gap-1">
             <NavLink href="/medicos">Medicos</NavLink>
             <NavLink href="/execucoes">Execucoes</NavLink>
+            <span className="mx-1 h-4 w-px bg-cc-hairline" />
+            <LogoutButton />
           </nav>
         </div>
       </header>
