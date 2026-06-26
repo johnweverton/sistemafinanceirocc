@@ -11,36 +11,25 @@ export default function LoginPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
-  const markRef  = useRef<SVGGElement>(null);
-  const textRef  = useRef<SVGGElement>(null);
-  const cardRef  = useRef<HTMLDivElement>(null);
+  const markRef   = useRef<SVGGElement>(null);
+  const cardRef   = useRef<HTMLDivElement>(null);
   const rodapeRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
 
-      /* 1. Simbolo da marca aparece e sobe */
       tl.fromTo(
         markRef.current,
-        { opacity: 0, y: 18, scale: 0.88, transformOrigin: 'center center' },
-        { opacity: 1, y: 0, scale: 1, duration: 0.75 },
+        { opacity: 0, y: 20, scale: 0.86, transformOrigin: 'center center' },
+        { opacity: 1, y: 0, scale: 1, duration: 0.9 },
       )
-      /* 2. Texto desliza da esquerda com ligeiro delay */
-      .fromTo(
-        textRef.current,
-        { opacity: 0, x: -14 },
-        { opacity: 1, x: 0, duration: 0.65 },
-        '-=0.5',
-      )
-      /* 3. Card do formulario sobe */
       .fromTo(
         cardRef.current,
-        { opacity: 0, y: 22 },
-        { opacity: 1, y: 0, duration: 0.6 },
-        '-=0.35',
+        { opacity: 0, y: 24 },
+        { opacity: 1, y: 0, duration: 0.65 },
+        '-=0.5',
       )
-      /* 4. Rodape dissolve */
       .fromTo(
         rodapeRef.current,
         { opacity: 0 },
@@ -71,17 +60,16 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-cc-bg p-4">
       <div className="w-full max-w-sm">
 
-        {/* Logo inline — sem fundo branco, animavel por GSAP */}
+        {/* Apenas o simbolo do C — centralizado, sem texto */}
         <div className="mb-8 flex justify-center">
           <svg
-            viewBox="330 808 1360 450"
+            viewBox="360 815 420 430"
             xmlns="http://www.w3.org/2000/svg"
-            aria-label="Carmem Cavalcante Contabilidade"
+            aria-label="Carmem Cavalcante"
             role="img"
-            className="h-24 w-auto"
+            className="h-24 w-24"
             style={{ fillRule: 'evenodd', clipRule: 'evenodd' }}
           >
-            {/* Simbolo (3 paths do C) */}
             <g ref={markRef} style={{ opacity: 0 }}>
               <path
                 d="M543.776,835.303c-20.332,2.882 -55.873,13.928 -55.873,17.29c0,0.64 5.123,1.921 11.527,3.042c52.511,9.125 99.259,43.866 123.914,92.375c6.564,12.808 6.564,12.808 65.479,13.288c36.502,0.16 59.556,-0.16 60.516,-1.121c2.241,-2.241 -10.887,-28.977 -21.613,-44.507c-17.29,-24.975 -49.79,-52.191 -76.846,-64.359c-33.3,-14.889 -73.804,-20.973 -107.104,-16.01Z"
@@ -95,23 +83,6 @@ export default function LoginPage() {
                 d="M629.267,1091.617c-0.64,1.121 -3.522,6.724 -6.244,12.487c-22.413,46.108 -71.723,82.77 -122.794,91.415c-6.724,1.121 -12.327,2.562 -12.327,3.202c0,2.081 25.295,11.047 40.664,14.729c11.367,2.562 20.172,3.362 40.184,3.362c33.62,0.16 52.992,-3.842 82.449,-16.97c26.736,-12.007 59.396,-39.223 76.526,-64.038c9.766,-14.409 23.534,-41.945 21.933,-44.347c-1.601,-2.722 -118.631,-2.401 -120.392,0.16Z"
                 fill="#01254c" fillRule="nonzero"
               />
-            </g>
-
-            {/* Texto da marca */}
-            <g
-              ref={textRef}
-              style={{ opacity: 0, fontFamily: "'CodecColdTrial-Bold','Codec Cold Trial','Barlow Condensed','Arial Narrow',sans-serif" }}
-              transform="matrix(2.373786,0,0,2.373786,-2299.425237,-1495.957318)"
-            >
-              <text x="1331.212" y="1043.943" fontWeight="700" fontSize="50" fill="#01254c">
-                COBRAN&#xC7;A
-              </text>
-              <text x="1331.212" y="1085.609" fontWeight="700" fontSize="50" fill="#01254c">
-                CARMEM
-              </text>
-              <text x="1331.212" y="1127.276" fontWeight="900" fontSize="50" fill="#01254c">
-                CAVALCANTE
-              </text>
             </g>
           </svg>
         </div>
