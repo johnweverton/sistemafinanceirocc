@@ -8,7 +8,7 @@ function brl(v: number | null): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === 'concluido') return <span className="badge-green">Concluido</span>;
+  if (status === 'concluido') return <span className="badge-green">Concluído</span>;
   if (status === 'processando') return <span className="badge-amber">Processando</span>;
   return <span className="badge-red">Erro</span>;
 }
@@ -22,9 +22,9 @@ export function HistoricoExecucoes() {
   return (
     <section className="space-y-5">
       <div className="page-header">
-        <h1 className="page-title">Execucoes</h1>
+        <h1 className="page-title">Execuções</h1>
         <Link href="/execucoes/nova" className="btn-primary btn-sm btn">
-          Nova execucao
+          Nova execução
         </Link>
       </div>
 
@@ -37,13 +37,13 @@ export function HistoricoExecucoes() {
           <table className="data-table">
             <thead className="border-b border-cc-hairline bg-cc-bg/60">
               <tr>
-                <th>Competencia</th>
+                <th>Competência</th>
                 <th>Status</th>
                 <th className="text-right">Ok</th>
-                <th className="text-right">Revisao</th>
+                <th className="text-right">Revisão</th>
                 <th className="text-right">Sem dados</th>
                 <th className="text-right">Total</th>
-                <th className="text-right">Acao</th>
+                <th className="text-right">Ação</th>
               </tr>
             </thead>
             <tbody>
@@ -67,7 +67,7 @@ export function HistoricoExecucoes() {
               {(data ?? []).length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-10 text-center text-cc-muted">
-                    Nenhuma execucao registrada ainda.
+                    Nenhuma execução registrada ainda.
                   </td>
                 </tr>
               )}

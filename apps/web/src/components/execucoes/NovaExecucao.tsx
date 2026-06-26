@@ -20,7 +20,7 @@ export function NovaExecucao() {
       setErro(null);
       void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucoes() });
     },
-    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao disparar execucao'),
+    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao disparar execução'),
   });
 
   if (execucaoId) {
@@ -32,7 +32,7 @@ export function NovaExecucao() {
   return (
     <section className="space-y-6">
       <div className="page-header">
-        <h1 className="page-title">Nova execucao</h1>
+        <h1 className="page-title">Nova execução</h1>
       </div>
 
       <div className="card max-w-md p-6">
@@ -45,7 +45,7 @@ export function NovaExecucao() {
         >
           <div>
             <label htmlFor="competencia" className="field-label mb-1.5">
-              Competencia
+              Competência
             </label>
             <input
               id="competencia"
@@ -66,7 +66,7 @@ export function NovaExecucao() {
             disabled={!competenciaValida || disparar.isPending}
             className="btn-primary w-full py-2.5"
           >
-            {disparar.isPending ? 'Disparando...' : 'Processar competencia'}
+            {disparar.isPending ? 'Disparando...' : 'Processar competência'}
           </button>
         </form>
       </div>
@@ -82,13 +82,13 @@ function Acompanhamento({ execucaoId, onNova }: { execucaoId: string; onNova: ()
     <section className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Execucao em andamento</h1>
+          <h1 className="page-title">Execução em andamento</h1>
           {execucao?.competencia && (
             <p className="mt-0.5 text-sm text-cc-ink-2 tabular font-mono">{execucao.competencia}</p>
           )}
         </div>
         <button onClick={onNova} className="btn-ghost btn btn-sm">
-          Nova execucao
+          Nova execução
         </button>
       </div>
       <ProgressoExecucao execucaoId={execucaoId} />

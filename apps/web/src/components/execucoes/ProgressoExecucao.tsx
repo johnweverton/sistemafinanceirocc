@@ -12,7 +12,7 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
     return (
       <div role="status" aria-live="polite" className="card p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-cc-ink">Processando medicos</p>
+          <p className="text-sm font-medium text-cc-ink">Processando médicos</p>
           <span className="tabular text-sm font-semibold text-cc-accent">{execucao.progresso}%</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-cc-hairline">
@@ -29,7 +29,7 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
   if (execucao.status === 'erro') {
     return (
       <p role="alert" className="alert-error">
-        A execucao encontrou um erro. Tente reprocessar a competencia.
+        A execução encontrou um erro. Tente reprocessar a competência.
       </p>
     );
   }
@@ -42,7 +42,7 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
           </svg>
         </span>
-        <span className="text-sm font-semibold text-cc-ink">Processamento concluido</span>
+        <span className="text-sm font-semibold text-cc-ink">Processamento concluído</span>
       </div>
       <div className="grid grid-cols-3 gap-4 text-center">
         <Stat label="Ok" value={execucao.totalOk ?? 0} className="text-cc-success" />

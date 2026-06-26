@@ -11,8 +11,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <LogoCC className="h-8 w-auto" />
           </Link>
           <nav className="flex items-center gap-1">
-            <NavLink href="/medicos">Medicos</NavLink>
-            <NavLink href="/execucoes">Execucoes</NavLink>
+            <NavLink href="/medicos">Médicos</NavLink>
+            <NavLink href="/execucoes">Execuções</NavLink>
             <span className="mx-1 h-4 w-px bg-cc-hairline" />
             <LogoutButton />
           </nav>

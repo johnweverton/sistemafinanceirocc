@@ -177,7 +177,7 @@ export function MedicosManager() {
         </div>
       ) : isError ? (
         <div className="card p-8 text-center">
-          <p className="text-sm text-cc-danger">Nao foi possivel carregar a lista de medicos. Recarregue a pagina.</p>
+          <p className="text-sm text-cc-danger">Não foi possível carregar a lista de médicos. Recarregue a página.</p>
         </div>
       ) : (
         <div className="card overflow-hidden">

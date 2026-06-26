@@ -61,7 +61,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
       className="space-y-6"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="CPF (11 digitos)">
+        <Field label="CPF (11 dígitos)">
           <input
             name="cpf"
             value={form.cpf}
@@ -101,12 +101,12 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
             className="input"
           >
             <option value="credenciado">Credenciado</option>
-            <option value="nao_credenciado">Nao credenciado</option>
+            <option value="nao_credenciado">Não credenciado</option>
             <option value="nenhum">Nenhum</option>
           </select>
         </Field>
 
-        <Field label="Colaborador responsavel" optional>
+        <Field label="Colaborador responsável" optional>
           <input
             name="colaboradorResponsavel"
             value={form.colaboradorResponsavel ?? ''}
@@ -116,14 +116,14 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           />
         </Field>
 
-        <Field label="Mudanca de data">
+        <Field label="Mudança de data">
           <select
             name="modoMudancaData"
             value={form.modoMudancaData}
             onChange={(e) => set('modoMudancaData', e.target.value as FormState['modoMudancaData'])}
             className="input"
           >
-            <option value="nao">Nao muda data</option>
+            <option value="nao">Não muda data</option>
             <option value="sim">Muda data</option>
           </select>
         </Field>
@@ -141,13 +141,13 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           name="fazImobilizacoes"
           checked={form.fazImobilizacoes}
           onChange={(v) => set('fazImobilizacoes', v)}
-          label="Faz imobilizacoes"
+          label="Faz imobilizações"
         />
         <CheckField
           name="ativo"
           checked={form.ativo}
           onChange={(v) => set('ativo', v)}
-          label="Medico ativo"
+          label="Médico ativo"
         />
       </div>
 
@@ -166,27 +166,27 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           </span>
         ) : (
           <span role="alert">
-            Combinacao invalida: sem Hapvida e sem outros hospitais. Ajuste antes de salvar.
+            Combinação inválida: sem Hapvida e sem outros hospitais. Ajuste antes de salvar.
           </span>
         )}
       </div>
 
       {exigeMotivo && (
-        <Field label="Motivo da alteracao">
+        <Field label="Motivo da alteração">
           <textarea
             name="motivo"
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
             className="input resize-none"
             rows={2}
-            placeholder="Descreva o motivo da alteracao..."
+            placeholder="Descreva o motivo da alteração..."
           />
         </Field>
       )}
 
       <div className="flex items-center gap-3 pt-1">
         <button type="submit" disabled={!podeSalvar || salvando} className="btn-primary">
-          {salvando ? 'Salvando...' : 'Salvar medico'}
+          {salvando ? 'Salvando...' : 'Salvar médico'}
         </button>
       </div>
     </form>
