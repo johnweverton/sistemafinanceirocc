@@ -6,6 +6,11 @@ import { criarMedico } from '@/server/repositories/medico-repository';
 import { novoMedicoSchema } from '@/server/validation/medico-schema';
 import type { ImportarResultado } from '@/services/medicos';
 
+// Limites anti-DoS: o arquivo é lido inteiro na memória, então travamos tamanho e nº de linhas.
+// ~120 médicos/competência é o volume real (architecture); 5 MB / 5000 linhas é folga generosa.
+const MAX_CSV_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_CSV_ROWS = 5000;
+
 function parseCsv(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2 || !lines[0]) return [];
@@ -44,11 +49,25 @@ export const POST = withErrorHandler(async (req) => {
   if (!file.name.toLowerCase().endsWith('.csv')) {
     throw new ApiError(422, 'Somente arquivos .csv são aceitos', 'FORMATO_INVALIDO');
   }
+  if (file.size > MAX_CSV_BYTES) {
+    throw new ApiError(
+      413,
+      `Arquivo excede o limite de ${MAX_CSV_BYTES / (1024 * 1024)} MB`,
+      'ARQUIVO_GRANDE',
+    );
+  }
 
   const text = await file.text();
   const rows = parseCsv(text);
   if (rows.length === 0) {
     throw new ApiError(422, 'Arquivo vazio ou sem linhas de dados após o cabeçalho', 'ARQUIVO_VAZIO');
+  }
+  if (rows.length > MAX_CSV_ROWS) {
+    throw new ApiError(
+      413,
+      `Arquivo excede o limite de ${MAX_CSV_ROWS} linhas`,
+      'ARQUIVO_GRANDE',
+    );
   }
 
   const criados: string[] = [];

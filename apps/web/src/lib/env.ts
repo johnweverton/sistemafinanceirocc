@@ -10,6 +10,11 @@ const publicSchema = z.object({
 
 const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // Allowlist de e-mails que podem ser auto-provisionados como admin no primeiro acesso
+  // (bootstrap). Qualquer usuário autenticado FORA desta lista e sem perfil recebe 403 —
+  // fecha a escalação de privilégio (antes, todo usuário sem perfil virava admin).
+  // Formato: e-mails separados por vírgula. Vazio = nenhum auto-provisionamento.
+  BOOTSTRAP_ADMIN_EMAILS: z.string().optional(),
   CARMEM_API_URL: z.string().url().optional(),
   CARMEM_API_KEY: z.string().optional(),
   PROCEDIMENTOS_SOURCE: z.enum(['local', 'http']).default('local'),
@@ -43,6 +48,7 @@ export const publicEnv = publicSchema.parse({
 export function getServerEnv() {
   return serverSchema.parse({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    BOOTSTRAP_ADMIN_EMAILS: process.env.BOOTSTRAP_ADMIN_EMAILS,
     CARMEM_API_URL: process.env.CARMEM_API_URL,
     CARMEM_API_KEY: process.env.CARMEM_API_KEY,
     PROCEDIMENTOS_SOURCE: process.env.PROCEDIMENTOS_SOURCE,
