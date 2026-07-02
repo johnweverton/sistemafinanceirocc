@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Medico } from '@cobranca/shared';
-import { tipoDoMedico } from '@cobranca/shared';
+import { tipoDoMedico, cobrancaCompleta } from '@cobranca/shared';
 import { ApiClientError } from '@/lib/api-client';
 import {
   medicosService,
@@ -278,13 +278,20 @@ export function MedicosManager() {
                     {m.necessitaConfiguracao ? '-' : m.modoMudancaData === 'sim' ? 'Muda data' : 'Normal'}
                   </td>
                   <td>
-                    {m.necessitaConfiguracao ? (
-                      <span className="badge-amber">Pendente</span>
-                    ) : m.ativo ? (
-                      <span className="badge-green">Ativo</span>
-                    ) : (
-                      <span className="badge-slate">Inativo</span>
-                    )}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {m.necessitaConfiguracao ? (
+                        <span className="badge-amber">Pendente</span>
+                      ) : m.ativo ? (
+                        <span className="badge-green">Ativo</span>
+                      ) : (
+                        <span className="badge-slate">Inativo</span>
+                      )}
+                      {!m.necessitaConfiguracao && !cobrancaCompleta(m) && (
+                        <span className="badge-amber" title="Dados de cobrança incompletos — não emite boleto">
+                          Cobrança ⚠
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="text-right">
                     <span className="link-action">

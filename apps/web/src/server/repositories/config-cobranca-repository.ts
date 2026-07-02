@@ -38,6 +38,28 @@ export async function lerConfig(): Promise<ConfigCobranca> {
   return toConfig(data as ConfigCobrancaRow);
 }
 
+/** Grava (upsert) o singleton config_cobranca (id=1). Escrita restrita a admin (checada na rota). */
+export async function atualizarConfig(config: ConfigCobranca): Promise<ConfigCobranca> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('config_cobranca')
+    .upsert({
+      id: 1,
+      dias_vencimento: config.diasVencimento,
+      multa_percent: config.multaPercent,
+      juros_mes_percent: config.jurosMesPercent,
+      desconto_percent: config.descontoPercent,
+      desconto_dias: config.descontoDias,
+      updated_at: new Date().toISOString(),
+    })
+    .select('*')
+    .single();
+  if (error) {
+    throw new ApiError(500, 'Falha ao salvar config de cobrança', 'DB_ERROR', { error: error.message });
+  }
+  return toConfig(data as ConfigCobrancaRow);
+}
+
 /**
  * Resolve as condições efetivas: cada campo usa o override do médico quando definido,
  * senão herda o default global. `diasVencimento` sempre resolve para um número.

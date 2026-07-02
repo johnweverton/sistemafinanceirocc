@@ -1,4 +1,4 @@
-import type { Medico, MedicoHistorico } from '@cobranca/shared';
+import type { Medico, MedicoHistorico, DadosCobranca, CondicoesCobranca } from '@cobranca/shared';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import type { ApiErrorBody } from '@/lib/api-error';
 
@@ -17,6 +17,9 @@ export interface NovoMedicoPayload {
   modoMudancaData: Medico['modoMudancaData'];
   colaboradorResponsavel: string | null;
   ativo: boolean;
+  // Cobrança (Fase 3) — opcional; médico pode ser salvo e completado depois.
+  cobranca?: DadosCobranca | null;
+  condicoes?: CondicoesCobranca | null;
 }
 
 export type AtualizarMedicoPayload = Partial<NovoMedicoPayload> & {

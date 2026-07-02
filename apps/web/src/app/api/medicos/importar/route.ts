@@ -4,39 +4,13 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { criarMedico } from '@/server/repositories/medico-repository';
 import { novoMedicoSchema } from '@/server/validation/medico-schema';
+import { parseCsv, rowToInput } from '@/server/csv/medicos-import';
 import type { ImportarResultado } from '@/services/medicos';
 
 // Limites anti-DoS: o arquivo é lido inteiro na memória, então travamos tamanho e nº de linhas.
 // ~120 médicos/competência é o volume real (architecture); 5 MB / 5000 linhas é folga generosa.
 const MAX_CSV_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_CSV_ROWS = 5000;
-
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2 || !lines[0]) return [];
-  const headers = lines[0].split(',').map((h) => h.trim().replace(/^﻿/, ''));
-  return lines
-    .slice(1)
-    .filter((l) => l.trim())
-    .map((line) => {
-      const values = line.split(',').map((v) => v.trim());
-      return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
-    });
-}
-
-function rowToInput(row: Record<string, string>) {
-  return {
-    cpf: row.cpf ?? '',
-    nome: row.nome ?? '',
-    especialidade: row.especialidade || null,
-    statusHapvida: row.status_hapvida,
-    fazOutrosHospitais: row.faz_outros_hospitais === 'sim',
-    fazImobilizacoes: row.faz_imobilizacoes === 'sim',
-    modoMudancaData: (row.modo_mudanca_data as 'sim' | 'nao') || 'nao',
-    colaboradorResponsavel: row.colaborador_responsavel || null,
-    ativo: true,
-  };
-}
 
 export const POST = withErrorHandler(async (req) => {
   await requireRole(['admin']);

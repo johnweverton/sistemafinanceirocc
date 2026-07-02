@@ -29,6 +29,8 @@ export type NovoMedico = Pick<
   | 'modoMudancaData'
   | 'colaboradorResponsavel'
   | 'ativo'
+  | 'cobranca'
+  | 'condicoes'
 >;
 
 export async function listarMedicos(filtro: MedicoFiltro = {}): Promise<Medico[]> {

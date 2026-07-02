@@ -24,7 +24,7 @@ export const dadosCobrancaSchema = z
     cep: z.string().regex(/^\d{8}$/, 'CEP deve ter 8 dígitos sem pontuação'),
     logradouro: z.string().min(1, 'Logradouro é obrigatório'),
     numero: z.string().min(1, 'Número é obrigatório'),
-    complemento: z.string().nullable().optional().default(null),
+    complemento: z.string().nullable().default(null),
     bairro: z.string().min(1, 'Bairro é obrigatório'),
     cidade: z.string().min(1, 'Cidade é obrigatória'),
     uf: ufSchema,
@@ -36,11 +36,20 @@ export const dadosCobrancaSchema = z
 
 /** Overrides comerciais opcionais por médico (percentuais 0–100, dias 0–365). */
 export const condicoesCobrancaSchema = z.object({
-  diasVencimento: z.number().int().min(0).max(365).nullable().optional(),
-  multaPercent: z.number().min(0).max(100).nullable().optional(),
-  jurosMesPercent: z.number().min(0).max(100).nullable().optional(),
-  descontoPercent: z.number().min(0).max(100).nullable().optional(),
-  descontoDias: z.number().int().min(0).max(365).nullable().optional(),
+  diasVencimento: z.number().int().min(0).max(365).nullable().default(null),
+  multaPercent: z.number().min(0).max(100).nullable().default(null),
+  jurosMesPercent: z.number().min(0).max(100).nullable().default(null),
+  descontoPercent: z.number().min(0).max(100).nullable().default(null),
+  descontoDias: z.number().int().min(0).max(365).nullable().default(null),
+});
+
+/** Defaults globais do escritório (config_cobranca). diasVencimento é obrigatório. */
+export const configCobrancaSchema = z.object({
+  diasVencimento: z.number().int().min(0).max(365),
+  multaPercent: z.number().min(0).max(100).nullable(),
+  jurosMesPercent: z.number().min(0).max(100).nullable(),
+  descontoPercent: z.number().min(0).max(100).nullable(),
+  descontoDias: z.number().int().min(0).max(365).nullable(),
 });
 
 export const novoMedicoSchema = z.object({
