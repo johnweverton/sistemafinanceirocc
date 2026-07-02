@@ -6,10 +6,10 @@ import { RelatorioGrupos } from '@/components/execucoes/RelatorioGrupos';
 export default function ExecucaoPage({ params }: { params: { id: string } }) {
   return (
     <section className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Relatório da execução</h1>
-        <Link href="/execucoes" className="text-sm text-gray-600 underline">
-          Voltar
+      <div className="page-header">
+        <h1 className="page-title">Relatório da execução</h1>
+        <Link href="/execucoes" className="link-action">
+          ← Voltar
         </Link>
       </div>
       <ProgressoExecucao execucaoId={params.id} />

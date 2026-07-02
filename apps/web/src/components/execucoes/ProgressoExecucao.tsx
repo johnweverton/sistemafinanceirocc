@@ -12,16 +12,23 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
     return (
       <div role="status" aria-live="polite" className="card p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-cc-ink">Processando médicos</p>
+          <p className="flex items-center gap-2 text-sm font-medium text-cc-ink">
+            <span className="live-dot inline-block h-2 w-2 rounded-full bg-cc-accent" />
+            Processando médicos
+          </p>
           <span className="tabular text-sm font-semibold text-cc-accent">{execucao.progresso}%</span>
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-cc-hairline">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-cc-surface-2">
           <div
-            className="h-full rounded-full bg-cc-accent transition-all duration-500"
-            style={{ width: `${execucao.progresso}%` }}
-          />
+            className="progress-fill relative h-full overflow-hidden rounded-full transition-all duration-500"
+            style={{ width: `${Math.max(execucao.progresso, 4)}%` }}
+          >
+            <span className="progress-stripes absolute inset-0" />
+          </div>
         </div>
-        <p className="text-xs text-cc-muted">Isso pode levar alguns minutos...</p>
+        <p className="font-mono text-2xs uppercase tracking-wider text-cc-muted">
+          Isso pode levar alguns minutos…
+        </p>
       </div>
     );
   }

@@ -1,7 +1,10 @@
 'use client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
+import { TableSkeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 function brl(v: number | null): string {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -14,10 +17,13 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function HistoricoExecucoes() {
+  const router = useRouter();
   const { data, isLoading } = useQuery({
     queryKey: execucaoQueryKeys.execucoes(),
     queryFn: () => execucoesService.listar(),
   });
+
+  const execucoes = data ?? [];
 
   return (
     <section className="space-y-5">
@@ -29,13 +35,26 @@ export function HistoricoExecucoes() {
       </div>
 
       {isLoading ? (
-        <div className="card p-8 text-center">
-          <p className="text-sm text-cc-muted">Carregando...</p>
-        </div>
+        <TableSkeleton rows={5} cols={7} />
+      ) : execucoes.length === 0 ? (
+        <EmptyState
+          icon={
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+          }
+          title="Nenhuma execução registrada ainda"
+          description="Dispare o processamento de uma competência para gerar o primeiro relatório."
+          action={
+            <Link href="/execucoes/nova" className="btn-primary btn-sm btn">
+              Nova execução
+            </Link>
+          }
+        />
       ) : (
         <div className="card overflow-hidden">
           <table className="data-table">
-            <thead className="border-b border-cc-hairline bg-cc-bg/60">
+            <thead className="border-b border-cc-hairline bg-cc-surface-2">
               <tr>
                 <th>Competência</th>
                 <th>Status</th>
@@ -47,8 +66,12 @@ export function HistoricoExecucoes() {
               </tr>
             </thead>
             <tbody>
-              {(data ?? []).map((e) => (
-                <tr key={e.id}>
+              {execucoes.map((e) => (
+                <tr
+                  key={e.id}
+                  onClick={() => router.push(`/execucoes/${e.id}`)}
+                  className="cursor-pointer"
+                >
                   <td className="font-mono font-medium tabular">{e.competencia}</td>
                   <td>
                     <StatusBadge status={e.status} />
@@ -58,19 +81,16 @@ export function HistoricoExecucoes() {
                   <td className="text-right tabular text-cc-muted">{e.totalSemDados ?? '-'}</td>
                   <td className="text-right tabular font-medium">{brl(e.totalGeralValor)}</td>
                   <td className="text-right">
-                    <Link href={`/execucoes/${e.id}`} className="link-action">
+                    <Link
+                      href={`/execucoes/${e.id}`}
+                      className="link-action"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
                       Abrir
                     </Link>
                   </td>
                 </tr>
               ))}
-              {(data ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-10 text-center text-cc-muted">
-                    Nenhuma execução registrada ainda.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

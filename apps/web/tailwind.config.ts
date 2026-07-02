@@ -1,5 +1,10 @@
 import type { Config } from 'tailwindcss';
 
+// Tokens semânticos: as cores apontam para variáveis CSS (canais RGB) definidas em globals.css.
+// Isso permite trocar o tema inteiro (dark/light) via [data-theme] sem tocar nas telas —
+// os nomes `cc-*` continuam os mesmos, só a resolução muda por tema.
+const withAlpha = (v: string) => `rgb(var(${v}) / <alpha-value>)`;
+
 const config: Config = {
   content: [
     './src/app/**/*.{ts,tsx}',
@@ -9,39 +14,63 @@ const config: Config = {
     extend: {
       colors: {
         cc: {
-          navy:    '#01254c',
-          blue:    '#4e628f',
+          // superfícies e texto
+          bg:      withAlpha('--bg'),
+          surface: withAlpha('--surface'),
+          'surface-2': withAlpha('--surface-2'),
+          ink:     withAlpha('--text'),
+          'ink-2': withAlpha('--text-secondary'),
+          blue:    withAlpha('--text-secondary'),
+          muted:   withAlpha('--text-muted'),
+          hairline: withAlpha('--border'),
           white:   '#ffffff',
-          bg:      '#f3f6fb',
-          surface: '#ffffff',
-          ink:     '#01254c',
-          'ink-2': '#4e628f',
-          muted:   '#8898b8',
-          hairline:'#dde3ee',
-          'accent':       '#01254c',
-          'accent-hover': '#012040',
-          'accent-soft':  '#eaf0f8',
-          'accent-ring':  'rgba(1,37,76,0.18)',
-          success:       '#059669',
-          'success-soft':'#f0fdf4',
-          warning:       '#d97706',
-          'warning-soft':'#fffbeb',
-          danger:        '#dc2626',
-          'danger-soft': '#fef2f2',
+          // marca / accent
+          navy:          withAlpha('--accent'),
+          accent:        withAlpha('--accent'),
+          'accent-hover': withAlpha('--accent-hover'),
+          'accent-soft':  withAlpha('--accent-soft'),
+          'accent-ring':  'var(--accent-ring)',
+          // status
+          success:       withAlpha('--success'),
+          'success-soft': withAlpha('--success-soft'),
+          warning:       withAlpha('--warning'),
+          'warning-soft': withAlpha('--warning-soft'),
+          danger:        withAlpha('--danger'),
+          'danger-soft':  withAlpha('--danger-soft'),
         },
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       fontSize: {
         '2xs': ['0.6875rem', { lineHeight: '1rem' }],
       },
       boxShadow: {
-        'cc-sm':    '0 1px 2px 0 rgb(1 37 76 / 0.06)',
-        'cc-md':    '0 1px 3px 0 rgb(1 37 76 / 0.08), 0 1px 2px -1px rgb(1 37 76 / 0.05)',
-        'cc-lg':    '0 4px 6px -1px rgb(1 37 76 / 0.07), 0 2px 4px -2px rgb(1 37 76 / 0.04)',
-        'cc-focus': '0 0 0 3px rgba(1,37,76,0.15)',
+        'cc-sm':    'var(--shadow-sm)',
+        'cc-md':    'var(--shadow-md)',
+        'cc-lg':    'var(--shadow-lg)',
+        'cc-focus': '0 0 0 3px var(--accent-ring)',
+        'cc-glow':  '0 0 24px -4px var(--glow)',
+        'cc-glow-strong': '0 0 40px -6px var(--glow)',
+      },
+      backgroundImage: {
+        'cc-grid': 'var(--grid-bg)',
+        'cc-radial': 'var(--radial-bg)',
+      },
+      keyframes: {
+        'cc-fade-up': {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        'cc-pulse-glow': {
+          '0%, 100%': { opacity: '0.6' },
+          '50%': { opacity: '1' },
+        },
+      },
+      animation: {
+        'cc-fade-up': 'cc-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both',
+        'cc-pulse-glow': 'cc-pulse-glow 3s ease-in-out infinite',
       },
     },
   },

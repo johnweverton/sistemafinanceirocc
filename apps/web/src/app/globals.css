@@ -2,9 +2,87 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   TOKENS SEMÂNTICOS — canais RGB (permitem /opacity nas classes Tailwind).
+   Dark é o tema padrão (:root). Light sobrescreve via [data-theme='light'].
+   ========================================================================== */
 @layer base {
-  :root {
+  :root,
+  [data-theme='dark'] {
+    color-scheme: dark;
+
+    --bg:             10 11 15;      /* #0A0B0F  quase-preto com leve azul */
+    --surface:        20 22 28;      /* #14161C  cards */
+    --surface-2:      27 30 38;      /* #1B1E26  hover / elevado */
+    --border:         38 42 52;      /* #262A34  hairline */
+
+    --text:           230 232 238;   /* #E6E8EE */
+    --text-secondary: 155 162 179;   /* #9BA2B3 */
+    --text-muted:     110 117 135;   /* #6E7587 */
+
+    --accent:         59 130 246;    /* #3B82F6  azul elétrico */
+    --accent-hover:   96 165 250;    /* #60A5FA */
+    --accent-soft:    24 33 56;      /* tint escuro do accent */
+
+    --success:        52 211 153;    /* #34D399 */
+    --success-soft:   16 40 34;
+    --warning:        251 191 36;    /* #FBBF24 */
+    --warning-soft:   46 37 15;
+    --danger:         248 113 113;   /* #F87171 */
+    --danger-soft:    48 22 24;
+
+    --accent-ring: rgba(59, 130, 246, 0.35);
+    --glow:        rgba(59, 130, 246, 0.45);
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 2px 10px -3px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+
+    /* textura imersiva: grid sutil + halo radial do accent */
+    --grid-line: rgba(255, 255, 255, 0.028);
+    --grid-bg:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    --radial-bg:
+      radial-gradient(60rem 40rem at 50% -10%, rgba(59, 130, 246, 0.10), transparent 70%);
+  }
+
+  [data-theme='light'] {
     color-scheme: light;
+
+    --bg:             247 249 252;   /* #F7F9FC */
+    --surface:        255 255 255;
+    --surface-2:      243 246 251;
+    --border:         221 227 238;   /* #DDE3EE */
+
+    --text:           1 37 76;       /* #01254C  navy da marca */
+    --text-secondary: 78 98 143;     /* #4E628F */
+    --text-muted:     136 152 184;   /* #8898B8 */
+
+    --accent:         37 99 235;     /* #2563EB */
+    --accent-hover:   29 78 216;     /* #1D4ED8 */
+    --accent-soft:    234 240 248;   /* #EAF0F8 */
+
+    --success:        5 150 105;
+    --success-soft:   240 253 244;
+    --warning:        217 119 6;
+    --warning-soft:   255 251 235;
+    --danger:         220 38 38;
+    --danger-soft:    254 242 242;
+
+    --accent-ring: rgba(37, 99, 235, 0.22);
+    --glow:        rgba(37, 99, 235, 0.20);
+
+    --shadow-sm: 0 1px 2px 0 rgb(1 37 76 / 0.06);
+    --shadow-md: 0 1px 3px 0 rgb(1 37 76 / 0.08), 0 1px 2px -1px rgb(1 37 76 / 0.05);
+    --shadow-lg: 0 4px 6px -1px rgb(1 37 76 / 0.07), 0 2px 4px -2px rgb(1 37 76 / 0.04);
+
+    --grid-line: rgba(1, 37, 76, 0.035);
+    --grid-bg:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    --radial-bg:
+      radial-gradient(60rem 40rem at 50% -10%, rgba(37, 99, 235, 0.06), transparent 70%);
   }
 
   html {
@@ -15,84 +93,231 @@
   body {
     @apply bg-cc-bg text-cc-ink;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* transição suave ao alternar tema */
+    transition: background-color 0.4s ease, color 0.4s ease;
   }
 
+  /* Camada de textura imersiva (grid + halo), fixa e sem interferir no layout. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: var(--radial-bg), var(--grid-bg);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+  }
+
+  /* Números tabulares em mono — dá o peso "de sistema" aos valores. */
   .tabular {
+    @apply font-mono;
     font-feature-settings: 'tnum';
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Foco visível global (acessibilidade + coesão com o accent). */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgba(59, 130, 246, 0.28);
   }
 }
 
 @layer components {
   /* Inputs */
   .input {
-    @apply w-full rounded-lg border border-cc-hairline bg-cc-surface px-3 py-2 text-sm text-cc-ink placeholder:text-cc-muted
-      transition-colors
-      focus:border-cc-navy focus:outline-none focus:ring-2 focus:ring-cc-accent-ring
-      disabled:cursor-not-allowed disabled:bg-cc-bg disabled:text-cc-muted;
+    @apply w-full rounded-lg border border-cc-hairline bg-cc-surface-2 px-3 py-2 text-sm text-cc-ink placeholder:text-cc-muted
+      transition-all duration-200
+      focus:border-cc-accent focus:outline-none focus:ring-2 focus:ring-cc-accent-ring focus:shadow-cc-glow
+      disabled:cursor-not-allowed disabled:opacity-60;
   }
 
-  /* Botoes */
+  /* Botões */
   .btn {
-    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium
-      transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+      transition-all duration-200 active:scale-[0.98]
+      disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .btn-primary {
-    @apply btn bg-cc-navy text-white hover:bg-cc-accent-hover;
+    @apply btn bg-cc-accent text-white hover:bg-cc-accent-hover hover:shadow-cc-glow;
   }
   .btn-secondary {
-    @apply btn border border-cc-hairline bg-cc-surface text-cc-blue hover:border-cc-blue hover:text-cc-navy;
+    @apply btn border border-cc-hairline bg-cc-surface text-cc-ink-2 hover:border-cc-accent hover:text-cc-ink hover:bg-cc-surface-2;
   }
   .btn-ghost {
-    @apply btn text-cc-blue hover:bg-cc-accent-soft hover:text-cc-navy;
+    @apply btn text-cc-ink-2 hover:bg-cc-accent-soft hover:text-cc-ink;
   }
   .btn-danger {
-    @apply btn border border-red-200 bg-cc-danger-soft text-cc-danger hover:border-red-300;
+    @apply btn border border-cc-danger/30 bg-cc-danger-soft text-cc-danger hover:border-cc-danger/60;
   }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }
 
-  /* Labels de formulario */
+  /* Labels de formulário */
   .field-label {
-    @apply block text-xs font-semibold uppercase tracking-wide text-cc-blue;
+    @apply block text-xs font-semibold uppercase tracking-wider text-cc-ink-2;
   }
 
-  /* Card padrao */
+  /* Card padrão */
   .card {
-    @apply rounded-xl border border-cc-hairline bg-cc-surface shadow-cc-md;
+    @apply rounded-xl border border-cc-hairline bg-cc-surface shadow-cc-md
+      transition-all duration-200;
+  }
+  /* Card interativo: leve elevação + brilho no hover */
+  .card-interactive {
+    @apply card hover:border-cc-accent/40 hover:shadow-cc-glow hover:-translate-y-0.5;
   }
 
   /* Badge de status */
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-2xs font-semibold;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-2xs font-semibold ring-1 ring-inset;
   }
-  .badge-green  { @apply badge bg-cc-success-soft text-cc-success; }
-  .badge-amber  { @apply badge bg-cc-warning-soft text-cc-warning; }
-  .badge-red    { @apply badge bg-cc-danger-soft text-cc-danger; }
-  .badge-slate  { @apply badge bg-cc-accent-soft text-cc-blue; }
+  .badge-green  { @apply badge bg-cc-success-soft text-cc-success ring-cc-success/20; }
+  .badge-amber  { @apply badge bg-cc-warning-soft text-cc-warning ring-cc-warning/20; }
+  .badge-red    { @apply badge bg-cc-danger-soft  text-cc-danger  ring-cc-danger/20; }
+  .badge-slate  { @apply badge bg-cc-accent-soft  text-cc-accent  ring-cc-accent/20; }
 
-  /* Cabecalho de pagina */
+  /* Cabeçalho de página */
   .page-header { @apply mb-6 flex flex-wrap items-center justify-between gap-3; }
   .page-title  { @apply text-xl font-semibold tracking-tight text-cc-ink; }
 
-  /* Link de acao */
+  /* Link de ação */
   .link-action {
-    @apply text-sm font-medium text-cc-blue hover:text-cc-navy hover:underline underline-offset-2;
+    @apply text-sm font-medium text-cc-accent hover:text-cc-accent-hover hover:underline underline-offset-2 transition-colors;
   }
 
-  /* Tabela padrao */
+  /* Tabela padrão */
   .data-table { @apply w-full text-left text-sm; }
   .data-table th {
     @apply px-4 py-3 text-2xs font-semibold uppercase tracking-wider text-cc-muted;
   }
   .data-table td { @apply px-4 py-3 text-sm text-cc-ink; }
   .data-table tbody tr {
-    @apply border-t border-cc-hairline transition-colors hover:bg-cc-bg/70;
+    @apply border-t border-cc-hairline transition-colors hover:bg-cc-surface-2;
   }
 
   /* Alertas */
-  .alert-error   { @apply rounded-lg border border-red-200 bg-cc-danger-soft px-4 py-3 text-sm text-cc-danger; }
-  .alert-success { @apply rounded-lg border border-emerald-200 bg-cc-success-soft px-4 py-3 text-sm text-cc-success; }
-  .alert-warning { @apply rounded-lg border border-amber-200 bg-cc-warning-soft px-4 py-3 text-sm text-cc-warning; }
+  .alert-error   { @apply rounded-lg border border-cc-danger/25  bg-cc-danger-soft  px-4 py-3 text-sm text-cc-danger; }
+  .alert-success { @apply rounded-lg border border-cc-success/25 bg-cc-success-soft px-4 py-3 text-sm text-cc-success; }
+  .alert-warning { @apply rounded-lg border border-cc-warning/25 bg-cc-warning-soft px-4 py-3 text-sm text-cc-warning; }
+}
+
+/* ============================================================================
+   LOGO 3D — rotação em Y com perspectiva (efeito "moeda"). Respeita reduced-motion.
+   ========================================================================== */
+@keyframes cc-spin-3d {
+  from { transform: rotateY(0deg); }
+  to   { transform: rotateY(360deg); }
+}
+
+@keyframes cc-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+@keyframes cc-toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes cc-progress-stripes {
+  0%   { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+
+@layer utilities {
+  .logo-3d-wrap {
+    perspective: 800px;
+    display: inline-flex;
+  }
+  .logo-3d {
+    transform-style: preserve-3d;
+    backface-visibility: visible;
+    animation: cc-spin-3d 9s linear infinite;
+    will-change: transform;
+  }
+  .logo-3d-slow {
+    animation-duration: 16s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .logo-3d {
+      animation: none;
+    }
+  }
+
+  /* Superfície "vidro": header translúcido com blur. */
+  .glass {
+    background: rgb(var(--surface) / 0.72);
+    backdrop-filter: saturate(150%) blur(12px);
+    -webkit-backdrop-filter: saturate(150%) blur(12px);
+  }
+  /* Texto com brilho do accent (para marca/destaques). */
+  .text-glow {
+    text-shadow: 0 0 24px var(--glow);
+  }
+  /* Brilho ao redor de um elemento (logo, ícone). */
+  .drop-glow {
+    filter: drop-shadow(0 0 14px var(--glow));
+  }
+
+  /* Skeleton com brilho deslizante (loading). */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-cc-surface-2;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--text) / 0.06),
+      transparent
+    );
+    animation: cc-shimmer 1.5s infinite;
+  }
+
+  /* Barra de progresso com listras animadas + glow. */
+  .progress-fill {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--accent)),
+      rgb(var(--accent-hover))
+    );
+    box-shadow: 0 0 16px -2px var(--glow);
+  }
+  .progress-stripes {
+    background-image: linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.18) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.18) 50%,
+      rgba(255, 255, 255, 0.18) 75%,
+      transparent 75%,
+      transparent
+    );
+    background-size: 40px 40px;
+    animation: cc-progress-stripes 1s linear infinite;
+  }
+
+  /* Ponto pulsante (status "ao vivo"). */
+  .live-dot {
+    animation: cc-pulse-glow 1.6s ease-in-out infinite;
+    box-shadow: 0 0 0 0 var(--glow);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after,
+    .progress-stripes,
+    .live-dot {
+      animation: none;
+    }
+  }
 }

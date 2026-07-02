@@ -12,12 +12,16 @@ import {
   type AtualizarMedicoPayload,
   type ImportarResultado,
 } from '@/services/medicos';
+import { TableSkeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useToast } from '@/components/ui/Toast';
 import { MedicoForm } from './MedicoForm';
 
 type Modo = { tipo: 'lista' } | { tipo: 'novo' } | { tipo: 'editar'; medico: Medico };
 
 export function MedicosManager() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
@@ -30,9 +34,16 @@ export function MedicosManager() {
       setImportResult(resultado);
       setErro(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (resultado.erros.length === 0) {
+        toast(`${resultado.criados} médico(s) importado(s) com sucesso`, 'success');
+      } else {
+        toast(`Importação com ${resultado.erros.length} erro(s) — veja os detalhes`, 'info');
+      }
     },
     onError: (e) => {
-      setErro(e instanceof ApiClientError ? e.message : 'Erro na importacao');
+      const msg = e instanceof ApiClientError ? e.message : 'Erro na importacao';
+      setErro(msg);
+      toast(msg, 'error');
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
   });
@@ -48,24 +59,34 @@ export function MedicosManager() {
 
   const criar = useMutation({
     mutationFn: (p: NovoMedicoPayload) => medicosService.criar(p),
-    onSuccess: () => {
+    onSuccess: (m) => {
       void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
       setModo({ tipo: 'lista' });
       setErro(null);
+      toast(`Médico ${m.nome} cadastrado`, 'success');
     },
-    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao salvar'),
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao salvar';
+      setErro(msg);
+      toast(msg, 'error');
+    },
   });
 
   const atualizar = useMutation({
     mutationFn: ({ id, p }: { id: string; p: AtualizarMedicoPayload }) =>
       medicosService.atualizar(id, p),
-    onSuccess: (_d, vars) => {
+    onSuccess: (m, vars) => {
       void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
       void qc.invalidateQueries({ queryKey: queryKeys.medicoHistorico(vars.id) });
       setModo({ tipo: 'lista' });
       setErro(null);
+      toast(`Alterações de ${m.nome} salvas`, 'success');
     },
-    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao salvar'),
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao salvar';
+      setErro(msg);
+      toast(msg, 'error');
+    },
   });
 
   if (modo.tipo === 'novo') {
@@ -199,17 +220,32 @@ export function MedicosManager() {
       })()}
 
       {isLoading ? (
-        <div className="card p-8 text-center">
-          <p className="text-sm text-cc-muted">Carregando...</p>
-        </div>
+        <TableSkeleton rows={6} cols={6} />
       ) : isError ? (
         <div className="card p-8 text-center">
           <p className="text-sm text-cc-danger">Não foi possível carregar a lista de médicos. Recarregue a página.</p>
         </div>
+      ) : (medicos ?? []).length === 0 ? (
+        <EmptyState
+          icon={
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          }
+          title="Nenhum médico cadastrado ainda"
+          description="Cadastre manualmente ou importe uma planilha CSV para começar."
+          action={
+            <button onClick={() => setModo({ tipo: 'novo' })} className="btn-primary btn-sm btn">
+              Novo médico
+            </button>
+          }
+        />
       ) : (
         <div className="card overflow-hidden">
           <table className="data-table">
-            <thead className="border-b border-cc-hairline bg-cc-bg/60">
+            <thead className="border-b border-cc-hairline bg-cc-surface-2">
               <tr>
                 <th>Nome</th>
                 <th>CPF</th>
@@ -221,7 +257,14 @@ export function MedicosManager() {
             </thead>
             <tbody>
               {(medicos ?? []).map((m) => (
-                <tr key={m.id} className={m.necessitaConfiguracao ? 'opacity-70' : ''}>
+                <tr
+                  key={m.id}
+                  onClick={() => {
+                    setErro(null);
+                    setModo({ tipo: 'editar', medico: m });
+                  }}
+                  className={`cursor-pointer ${m.necessitaConfiguracao ? 'opacity-70' : ''}`}
+                >
                   <td className="font-medium">{m.nome}</td>
                   <td className="font-mono text-cc-ink-2 tabular">{formatCpf(m.cpf)}</td>
                   <td>
@@ -244,25 +287,12 @@ export function MedicosManager() {
                     )}
                   </td>
                   <td className="text-right">
-                    <button
-                      onClick={() => {
-                        setErro(null);
-                        setModo({ tipo: 'editar', medico: m });
-                      }}
-                      className="link-action"
-                    >
+                    <span className="link-action">
                       {m.necessitaConfiguracao ? 'Configurar' : 'Editar'}
-                    </button>
+                    </span>
                   </td>
                 </tr>
               ))}
-              {(medicos ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-cc-muted">
-                    Nenhum médico cadastrado ainda.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

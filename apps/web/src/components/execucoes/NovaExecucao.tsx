@@ -6,9 +6,11 @@ import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { ProgressoExecucao } from './ProgressoExecucao';
 import { RelatorioGrupos } from './RelatorioGrupos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
+import { useToast } from '@/components/ui/Toast';
 
 export function NovaExecucao() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [competencia, setCompetencia] = useState('');
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -19,8 +21,13 @@ export function NovaExecucao() {
       setExecucaoId(execucaoId);
       setErro(null);
       void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucoes() });
+      toast('Execução iniciada — acompanhe o progresso', 'success');
     },
-    onError: (e) => setErro(e instanceof ApiClientError ? e.message : 'Erro ao disparar execução'),
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao disparar execução';
+      setErro(msg);
+      toast(msg, 'error');
+    },
   });
 
   if (execucaoId) {
