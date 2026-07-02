@@ -7,13 +7,36 @@
 //   5. Idempotente: se já existe boleto emitido, retorna 409.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { cobrancaCompleta } from '@cobranca/shared';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { getServerEnv } from '@/lib/env';
 import { requireRole } from '@/server/auth/require-role';
 import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
 import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
+import { buscarMedico } from '@/server/repositories/medico-repository';
+import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
+
+/** Lista os campos obrigatórios de cobrança ainda vazios (para mensagem do 422). */
+function camposFaltantesCobranca(cobranca: NonNullable<Awaited<ReturnType<typeof buscarMedico>>>['cobranca']): string[] {
+  if (!cobranca) return ['dados de cobrança'];
+  const req: Record<string, unknown> = {
+    pagadorTipo: cobranca.pagadorTipo,
+    pagadorDocumento: cobranca.pagadorDocumento,
+    pagadorNome: cobranca.pagadorNome,
+    email: cobranca.email,
+    cep: cobranca.cep,
+    logradouro: cobranca.logradouro,
+    numero: cobranca.numero,
+    bairro: cobranca.bairro,
+    cidade: cobranca.cidade,
+    uf: cobranca.uf,
+  };
+  return Object.entries(req)
+    .filter(([, v]) => !v || String(v).trim() === '')
+    .map(([k]) => k);
+}
 
 const bodySchema = z.object({
   execucaoResultadoId: z.string().uuid(),
@@ -64,7 +87,32 @@ export const POST = withErrorHandler(async (req) => {
     throw new ApiError(400, 'Resultado sem valor para cobrar', 'VALOR_ZERO');
   }
 
-  // 5. Idempotência: verificar se já existe boleto emitido.
+  // 5. Carregar o médico do resultado — o pagador do boleto vem do bloco de cobrança dele
+  //    (não do CPF do resultado, que é só a chave de cruzamento com a API da Carmem).
+  if (!resultadoRow.medico_id) {
+    throw new ApiError(422, 'Resultado sem médico vinculado — não é possível cobrar', 'SEM_MEDICO');
+  }
+  const medico = await buscarMedico(resultadoRow.medico_id);
+  if (!medico) {
+    throw new ApiError(404, 'Médico do resultado não encontrado', 'MEDICO_NAO_ENCONTRADO');
+  }
+
+  // 6. Guard: falhar cedo (aqui, não no Cora) se a cobrança estiver incompleta.
+  if (!cobrancaCompleta(medico)) {
+    throw new ApiError(
+      422,
+      'Dados de cobrança do médico incompletos — complete antes de emitir o boleto.',
+      'COBRANCA_INCOMPLETA',
+      { faltantes: camposFaltantesCobranca(medico.cobranca) },
+    );
+  }
+  const cobranca = medico.cobranca!; // garantido por cobrancaCompleta
+
+  // 7. Resolver as condições comerciais efetivas (override do médico ?? default global).
+  const config = await lerConfig();
+  const condicoes = resolverCondicoes(config, medico.condicoes);
+
+  // 8. Idempotência: verificar se já existe boleto emitido.
   const boletoExistente = await buscarBoletoEmitido(body.execucaoResultadoId);
   if (boletoExistente) {
     return NextResponse.json(
@@ -79,14 +127,28 @@ export const POST = withErrorHandler(async (req) => {
     );
   }
 
-  // 6. Emitir via gateway.
+  // 9. Emitir via gateway com o pagador completo.
   const { gateway, nome: nomeGateway } = criarBoletoGateway();
   const emissao = await gateway.emitir({
     execucaoResultadoId: body.execucaoResultadoId,
-    cpfMedico: resultadoRow.cpf,
-    nomeMedico: resultadoRow.nome,
     competencia: resultadoRow.execucoes.competencia,
     valor: Number(resultadoRow.total_valor),
+    pagador: {
+      nome: cobranca.pagadorNome,
+      documento: cobranca.pagadorDocumento,
+      tipo: cobranca.pagadorTipo === 'PF' ? 'CPF' : 'CNPJ',
+      email: cobranca.email,
+      endereco: {
+        cep: cobranca.cep,
+        logradouro: cobranca.logradouro,
+        numero: cobranca.numero,
+        complemento: cobranca.complemento,
+        bairro: cobranca.bairro,
+        cidade: cobranca.cidade,
+        uf: cobranca.uf,
+      },
+    },
+    condicoes,
   });
 
   // 7. Persistir na tabela de auditoria (sempre — mesmo falha).

@@ -5,10 +5,30 @@ import type { DadosEmissaoBoleto } from '@cobranca/shared';
 
 const dadosPadrao: DadosEmissaoBoleto = {
   execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
-  cpfMedico: '12345678901',
-  nomeMedico: 'Dr. Teste',
   competencia: '2025-06',
   valor: 1500.0,
+  pagador: {
+    nome: 'Dr. Teste',
+    documento: '12345678901',
+    tipo: 'CPF',
+    email: 'dr.teste@exemplo.com',
+    endereco: {
+      cep: '60000000',
+      logradouro: 'Rua A',
+      numero: '100',
+      complemento: null,
+      bairro: 'Centro',
+      cidade: 'Fortaleza',
+      uf: 'CE',
+    },
+  },
+  condicoes: {
+    diasVencimento: 30,
+    multaPercent: null,
+    jurosMesPercent: null,
+    descontoPercent: null,
+    descontoDias: null,
+  },
 };
 
 describe('MockGateway', () => {
@@ -28,7 +48,7 @@ describe('MockGateway', () => {
 
     expect(payload.mock).toBe(true);
     expect(payload.valor).toBe(1500.0);
-    expect(payload.cpf).toBe('12345678901');
+    expect(payload.documento).toBe('12345678901');
     expect(payload.nome).toBe('Dr. Teste');
     expect(payload.competencia).toBe('2025-06');
   });

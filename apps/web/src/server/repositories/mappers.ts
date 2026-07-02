@@ -20,8 +20,62 @@ export interface MedicoRow {
   colaborador_responsavel: string | null;
   ativo: boolean;
   necessita_configuracao: boolean;
+  // Dados de cobrança (migration 0006) — todas nullable.
+  pagador_tipo: 'PF' | 'PJ' | null;
+  pagador_documento: string | null;
+  pagador_nome: string | null;
+  email: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  // Overrides comerciais (migration 0006) — nullable.
+  dias_vencimento: number | null;
+  multa_percent: number | null;
+  juros_mes_percent: number | null;
+  desconto_percent: number | null;
+  desconto_dias: number | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Monta o bloco de cobrança; null se não há sinal de configuração (pagador_tipo ausente). */
+function toDadosCobranca(row: MedicoRow): Medico['cobranca'] {
+  if (!row.pagador_tipo) return null;
+  return {
+    pagadorTipo: row.pagador_tipo,
+    pagadorDocumento: row.pagador_documento ?? '',
+    pagadorNome: row.pagador_nome ?? '',
+    email: row.email ?? '',
+    cep: row.cep ?? '',
+    logradouro: row.logradouro ?? '',
+    numero: row.numero ?? '',
+    complemento: row.complemento,
+    bairro: row.bairro ?? '',
+    cidade: row.cidade ?? '',
+    uf: row.uf ?? '',
+  };
+}
+
+/** Overrides comerciais; null se nenhum campo definido (todos herdam o global). */
+function toCondicoes(row: MedicoRow): Medico['condicoes'] {
+  const algum =
+    row.dias_vencimento != null ||
+    row.multa_percent != null ||
+    row.juros_mes_percent != null ||
+    row.desconto_percent != null ||
+    row.desconto_dias != null;
+  if (!algum) return null;
+  return {
+    diasVencimento: row.dias_vencimento,
+    multaPercent: row.multa_percent,
+    jurosMesPercent: row.juros_mes_percent,
+    descontoPercent: row.desconto_percent,
+    descontoDias: row.desconto_dias,
+  };
 }
 
 export function toMedico(row: MedicoRow): Medico {
@@ -37,6 +91,8 @@ export function toMedico(row: MedicoRow): Medico {
     colaboradorResponsavel: row.colaborador_responsavel,
     ativo: row.ativo,
     necessitaConfiguracao: row.necessita_configuracao ?? false,
+    cobranca: toDadosCobranca(row),
+    condicoes: toCondicoes(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -82,9 +138,42 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
   };
   const row: Partial<MedicoRow> = {};
   for (const [campo, valor] of Object.entries(dados)) {
+    // Blocos aninhados são achatados separadamente abaixo.
+    if (campo === 'cobranca' || campo === 'condicoes') continue;
     const col = map[campo];
     if (col) (row as Record<string, unknown>)[col] = valor;
   }
+
+  // Achata o bloco de cobrança (camelCase → snake_case).
+  if (dados.cobranca) {
+    const c = dados.cobranca;
+    Object.assign(row, {
+      pagador_tipo: c.pagadorTipo,
+      pagador_documento: c.pagadorDocumento,
+      pagador_nome: c.pagadorNome,
+      email: c.email,
+      cep: c.cep,
+      logradouro: c.logradouro,
+      numero: c.numero,
+      complemento: c.complemento,
+      bairro: c.bairro,
+      cidade: c.cidade,
+      uf: c.uf,
+    } satisfies Partial<MedicoRow>);
+  }
+
+  // Achata os overrides comerciais.
+  if (dados.condicoes) {
+    const o = dados.condicoes;
+    Object.assign(row, {
+      dias_vencimento: o.diasVencimento,
+      multa_percent: o.multaPercent,
+      juros_mes_percent: o.jurosMesPercent,
+      desconto_percent: o.descontoPercent,
+      desconto_dias: o.descontoDias,
+    } satisfies Partial<MedicoRow>);
+  }
+
   return row;
 }
 

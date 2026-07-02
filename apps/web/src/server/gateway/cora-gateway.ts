@@ -7,9 +7,44 @@
 //   3. Invoice criada via POST /invoices com o bearer token + mTLS.
 //
 // Sem certificado real, este gateway não funciona — o mock-gateway.ts é o fallback.
-import type { BoletoGatewayPort, DadosEmissaoBoleto, EmissaoBoleto } from '@cobranca/shared';
+import type {
+  BoletoGatewayPort,
+  DadosEmissaoBoleto,
+  EmissaoBoleto,
+  CondicoesEmissao,
+} from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
 import https from 'node:https';
+
+/** Data de vencimento = hoje + diasVencimento, no formato AAAA-MM-DD. */
+function calcularVencimento(diasVencimento: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + diasVencimento);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Monta o bloco payment_terms do Cora a partir das condições resolvidas.
+ * Multa/juros/desconto só entram quando têm valor (omitidos quando nulos).
+ */
+function montarPaymentTerms(condicoes: CondicoesEmissao): Record<string, unknown> {
+  const terms: Record<string, unknown> = {
+    due_date: calcularVencimento(condicoes.diasVencimento),
+  };
+  if (condicoes.multaPercent != null) {
+    terms.fine = { amount: condicoes.multaPercent };
+  }
+  if (condicoes.jurosMesPercent != null) {
+    terms.interest = { rate: condicoes.jurosMesPercent };
+  }
+  if (condicoes.descontoPercent != null) {
+    terms.discount = {
+      amount: condicoes.descontoPercent,
+      ...(condicoes.descontoDias != null ? { days: condicoes.descontoDias } : {}),
+    };
+  }
+  return terms;
+}
 
 /** Decodifica base64 de env var para Buffer (PEM). */
 function decodificarBase64(base64: string): Buffer {
@@ -137,23 +172,29 @@ export class CoraGateway implements BoletoGatewayPort {
       const token = await this.obterToken();
 
       // Monta o payload conforme o contrato POST /invoices da Cora.
-      // Vencimento: 30 dias a partir de agora (padrão do escritório).
-      const vencimento = new Date();
-      vencimento.setDate(vencimento.getDate() + 30);
+      const { pagador, condicoes } = dados;
 
       const invoicePayload = {
         amount: Math.round(dados.valor * 100), // Cora usa centavos
         code: dados.execucaoResultadoId.slice(0, 20), // referência interna
         customer: {
-          name: dados.nomeMedico,
+          name: pagador.nome,
+          email: pagador.email,
           document: {
-            identity: dados.cpfMedico.replace(/\D/g, ''),
-            type: 'CPF',
+            identity: pagador.documento.replace(/\D/g, ''),
+            type: pagador.tipo, // 'CPF' | 'CNPJ' dinâmico
+          },
+          address: {
+            street: pagador.endereco.logradouro,
+            number: pagador.endereco.numero,
+            district: pagador.endereco.bairro,
+            city: pagador.endereco.cidade,
+            state: pagador.endereco.uf,
+            complement: pagador.endereco.complemento ?? undefined,
+            zip_code: pagador.endereco.cep,
           },
         },
-        payment_terms: {
-          due_date: vencimento.toISOString().slice(0, 10), // AAAA-MM-DD
-        },
+        payment_terms: montarPaymentTerms(condicoes),
         services: [
           {
             name: `Cobrança competência ${dados.competencia}`,
@@ -207,4 +248,4 @@ export class CoraGateway implements BoletoGatewayPort {
 }
 
 // Exporta também as funções internas para testes unitários com mocks.
-export { criarAgentMtls, fetchMtls };
+export { criarAgentMtls, fetchMtls, calcularVencimento, montarPaymentTerms };

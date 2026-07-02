@@ -4,6 +4,40 @@
 export type StatusHapvida = 'credenciado' | 'nao_credenciado' | 'nenhum';
 export type ModoMudancaData = 'sim' | 'nao';
 
+/** Tipo de pessoa do pagador do boleto — independente do CPF-chave do médico. */
+export type PagadorTipo = 'PF' | 'PJ';
+
+/**
+ * Dados de cobrança do pagador — exigidos pela API do Cora para emitir boleto registrado.
+ * `pagadorDocumento` é o CPF (11) ou CNPJ (14) do pagador, distinto de `Medico.cpf`
+ * (que segue como chave de cruzamento com a API da Carmem).
+ */
+export interface DadosCobranca {
+  pagadorTipo: PagadorTipo;
+  pagadorDocumento: string; // 11 (CPF) ou 14 (CNPJ) dígitos, sem pontuação
+  pagadorNome: string; // nome ou razão social
+  email: string;
+  cep: string; // 8 dígitos
+  logradouro: string;
+  numero: string;
+  complemento: string | null; // único opcional
+  bairro: string;
+  cidade: string;
+  uf: string; // sigla de 2 letras
+}
+
+/**
+ * Condições comerciais opcionais por médico (overrides). Cada campo nulo herda o default
+ * global de `config_cobranca` na resolução da emissão.
+ */
+export interface CondicoesCobranca {
+  diasVencimento: number | null;
+  multaPercent: number | null;
+  jurosMesPercent: number | null;
+  descontoPercent: number | null;
+  descontoDias: number | null;
+}
+
 export interface Medico {
   id: string;
   cpf: string; // 11 dígitos, sem pontuação — chave de cruzamento com a API externa
@@ -17,8 +51,39 @@ export interface Medico {
   ativo: boolean;
   /** true = médico auto-descoberto, parâmetros de faturamento ainda não configurados. */
   necessitaConfiguracao: boolean;
+  /** Bloco de cobrança do pagador; null enquanto não configurado (Fase 3). */
+  cobranca?: DadosCobranca | null;
+  /** Overrides comerciais; null/campos nulos herdam config_cobranca global. */
+  condicoes?: CondicoesCobranca | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Regra única de completude de cobrança: retorna true somente quando o bloco existe e todos
+ * os campos obrigatórios estão preenchidos (complemento é opcional), com documento coerente
+ * ao tipo (CPF=11, CNPJ=14 dígitos). Reutilizado pela UI e pelo guard de emissão.
+ */
+export function cobrancaCompleta(m: Pick<Medico, 'cobranca'>): boolean {
+  const c = m.cobranca;
+  if (!c) return false;
+  const obrigatorios = [
+    c.pagadorTipo,
+    c.pagadorDocumento,
+    c.pagadorNome,
+    c.email,
+    c.cep,
+    c.logradouro,
+    c.numero,
+    c.bairro,
+    c.cidade,
+    c.uf,
+  ];
+  if (obrigatorios.some((v) => !v || String(v).trim() === '')) return false;
+  const tamDoc = c.pagadorDocumento.replace(/\D/g, '').length;
+  if (c.pagadorTipo === 'PF' && tamDoc !== 11) return false;
+  if (c.pagadorTipo === 'PJ' && tamDoc !== 14) return false;
+  return true;
 }
 
 // TIPO é derivado, nunca persistido como campo editável (PRD §5.1, §8.2).

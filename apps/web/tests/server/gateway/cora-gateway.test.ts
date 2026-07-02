@@ -38,10 +38,30 @@ vi.mock('node:https', () => ({
 
 const dadosPadrao: DadosEmissaoBoleto = {
   execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
-  cpfMedico: '12345678901',
-  nomeMedico: 'Dr. Teste',
   competencia: '2025-06',
   valor: 1500.0,
+  pagador: {
+    nome: 'Dr. Teste',
+    documento: '12345678901',
+    tipo: 'CPF',
+    email: 'dr.teste@exemplo.com',
+    endereco: {
+      cep: '60000000',
+      logradouro: 'Rua A',
+      numero: '100',
+      complemento: 'Sala 2',
+      bairro: 'Centro',
+      cidade: 'Fortaleza',
+      uf: 'CE',
+    },
+  },
+  condicoes: {
+    diasVencimento: 30,
+    multaPercent: null,
+    jurosMesPercent: null,
+    descontoPercent: null,
+    descontoDias: null,
+  },
 };
 
 /** Simula uma resposta HTTP do node:https.request. */
@@ -195,5 +215,73 @@ describe('CoraGateway', () => {
     await gateway.emitir({ ...dadosPadrao, valor: 1234.56 });
 
     expect(invoicePayload.amount).toBe(123456); // centavos
+
+    // customer completo: nome, email, documento tipado e endereço mapeado.
+    const customer = invoicePayload.customer as Record<string, any>;
+    expect(customer.name).toBe('Dr. Teste');
+    expect(customer.email).toBe('dr.teste@exemplo.com');
+    expect(customer.document).toEqual({ identity: '12345678901', type: 'CPF' });
+    expect(customer.address).toEqual(
+      expect.objectContaining({
+        street: 'Rua A',
+        number: '100',
+        district: 'Centro',
+        city: 'Fortaleza',
+        state: 'CE',
+        zip_code: '60000000',
+        complement: 'Sala 2',
+      }),
+    );
+    // sem multa/juros/desconto → payment_terms só com due_date.
+    const terms = invoicePayload.payment_terms as Record<string, unknown>;
+    expect(terms.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(terms.fine).toBeUndefined();
+    expect(terms.interest).toBeUndefined();
+    expect(terms.discount).toBeUndefined();
+  });
+
+  it('document.type = CNPJ quando pagador é PJ e inclui multa/juros/desconto', async () => {
+    let invoicePayload: Record<string, unknown> = {};
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(
+        (
+          _o: unknown,
+          callback: (res: { statusCode: number; statusMessage: string; headers: Record<string, string>; on: (event: string, handler: (data?: unknown) => void) => void }) => void,
+        ) => {
+          const res = {
+            statusCode: 201,
+            statusMessage: 'Created',
+            headers: { 'content-type': 'application/json' },
+            on: (event: string, handler: (data?: unknown) => void) => {
+              if (event === 'data') handler(Buffer.from(JSON.stringify({ id: 'inv_pj' })));
+              if (event === 'end') handler();
+            },
+          };
+          callback(res);
+          return {
+            on: vi.fn(),
+            setTimeout: vi.fn(),
+            write: vi.fn((data: string) => { invoicePayload = JSON.parse(data); }),
+            end: vi.fn(),
+            destroy: vi.fn(),
+          };
+        },
+      );
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const gateway = new CoraGateway();
+    await gateway.emitir({
+      ...dadosPadrao,
+      pagador: { ...dadosPadrao.pagador, tipo: 'CNPJ', documento: '12345678000199' },
+      condicoes: { diasVencimento: 15, multaPercent: 2, jurosMesPercent: 1, descontoPercent: 5, descontoDias: 3 },
+    });
+
+    const customer = invoicePayload.customer as Record<string, any>;
+    expect(customer.document).toEqual({ identity: '12345678000199', type: 'CNPJ' });
+    const terms = invoicePayload.payment_terms as Record<string, any>;
+    expect(terms.fine).toEqual({ amount: 2 });
+    expect(terms.interest).toEqual({ rate: 1 });
+    expect(terms.discount).toEqual({ amount: 5, days: 3 });
   });
 });

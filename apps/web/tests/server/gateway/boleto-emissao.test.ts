@@ -42,6 +42,44 @@ vi.mock('@/lib/supabase/admin', () => ({
   getSupabaseAdmin: () => ({ from: mockSupabaseFrom }),
 }));
 
+const mockBuscarMedico = vi.fn();
+vi.mock('@/server/repositories/medico-repository', () => ({
+  buscarMedico: (...args: unknown[]) => mockBuscarMedico(...args),
+}));
+
+const mockLerConfig = vi.fn();
+const mockResolverCondicoes = vi.fn();
+vi.mock('@/server/repositories/config-cobranca-repository', () => ({
+  lerConfig: (...args: unknown[]) => mockLerConfig(...args),
+  resolverCondicoes: (...args: unknown[]) => mockResolverCondicoes(...args),
+}));
+
+/** Bloco de cobrança completo (passa cobrancaCompleta). */
+const cobrancaCompletaFixture = {
+  pagadorTipo: 'PF' as const,
+  pagadorDocumento: '12345678901',
+  pagadorNome: 'Dr. Teste',
+  email: 'dr.teste@exemplo.com',
+  cep: '60000000',
+  logradouro: 'Rua A',
+  numero: '100',
+  complemento: null,
+  bairro: 'Centro',
+  cidade: 'Fortaleza',
+  uf: 'CE',
+};
+
+/** Médico completo para os testes de emissão. */
+function medicoFixture(cobranca: unknown = cobrancaCompletaFixture) {
+  return {
+    id: '00000000-0000-0000-0000-000000000010',
+    cpf: '12345678901',
+    nome: 'Dr. Teste',
+    cobranca,
+    condicoes: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Helper para simular o handler da rota
 // ---------------------------------------------------------------------------
@@ -62,6 +100,7 @@ function simularResultadoBanco(overrides: Partial<{
   total_valor: number;
   cpf: string;
   nome: string;
+  medico_id: string | null;
   execucoes: { competencia: string };
 }> = {}) {
   const resultado = {
@@ -100,6 +139,13 @@ describe('Lógica de emissão de boleto', () => {
       colaboradorResponsavel: null,
     });
     mockBuscarBoletoEmitido.mockResolvedValue(null);
+    mockBuscarMedico.mockResolvedValue(medicoFixture());
+    mockLerConfig.mockResolvedValue({
+      diasVencimento: 30, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null,
+    });
+    mockResolverCondicoes.mockReturnValue({
+      diasVencimento: 30, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null,
+    });
     mockGatewayEmitir.mockResolvedValue({
       idExterno: 'MOCK-123',
       status: 'emitido',
@@ -185,13 +231,19 @@ describe('Lógica de emissão de boleto', () => {
     expect(body.boleto.status).toBe('emitido');
     expect(body.boleto.gateway).toBe('mock');
 
-    // Verificar que o gateway foi chamado com dados corretos.
+    // Verificar que o gateway foi chamado com o pagador completo (novo contrato).
     expect(mockGatewayEmitir).toHaveBeenCalledWith(
       expect.objectContaining({
-        cpfMedico: '12345678901',
-        nomeMedico: 'Dr. Teste',
         competencia: '2025-06',
         valor: 1500,
+        pagador: expect.objectContaining({
+          nome: 'Dr. Teste',
+          documento: '12345678901',
+          tipo: 'CPF',
+          email: 'dr.teste@exemplo.com',
+          endereco: expect.objectContaining({ cep: '60000000', uf: 'CE' }),
+        }),
+        condicoes: expect.objectContaining({ diasVencimento: 30 }),
       }),
     );
 
@@ -203,6 +255,35 @@ describe('Lógica de emissão de boleto', () => {
         emitidoPor: 'user-123',
       }),
     );
+  });
+
+  it('retorna 422 COBRANCA_INCOMPLETA quando o médico não tem cobrança completa', async () => {
+    mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
+    simularResultadoBanco();
+    mockBuscarMedico.mockResolvedValue(medicoFixture(null)); // sem bloco de cobrança
+
+    const { POST } = await import('@/app/api/boletos/emitir/route');
+    const req = criarRequest({ execucaoResultadoId: '00000000-0000-0000-0000-000000000001' });
+    const resp = await POST(req, { params: {} });
+
+    expect(resp.status).toBe(422);
+    const body = await resp.json();
+    expect(body.error.code).toBe('COBRANCA_INCOMPLETA');
+    // Não deve chamar o gateway (falha cedo).
+    expect(mockGatewayEmitir).not.toHaveBeenCalled();
+  });
+
+  it('retorna 422 SEM_MEDICO quando o resultado não tem medico_id', async () => {
+    mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
+    simularResultadoBanco({ medico_id: null });
+
+    const { POST } = await import('@/app/api/boletos/emitir/route');
+    const req = criarRequest({ execucaoResultadoId: '00000000-0000-0000-0000-000000000001' });
+    const resp = await POST(req, { params: {} });
+
+    expect(resp.status).toBe(422);
+    const body = await resp.json();
+    expect(body.error.code).toBe('SEM_MEDICO');
   });
 
   it('persiste boleto mesmo quando gateway retorna falha (auditoria)', async () => {

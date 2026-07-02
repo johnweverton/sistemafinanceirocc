@@ -16,13 +16,49 @@ export interface Boleto {
   payloadResposta: unknown; // resposta crua do gateway, para auditoria
 }
 
-/** Dados necessários para emitir um boleto — montado pela rota a partir do resultado. */
+/** Condições comerciais efetivas (após resolver override do médico ?? default global). */
+export interface CondicoesEmissao {
+  diasVencimento: number;
+  multaPercent: number | null;
+  jurosMesPercent: number | null;
+  descontoPercent: number | null;
+  descontoDias: number | null;
+}
+
+/** Defaults globais do escritório (tabela config_cobranca, singleton). */
+export interface ConfigCobranca {
+  diasVencimento: number;
+  multaPercent: number | null;
+  jurosMesPercent: number | null;
+  descontoPercent: number | null;
+  descontoDias: number | null;
+}
+
+/**
+ * Dados necessários para emitir um boleto — montado pela rota a partir do resultado + médico.
+ * O pagador vem do bloco de cobrança do médico (não do CPF do resultado, que é só a chave
+ * de cruzamento com a API da Carmem). As condições já vêm resolvidas (override ?? global).
+ */
 export interface DadosEmissaoBoleto {
   execucaoResultadoId: string;
-  cpfMedico: string;
-  nomeMedico: string;
   competencia: string;
   valor: number;
+  pagador: {
+    nome: string;
+    documento: string; // CPF (11) ou CNPJ (14), dígitos
+    tipo: 'CPF' | 'CNPJ';
+    email: string;
+    endereco: {
+      cep: string;
+      logradouro: string;
+      numero: string;
+      complemento: string | null;
+      bairro: string;
+      cidade: string;
+      uf: string;
+    };
+  };
+  condicoes: CondicoesEmissao;
 }
 
 /** Resultado da emissão devolvido por um BoletoGateway (antes de persistir). */
