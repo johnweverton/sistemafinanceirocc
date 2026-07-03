@@ -6,6 +6,7 @@ import type {
   ExecucaoResultado,
   Subtotal,
   Boleto,
+  BoletoEvento,
 } from '@cobranca/shared';
 
 export interface MedicoRow {
@@ -260,6 +261,11 @@ export interface BoletoRow {
   emitido_por: string;
   emitido_em: string;
   payload_resposta: unknown;
+  // Baixa / conciliação (Épico 4)
+  vencimento: string | null;
+  pago_em: string | null;
+  valor_pago: number | null;
+  atualizado_em: string | null;
 }
 
 export function toBoleto(row: BoletoRow): Boleto {
@@ -272,5 +278,32 @@ export function toBoleto(row: BoletoRow): Boleto {
     emitidoPor: row.emitido_por,
     emitidoEm: row.emitido_em,
     payloadResposta: row.payload_resposta,
+    vencimento: row.vencimento ?? null,
+    pagoEm: row.pago_em ?? null,
+    valorPago: row.valor_pago ?? null,
+  };
+}
+
+export interface BoletoEventoRow {
+  id: string;
+  boleto_id: string | null;
+  id_externo: string | null;
+  evento_id: string | null;
+  evento_tipo: string | null;
+  status_reconsultado: string | null;
+  payload: unknown;
+  recebido_em: string;
+}
+
+export function toBoletoEvento(row: BoletoEventoRow): BoletoEvento {
+  return {
+    id: row.id,
+    boletoId: row.boleto_id,
+    idExterno: row.id_externo,
+    eventoId: row.evento_id,
+    eventoTipo: row.evento_tipo,
+    statusReconsultado: row.status_reconsultado,
+    payload: row.payload,
+    recebidoEm: row.recebido_em,
   };
 }

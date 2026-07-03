@@ -247,12 +247,13 @@ describe('Lógica de emissão de boleto', () => {
       }),
     );
 
-    // Verificar que o boleto foi persistido (auditoria).
+    // Verificar que o boleto foi persistido (auditoria) com o vencimento (Story 4.2).
     expect(mockCriarBoleto).toHaveBeenCalledWith(
       expect.objectContaining({
         gateway: 'mock',
         status: 'emitido',
         emitidoPor: 'user-123',
+        vencimento: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       }),
     );
   });

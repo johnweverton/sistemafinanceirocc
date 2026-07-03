@@ -60,4 +60,10 @@ describe('MockGateway', () => {
 
     expect(r1.idExterno).not.toBe(r2.idExterno);
   });
+
+  it('consultarInvoice retorna o status configurado (default paid)', async () => {
+    expect((await new MockGateway().consultarInvoice('x')).status).toBe('paid');
+    const cancelado = new MockGateway({ status: 'canceled', valorPago: null, pagoEm: null });
+    expect((await cancelado.consultarInvoice('x')).status).toBe('canceled');
+  });
 });

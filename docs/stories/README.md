@@ -29,3 +29,38 @@ roda manualmente no Supabase (conta externa). As stories assumem o schema aplica
 ## Fora de escopo (feature flag)
 Ligar `GATEWAY_EMISSAO_HABILITADA=true` e o certificado mTLS da Cora seguem como gates externos
 (PRD §10) — não fazem parte deste épico.
+
+---
+
+# Épico 4 — Ciclo Financeiro (baixa por webhook + Contas a Receber + Dashboard)
+
+**Fonte de verdade:** `docs/architecture/feature-ciclo-financeiro.md`
+**Objetivo:** fechar o ciclo emite→recebe→enxerga. O Cora envia webhook quando o boleto é pago;
+consumimos para dar baixa e derivar recebíveis/dashboard.
+
+## Decisões fechadas
+- Confiança no webhook: token no path **+ reconsulta na API Cora** (não confia no payload).
+- `vencido` = **derivado on-read** (`vencimento < hoje` e sem baixa); status materializados
+  `emitido`/`falha`/`pago`/`cancelado`.
+- Faseamento: **Sub-épico A** (4.1–4.4) → **Sub-épico B** (4.5–4.6).
+
+## Pré-requisito operacional
+Migration `supabase/migrations/0007_ciclo_financeiro.sql` **já entregue** (@data-engineer) — dono
+roda manualmente. As stories assumem o schema aplicado.
+
+## Stories
+
+| # | Story | Sub-épico | Depende de | Foco |
+|---|-------|:---------:|-----------|------|
+| 4.1 | Fundação: tipos/mappers/repositório da baixa | A | migration 0007 | `shared` + mappers + boleto-repository |
+| 4.2 | Gateway `consultarInvoice` + persistir vencimento | A | 4.1 | cora/mock gateway + emissão grava `vencimento` |
+| 4.3 | Webhook de baixa do Cora | A | 4.1, 4.2 | rota `/api/webhooks/cora/[secret]` + middleware |
+| 4.4 | Contas a Receber | A | 4.1 | view `vw_recebiveis` + página `/recebiveis` |
+| 4.5 | Agregações do dashboard (RPC/views) | B | 4.4 | @data-engineer + repositório |
+| 4.6 | Página do Dashboard financeiro | B | 4.5 | `/dashboard` (KPIs + aging) |
+
+4.2/4.4 paralelizáveis após 4.1; 4.3 após 4.2; Sub-épico B após A.
+
+## Fora de escopo
+Registrar a URL de webhook no Cora e ligar a emissão (`GATEWAY_EMISSAO_HABILITADA`) seguem como
+ações externas de @devops/negócio quando a emissão for a produção.

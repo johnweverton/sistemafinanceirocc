@@ -12,6 +12,7 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { getServerEnv } from '@/lib/env';
 import { requireRole } from '@/server/auth/require-role';
 import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
+import { calcularVencimento } from '@/server/gateway/vencimento';
 import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
 import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
@@ -151,7 +152,8 @@ export const POST = withErrorHandler(async (req) => {
     condicoes,
   });
 
-  // 7. Persistir na tabela de auditoria (sempre — mesmo falha).
+  // 10. Persistir na tabela de auditoria (sempre — mesmo falha). Grava o `vencimento` (mesma data
+  //     do payment_terms do gateway) para permitir a baixa/aging no ciclo financeiro (Épico 4).
   const boleto = await criarBoleto({
     execucaoResultadoId: body.execucaoResultadoId,
     gateway: nomeGateway,
@@ -159,6 +161,7 @@ export const POST = withErrorHandler(async (req) => {
     status: emissao.status,
     emitidoPor: sessao.userId,
     payloadResposta: emissao.payloadResposta,
+    vencimento: calcularVencimento(condicoes.diasVencimento),
   });
 
   const httpStatus = boleto.status === 'emitido' ? 201 : 502;

@@ -12,15 +12,32 @@ import type {
   DadosEmissaoBoleto,
   EmissaoBoleto,
   CondicoesEmissao,
+  StatusInvoice,
 } from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
+import { calcularVencimento } from './vencimento';
 import https from 'node:https';
 
-/** Data de vencimento = hoje + diasVencimento, no formato AAAA-MM-DD. */
-function calcularVencimento(diasVencimento: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + diasVencimento);
-  return d.toISOString().slice(0, 10);
+/**
+ * Normaliza a resposta do `GET /invoices/{id}` da Cora para `StatusInvoice`. Isolada para permitir
+ * ajuste único quando o formato real da API for confirmado (campos assumidos: status/paid_at/
+ * total_paid). Status desconhecido → 'unknown' (não dá baixa).
+ */
+function normalizarStatusInvoice(body: unknown): StatusInvoice {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const raw = String(b.status ?? '').toUpperCase();
+  const status: StatusInvoice['status'] =
+    raw === 'PAID' ? 'paid'
+    : raw === 'CANCELLED' || raw === 'CANCELED' ? 'canceled'
+    : raw === 'OVERDUE' || raw === 'LATE' ? 'overdue'
+    : raw === 'OPEN' || raw === 'PENDING' ? 'open'
+    : 'unknown';
+  const centavos = typeof b.total_paid === 'number' ? b.total_paid : null;
+  return {
+    status,
+    valorPago: centavos != null ? centavos / 100 : null,
+    pagoEm: typeof b.paid_at === 'string' ? b.paid_at : null,
+  };
 }
 
 /**
@@ -245,7 +262,26 @@ export class CoraGateway implements BoletoGatewayPort {
       };
     }
   }
+
+  /** Consulta o status real de uma invoice (fonte da verdade da conciliação). Erro/404 → 'unknown'. */
+  async consultarInvoice(idExterno: string): Promise<StatusInvoice> {
+    try {
+      const token = await this.obterToken();
+      const url = `${this.baseUrl}/invoices/${encodeURIComponent(idExterno)}`;
+      const resp = await fetchMtls(
+        url,
+        { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+        this.agent,
+      );
+      if (!resp.ok) {
+        return { status: 'unknown', valorPago: null, pagoEm: null };
+      }
+      return normalizarStatusInvoice(await resp.json());
+    } catch {
+      return { status: 'unknown', valorPago: null, pagoEm: null };
+    }
+  }
 }
 
 // Exporta também as funções internas para testes unitários com mocks.
-export { criarAgentMtls, fetchMtls, calcularVencimento, montarPaymentTerms };
+export { criarAgentMtls, fetchMtls, calcularVencimento, montarPaymentTerms, normalizarStatusInvoice };

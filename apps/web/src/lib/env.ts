@@ -37,6 +37,8 @@ const serverSchema = z.object({
   CORA_API_URL: z.string().url().optional(),
   // Client ID da Cora para autenticação OAuth2 + mTLS.
   CORA_CLIENT_ID: z.string().optional(),
+  // Segredo do path do webhook do Cora (Épico 4). Comparado em tempo constante.
+  CORA_WEBHOOK_SECRET: z.string().optional(),
 });
 
 export const publicEnv = publicSchema.parse({
@@ -62,5 +64,6 @@ export function getServerEnv() {
     CORA_KEY_BASE64: process.env.CORA_KEY_BASE64,
     CORA_API_URL: process.env.CORA_API_URL,
     CORA_CLIENT_ID: process.env.CORA_CLIENT_ID,
+    CORA_WEBHOOK_SECRET: process.env.CORA_WEBHOOK_SECRET,
   });
 }

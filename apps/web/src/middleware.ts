@@ -37,6 +37,7 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Protege tudo exceto assets estáticos e o próprio endpoint de auth.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/health).*)'],
+  // Protege tudo exceto assets estáticos, o endpoint de saúde e os webhooks públicos.
+  // Webhooks NÃO usam sessão — a segurança é o secret no path + reconsulta na API Cora (Épico 4).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/health|api/webhooks).*)'],
 };

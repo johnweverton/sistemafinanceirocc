@@ -285,3 +285,45 @@ describe('CoraGateway', () => {
     expect(terms.discount).toEqual({ amount: 5, days: 3 });
   });
 });
+
+describe('CoraGateway.consultarInvoice (Story 4.2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('mapeia invoice PAID → paid com valor e data', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(200, { id: 'inv_1', status: 'PAID', total_paid: 150000, paid_at: '2026-06-15T12:00:00Z' }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().consultarInvoice('inv_1');
+    expect(r.status).toBe('paid');
+    expect(r.valorPago).toBe(1500);
+    expect(r.pagoEm).toBe('2026-06-15T12:00:00Z');
+  });
+
+  it('mapeia invoice CANCELLED → canceled', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(200, { id: 'inv_1', status: 'CANCELLED' }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().consultarInvoice('inv_1');
+    expect(r.status).toBe('canceled');
+  });
+
+  it('erro/404 → status unknown (não lança)', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(404, { error: 'not_found' }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().consultarInvoice('inv_x');
+    expect(r.status).toBe('unknown');
+    expect(r.valorPago).toBeNull();
+  });
+});
