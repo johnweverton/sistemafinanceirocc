@@ -77,4 +77,30 @@ describe('Webhook Cora', () => {
     expect(mockConsultar).not.toHaveBeenCalled();
     expect(mockRegistrarBaixa).not.toHaveBeenCalled();
   });
+
+  // Fix QA 4.3 (MEDIUM): sem event_id nativo, a chave de idempotência é composta por tipo+invoice,
+  // então dois eventos DIFERENTES da mesma invoice (paid depois canceled) NÃO colidem e ambos são
+  // processados (o cancelamento após pagamento não é perdido).
+  it('paid e canceled da mesma invoice (sem event_id) → ambos processados, eventoId distinto', async () => {
+    const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');
+
+    // 1º evento: pago
+    mockConsultar.mockResolvedValueOnce({ status: 'paid', valorPago: 1500, pagoEm: '2026-06-15T00:00:00Z' });
+    await POST(req({ resource: { id: 'inv_9' }, event: 'invoice.paid' }), { params: { secret: 'sekret' } });
+
+    // 2º evento: cancelado (mesma invoice, sem event_id)
+    mockConsultar.mockResolvedValueOnce({ status: 'canceled', valorPago: null, pagoEm: null });
+    await POST(req({ resource: { id: 'inv_9' }, event: 'invoice.canceled' }), { params: { secret: 'sekret' } });
+
+    // registrarEvento recebeu eventoIds DISTINTOS (por tipo), não colidiu no dedupe
+    const ids = mockRegistrarEvento.mock.calls.map((c) => (c[0] as { eventoId: string }).eventoId);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids[0]).toContain('invoice.paid:inv_9');
+    expect(ids[1]).toContain('invoice.canceled:inv_9');
+
+    // ambos deram baixa (não usa b.id como chave → 2º não é deduplicado)
+    expect(mockRegistrarBaixa).toHaveBeenCalledTimes(2);
+    expect(mockRegistrarBaixa).toHaveBeenNthCalledWith(1, 'inv_9', expect.objectContaining({ status: 'pago' }));
+    expect(mockRegistrarBaixa).toHaveBeenNthCalledWith(2, 'inv_9', expect.objectContaining({ status: 'cancelado' }));
+  });
 });

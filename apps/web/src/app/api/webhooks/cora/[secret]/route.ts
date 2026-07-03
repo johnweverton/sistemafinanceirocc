@@ -30,14 +30,26 @@ function segredosBatem(recebido: string | undefined, esperado: string): boolean 
 function extrairEvento(body: unknown): { idExterno: string | null; eventoId: string | null; eventoTipo: string | null } {
   const b = (body ?? {}) as Record<string, any>;
   const resource = (b.resource ?? b.data ?? b.invoice ?? {}) as Record<string, any>;
-  const idExterno = resource.id ?? b.invoice_id ?? b.resource_id ?? null;
-  const eventoId = b.event_id ?? b.idempotency_key ?? b.id ?? null;
-  const eventoTipo = b.event ?? b.type ?? b.event_type ?? null;
-  return {
-    idExterno: idExterno != null ? String(idExterno) : null,
-    eventoId: eventoId != null ? String(eventoId) : null,
-    eventoTipo: eventoTipo != null ? String(eventoTipo) : null,
-  };
+  const idExternoRaw = resource.id ?? b.invoice_id ?? b.resource_id ?? null;
+  const eventoTipoRaw = b.event ?? b.type ?? b.event_type ?? null;
+
+  const idExterno = idExternoRaw != null ? String(idExternoRaw) : null;
+  const eventoTipo = eventoTipoRaw != null ? String(eventoTipoRaw) : null;
+
+  // Idempotência: preferir um id de evento NATIVO do Cora. NÃO usar `b.id` como fallback — ele pode
+  // ser o id da INVOICE, o que faria dois eventos distintos da mesma invoice (paid → canceled)
+  // colidirem no dedupe e o 2º ser perdido (QA 4.3, MEDIUM). Sem id nativo, deriva uma chave
+  // COMPOSTA estável por tipo+invoice+timestamp: paid e canceled da mesma invoice ficam distintos,
+  // e reentregas do MESMO evento (mesmo tipo+invoice+timestamp) ainda deduplicam.
+  const eventoNativo = b.event_id ?? b.idempotency_key ?? null;
+  const eventoId =
+    eventoNativo != null
+      ? String(eventoNativo)
+      : eventoTipo && idExterno
+        ? `${eventoTipo}:${idExterno}:${String(b.occurred_at ?? b.created_at ?? '')}`
+        : null;
+
+  return { idExterno, eventoId, eventoTipo };
 }
 
 export async function POST(req: Request, { params }: { params: { secret: string } }) {

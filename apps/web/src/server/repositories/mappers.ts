@@ -7,6 +7,8 @@ import type {
   Subtotal,
   Boleto,
   BoletoEvento,
+  Recebivel,
+  StatusRecebivel,
 } from '@cobranca/shared';
 
 export interface MedicoRow {
@@ -305,5 +307,37 @@ export function toBoletoEvento(row: BoletoEventoRow): BoletoEvento {
     statusReconsultado: row.status_reconsultado,
     payload: row.payload,
     recebidoEm: row.recebido_em,
+  };
+}
+
+export interface RecebivelRow {
+  boleto_id: string;
+  execucao_resultado_id: string;
+  id_externo: string | null;
+  competencia: string;
+  medico_id: string | null;
+  nome: string;
+  valor: number | null;
+  vencimento: string | null;
+  pago_em: string | null;
+  valor_pago: number | null;
+  emitido_em: string;
+  status_derivado: StatusRecebivel;
+}
+
+export function toRecebivel(row: RecebivelRow): Recebivel {
+  return {
+    boletoId: row.boleto_id,
+    execucaoResultadoId: row.execucao_resultado_id,
+    idExterno: row.id_externo,
+    competencia: row.competencia,
+    medicoId: row.medico_id,
+    nome: row.nome,
+    valor: row.valor,
+    vencimento: row.vencimento,
+    pagoEm: row.pago_em,
+    valorPago: row.valor_pago,
+    emitidoEm: row.emitido_em,
+    statusDerivado: row.status_derivado,
   };
 }
