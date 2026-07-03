@@ -9,6 +9,9 @@ import type {
   BoletoEvento,
   Recebivel,
   StatusRecebivel,
+  ResumoCompetencia,
+  ResumoMedico,
+  AgingFaixa,
 } from '@cobranca/shared';
 
 export interface MedicoRow {
@@ -340,4 +343,61 @@ export function toRecebivel(row: RecebivelRow): Recebivel {
     emitidoEm: row.emitido_em,
     statusDerivado: row.status_derivado,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard (agregações — views vw_dashboard_*)
+// ---------------------------------------------------------------------------
+const num = (v: number | null | undefined): number => Number(v ?? 0);
+
+export interface ResumoCompetenciaRow {
+  competencia: string | null;
+  qtd_boletos: number | null;
+  total_emitido: number | null;
+  total_recebido: number | null;
+  total_em_aberto: number | null;
+  total_vencido: number | null;
+  taxa_inadimplencia: number | null;
+}
+
+export function toResumoCompetencia(row: ResumoCompetenciaRow): ResumoCompetencia {
+  return {
+    competencia: row.competencia,
+    qtdBoletos: num(row.qtd_boletos),
+    totalEmitido: num(row.total_emitido),
+    totalRecebido: num(row.total_recebido),
+    totalEmAberto: num(row.total_em_aberto),
+    totalVencido: num(row.total_vencido),
+    taxaInadimplencia: num(row.taxa_inadimplencia),
+  };
+}
+
+export interface ResumoMedicoRow extends Omit<ResumoCompetenciaRow, 'competencia'> {
+  medico_id: string | null;
+  nome: string;
+  ticket_medio: number | null;
+}
+
+export function toResumoMedico(row: ResumoMedicoRow): ResumoMedico {
+  return {
+    medicoId: row.medico_id,
+    nome: row.nome,
+    qtdBoletos: num(row.qtd_boletos),
+    totalEmitido: num(row.total_emitido),
+    totalRecebido: num(row.total_recebido),
+    totalEmAberto: num(row.total_em_aberto),
+    totalVencido: num(row.total_vencido),
+    taxaInadimplencia: num(row.taxa_inadimplencia),
+    ticketMedio: num(row.ticket_medio),
+  };
+}
+
+export interface AgingFaixaRow {
+  faixa: string;
+  qtd: number | null;
+  total: number | null;
+}
+
+export function toAgingFaixa(row: AgingFaixaRow): AgingFaixa {
+  return { faixa: row.faixa, qtd: num(row.qtd), total: num(row.total) };
 }
