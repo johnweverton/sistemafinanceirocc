@@ -5,8 +5,6 @@ import type { ItemProducao } from '@cobranca/shared';
 
 function proc(over: Partial<ItemProducao> & { atendimentoExternoId: string; data: string; pacienteNome: string }): ItemProducao {
   return {
-    data: '2026-06-15',
-    pacienteNome: 'Paciente Padrão',
     codigoProcedimento: '00000000',
     descricaoProcedimento: 'Procedimento cirúrgico',
     statusOrigem: 'Devidamente Pago',

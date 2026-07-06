@@ -7,15 +7,10 @@
 //
 // As dependências de I/O (banco, rede, encadeamento HTTP) são injetáveis para permitir
 // teste unitário com mocks sem tocar Supabase nem a API da Carmem.
-import type { Execucao, Medico, Procedimento, ResultadoMedico } from '@cobranca/shared';
+import type { Execucao, Medico, ItemProducao, ResultadoMedico } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
-import { buscarProcedimentos, listarCpfsComProcedimentos } from '@/server/integration/procedimentos-client';
-import {
-  contarMedicosAtivos,
-  listarMedicosAtivosPagina,
-  descobrirMedicos,
-  type MedicoDescoberto,
-} from '@/server/repositories/medico-repository';
+import { buscarItens } from '@/server/integration/fin-api-client';
+import { buscarMedico } from '@/server/repositories/medico-repository';
 import {
   criarExecucao,
   buscarExecucao,
@@ -26,6 +21,7 @@ import {
   marcarErro,
   guiasExecucaoAnterior,
   listarResultados,
+  listarSelecoes,
 } from '@/server/repositories/execucao-repository';
 import { getServerEnv } from '@/lib/env';
 
@@ -33,9 +29,9 @@ import { getServerEnv } from '@/lib/env';
 export const BATCH_SIZE = 20;
 
 export interface OrchestratorDeps {
-  contarMedicosAtivos: () => Promise<number>;
-  listarMedicosAtivosPagina: (offset: number, limite: number) => Promise<Medico[]>;
-  criarExecucao: (competencia: string, iniciadoPor: string, total: number) => Promise<Execucao>;
+  listarSelecoes: (execucaoId: string) => Promise<{ execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }[]>;
+  buscarMedico: (id: string) => Promise<Medico | null>;
+  criarExecucao: (competencia: string, iniciadoPor: string, selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[]) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
   gravarResultado: (execucaoId: string, medicoId: string | null, r: ResultadoMedico) => Promise<void>;
@@ -45,26 +41,20 @@ export interface OrchestratorDeps {
     totais: { totalOk: number; totalAlerta: number; totalSemDados: number; totalGeralValor: number },
   ) => Promise<void>;
   marcarErro: (execucaoId: string) => Promise<void>;
-  guiasExecucaoAnterior: (cpf: string, competenciaAtual: string) => Promise<number | null>;
-  buscarProcedimentos: (cpf: string, competencia: string) => Promise<Procedimento[]>;
+  guiasExecucaoAnterior: (medicoId: string, competenciaAtual: string) => Promise<number | null>;
+  buscarItens: (producaoExternaId: string) => Promise<ItemProducao[]>;
   /** Resultados já gravados — usado para agregar os totais ao concluir. */
   listarResultados: (execucaoId: string) => Promise<ResultadoMedico[]>;
   /** Encadeia o próximo lote (HTTP interno). Pode ser no-op em teste. */
   agendarProximoLote: (execucaoId: string) => Promise<void>;
-  /**
-   * Fase de descoberta: lista CPFs da API da Carmem para a competência e cria stubs
-   * para os que ainda não existem localmente. Retorna quantos stubs foram criados.
-   * Falha silenciosa — a execução segue mesmo sem descobrir novos médicos.
-   */
-  descobrirMedicos: (competencia: string) => Promise<number>;
   batchSize: number;
 }
 
 /** Dependências reais (produção). */
 export function depsPadrao(): OrchestratorDeps {
   return {
-    contarMedicosAtivos,
-    listarMedicosAtivosPagina,
+    listarSelecoes,
+    buscarMedico,
     criarExecucao,
     buscarExecucao,
     contarResultados,
@@ -73,7 +63,7 @@ export function depsPadrao(): OrchestratorDeps {
     concluirExecucao,
     marcarErro,
     guiasExecucaoAnterior,
-    buscarProcedimentos,
+    buscarItens,
     listarResultados: async (id) =>
       (await listarResultados(id)).map((r) => ({
         cpf: r.cpf,
@@ -88,14 +78,6 @@ export function depsPadrao(): OrchestratorDeps {
         alertas: r.alertas,
       })),
     agendarProximoLote: agendarProximoLoteHttp,
-    descobrirMedicos: async (competencia: string): Promise<number> => {
-      try {
-        const cpfs: MedicoDescoberto[] = await listarCpfsComProcedimentos(competencia);
-        return await descobrirMedicos(cpfs);
-      } catch {
-        return 0; // descoberta falhou — execução segue com médicos já cadastrados
-      }
-    },
     batchSize: BATCH_SIZE,
   };
 }
@@ -121,15 +103,11 @@ export function calcularProgresso(processados: number, total: number): number {
  */
 export async function iniciarExecucao(
   competencia: string,
+  selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
 ): Promise<Execucao> {
-  // Fase de descoberta: cria stubs para médicos novos antes de contar o total.
-  // Silenciosa — falha não bloqueia a execução.
-  try { await deps.descobrirMedicos(competencia); } catch { /* segue sem descoberta */ }
-
-  const total = await deps.contarMedicosAtivos();
-  return deps.criarExecucao(competencia, usuarioId, total);
+  return deps.criarExecucao(competencia, usuarioId, selecoes);
 }
 
 export interface ResultadoLote {
@@ -159,47 +137,51 @@ export async function processarProximoLote(
     return { concluido: true, processadosNoLote: 0, progresso: 100 };
   }
 
-  const medicos = await deps.listarMedicosAtivosPagina(jaProcessados, deps.batchSize);
+  const todasSelecoes = await deps.listarSelecoes(execucaoId);
+  const selecoesLote = todasSelecoes.slice(jaProcessados, jaProcessados + deps.batchSize);
 
-  for (const medico of medicos) {
-    await processarUmMedico(execucaoId, execucao.competencia, medico, deps);
+  for (const selecao of selecoesLote) {
+    await processarUmMedico(execucaoId, execucao.competencia, selecao, deps);
   }
 
-  const processadosAgora = jaProcessados + medicos.length;
+  const processadosAgora = jaProcessados + selecoesLote.length;
   const progresso = calcularProgresso(processadosAgora, total);
   await deps.atualizarProgresso(execucaoId, progresso);
 
   const concluido = processadosAgora >= total;
   if (concluido) {
     await finalizar(execucaoId, deps);
-    return { concluido: true, processadosNoLote: medicos.length, progresso: 100 };
+    return { concluido: true, processadosNoLote: selecoesLote.length, progresso: 100 };
   }
 
   // Encadeia o próximo lote (HTTP interno). Não bloqueia a resposta deste lote.
   await deps.agendarProximoLote(execucaoId);
-  return { concluido: false, processadosNoLote: medicos.length, progresso };
+  return { concluido: false, processadosNoLote: selecoesLote.length, progresso };
 }
 
 /** Processa um médico isolando falhas de rede (vira alerta, não derruba o lote). */
 async function processarUmMedico(
   execucaoId: string,
   competencia: string,
-  medico: Medico,
+  selecao: { medicoId: string; producaoExternaId: string; producaoNome: string },
   deps: OrchestratorDeps,
 ): Promise<void> {
+  let medico: Medico | null = null;
   try {
-    // cpf ?? '': médico importado pode não ter CPF (Épico 5 §3.4); no fluxo atual (pré-cutover)
-    // esses médicos têm necessita_configuracao=true e não chegam aqui — o fallback é defensivo.
-    const procedimentos = await deps.buscarProcedimentos(medico.cpf ?? '', competencia);
+    medico = await deps.buscarMedico(selecao.medicoId);
+    if (!medico) throw new Error('Médico não encontrado na base');
+
+    const itens = await deps.buscarItens(selecao.producaoExternaId);
+    
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
-    const historicoGuias = await deps.guiasExecucaoAnterior(medico.cpf ?? '', competencia);
-    const resultado = processarMedico({ medico, procedimentos, historicoGuias });
+    const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
+    const resultado = processarMedico({ medico, itens, historicoGuias });
     await deps.gravarResultado(execucaoId, medico.id, resultado);
   } catch (e) {
     // Falha de infraestrutura ao buscar dados — médico vira alerta, competência segue.
-    await deps.gravarResultado(execucaoId, medico.id, {
-      cpf: medico.cpf ?? '',
-      nome: medico.nome,
+    await deps.gravarResultado(execucaoId, selecao.medicoId, {
+      cpf: medico?.cpf ?? '',
+      nome: medico?.nome ?? 'Médico Desconhecido',
       procedimentos: 0,
       cirurgias: 0,
       guias: 0,
