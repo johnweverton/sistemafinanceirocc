@@ -41,7 +41,8 @@ describe('Engine: Contagem de Produção', () => {
       const resultado = contarGuiasProducao(itens, 'Cirurgia');
       expect(resultado.guias).toBe(2);
       expect(resultado.cirurgias).toBe(2);
-      expect(detectarModoProducao(itens)).toBe('sim'); // mesmo paciente, 2 datas viaAcesso
+      // Fallback usa (paciente + data) como chave. Portanto, as chaves são distintas e não compartilham data.
+      expect(detectarModoProducao(itens)).toBe('nao');
     });
 
     it('c. itens Glosado/Recurso/Aguardando Fechamento → contam igual a Devidamente Pago', () => {
@@ -88,7 +89,8 @@ describe('Engine: Contagem de Produção', () => {
       const resultado = contarGuiasProducao(itens, 'Pediatra');
       // 1 guia (cirurgia P1) + teto(2/3) = 1 guia (consulta P2) => 2 guias total
       expect(resultado.guias).toBe(2);
-      expect(resultado.cirurgias).toBe(1);
+      // Fallback gera 1 chaveAtendimento para Cirurgia P1 e 1 para Consulta P2 (ambos mesma data)
+      expect(resultado.cirurgias).toBe(2);
     });
 
     it('g. dois atendimentos do mesmo paciente no mesmo dia com atendimentoExternoId distintos → 2 guias (e o MESMO cenário sem o campo → 1 guia, documentando a subcontagem do fallback)', () => {
@@ -128,10 +130,10 @@ describe('Engine: Contagem de Produção', () => {
   });
 
   describe('detectarModoProducao', () => {
-    it('detecta modo sim para o mesmo paciente com viaAcesso em múltiplas datas', () => {
+    it('detecta modo sim para a mesma chave de atendimento em múltiplas datas', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), pacienteNome: 'Maria', data: '2026-07-01', viaAcesso: true },
-        { ...baseItem(), pacienteNome: 'Maria', data: '2026-07-02', viaAcesso: true },
+        { ...baseItem(), atendimentoExternoId: 'cirurgia-123', data: '2026-07-01', viaAcesso: true },
+        { ...baseItem(), atendimentoExternoId: 'cirurgia-123', data: '2026-07-02', viaAcesso: true },
       ];
       expect(detectarModoProducao(itens)).toBe('sim');
     });

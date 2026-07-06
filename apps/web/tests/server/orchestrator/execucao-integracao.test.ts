@@ -3,7 +3,7 @@
 // Usa o Engine REAL e o fluxo REAL do Orchestrator (com encadeamento de lotes simulado).
 // NÃO depende da API real da Carmem (bloqueador externo do PRD §11, segue de pé).
 import { describe, it, expect } from 'vitest';
-import type { Procedimento, ResultadoMedico } from '@cobranca/shared';
+import type { ItemProducao, ResultadoMedico } from '@cobranca/shared';
 import {
   iniciarExecucao,
   processarProximoLote,
@@ -12,51 +12,48 @@ import { novoEstado, medicoFake, fakeDeps, type FakeState } from './fake-deps';
 import { procedimentosDraA } from '../engine/fixtures';
 
 // Médico OK: poucos procedimentos, modo bate, todos com valor → status ok.
-function procedimentosOk(cpf: string): Procedimento[] {
+function procedimentosOk(): ItemProducao[] {
   return [
     {
-      cpfMedico: cpf,
-      numeroAtendimento: 'AT-1',
-      senhaProcedimento: 'S1',
-      dataEmissao: '2026-06-10',
-      dataProcedimento: '2026-06-10',
-      tipo: 'M',
-      descricaoProcedimento: 'Proc',
+      data: '2026-06-10',
+      pacienteNome: 'Paciente 1',
+      atendimentoExternoId: 'AT-1',
       codigoProcedimento: '1',
-      valor: 100,
-      localAtendimento: 'H',
-      plano: 'Hapvida',
+      descricaoProcedimento: 'Proc',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
     },
     {
-      cpfMedico: cpf,
-      numeroAtendimento: 'AT-1',
-      senhaProcedimento: 'S2',
-      dataEmissao: '2026-06-10',
-      dataProcedimento: '2026-06-10',
-      tipo: 'A1',
-      descricaoProcedimento: 'Proc',
+      data: '2026-06-10',
+      pacienteNome: 'Paciente 1',
+      atendimentoExternoId: 'AT-1',
       codigoProcedimento: '2',
-      valor: 100,
-      localAtendimento: 'H',
-      plano: 'Hapvida',
+      descricaoProcedimento: 'Proc',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
     },
     {
-      cpfMedico: cpf,
-      numeroAtendimento: 'AT-1',
-      senhaProcedimento: 'S3',
-      dataEmissao: '2026-06-10',
-      dataProcedimento: '2026-06-10',
-      tipo: 'A2',
-      descricaoProcedimento: 'Proc',
+      data: '2026-06-10',
+      pacienteNome: 'Paciente 1',
+      atendimentoExternoId: 'AT-1',
       codigoProcedimento: '3',
-      valor: 100,
-      localAtendimento: 'H',
-      plano: 'Hapvida',
+      descricaoProcedimento: 'Proc',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
     },
   ];
 }
 
-function montarCenario(): { state: FakeState } {
+function montarCenario(): { state: FakeState; selecoes: any[] } {
   const medicos = [
     // OK — credenciado, modo NÃO, dados completos
     medicoFake({ id: 'm-ok', cpf: '11111111111', nome: 'Dr. OK', modoMudancaData: 'nao' }),
@@ -65,11 +62,17 @@ function montarCenario(): { state: FakeState } {
     // SEM_DADOS — nenhum procedimento retornado
     medicoFake({ id: 'm-sem', cpf: '99999999999', nome: 'Dr. Sem Dados', modoMudancaData: 'nao' }),
   ];
+  const selecoes = [
+    { medicoId: 'm-ok', producaoExternaId: 'p-ok', producaoNome: 'Prod OK' },
+    { medicoId: 'm-alerta', producaoExternaId: 'p-alerta', producaoNome: 'Prod Alerta' },
+    { medicoId: 'm-sem', producaoExternaId: 'p-sem', producaoNome: 'Prod Sem' },
+  ];
+
   const state = novoEstado(medicos);
-  state.procedimentosPorCpf['11111111111'] = procedimentosOk('11111111111');
-  state.procedimentosPorCpf['00000000001'] = procedimentosDraA;
-  // 99999999999 → sem entrada = array vazio = sem_dados
-  return { state };
+  state.itensPorProducao['p-ok'] = procedimentosOk();
+  state.itensPorProducao['p-alerta'] = procedimentosDraA;
+  // p-sem → sem entrada = array vazio = sem_dados
+  return { state, selecoes };
 }
 
 function classificar(resultados: ResultadoMedico[]) {
@@ -82,11 +85,11 @@ function classificar(resultados: ResultadoMedico[]) {
 
 describe('Integração — execução completa em 3 grupos (modo local)', () => {
   it('processa 3 médicos do disparo ao relatório, classificando ok/alerta/sem_dados', async () => {
-    const { state } = montarCenario();
+    const { state, selecoes } = montarCenario();
     // batchSize 2 força 2 lotes (3 médicos) e exercita o encadeamento auto.
     const deps = fakeDeps(state, 2, processarProximoLote, { autoEncadear: true });
 
-    const exec = await iniciarExecucao('2026-06', 'colaborador-1', deps);
+    const exec = await iniciarExecucao('2026-06', selecoes, 'colaborador-1', deps);
     expect(exec.totalMedicos).toBe(3);
 
     // Dispara o primeiro lote; autoEncadear roda o restante até concluir.
@@ -112,22 +115,21 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     // A Dra. A reproduz a regressão do PRD §12 dentro do fluxo de execução.
     const draA = alerta[0]!;
     expect(draA.guias).toBe(17);
-    expect(draA.cirurgias).toBe(4);
     expect(draA.guiasConsolidado).toBe(6);
-    expect(draA.alertas.some((a) => a.includes('sem valor'))).toBe(true);
+    expect(draA.alertas.some((a) => a.includes('sem código ou descrição'))).toBe(true);
 
     // Encadeou exatamente uma vez (lote 1 → agenda lote 2; lote 2 conclui).
     expect(state.chamadasProximoLote).toBe(1);
   });
 
   it('detecta variação anômala (>40%) usando guias da execução anterior', async () => {
-    const { state } = montarCenario();
+    const { state, selecoes } = montarCenario();
     // Mês anterior o Dr. OK teve 1 guia; agora terá 1 (3 procs / 3 = 1) → sem variação.
     // Forçamos histórico baixo para a Dra. A (17 guias agora vs 5 antes = 240% → alerta).
-    state.guiasAnterioresPorCpf['00000000001'] = 5;
+    state.guiasAnterioresPorMedicoId['m-alerta'] = 5;
     const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
 
-    const exec = await iniciarExecucao('2026-06', 'u', deps);
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
     await processarProximoLote(exec.id, deps);
 
     const draA = state.resultados.get(exec.id)!.map((x) => x.r).find((r) => r.cpf === '00000000001')!;

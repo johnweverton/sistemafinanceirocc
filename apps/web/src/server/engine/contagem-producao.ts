@@ -45,7 +45,17 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
   const outrosItems = validos.filter((i) => !i.viaAcesso);
 
   let guias = 0;
+  
+  // Cirurgias: quantidade de chaves de atendimento únicas (PRD §12).
+  // Só aplicável para Pediatria ou viaAcesso.
+  const gruposAtendimento = new Set<string>();
+  for (const item of validos) {
+    gruposAtendimento.add(chaveAtendimento(item));
+  }
   let cirurgias = 0;
+  if (isPediatra(especialidade) || viaAcessoItems.length > 0) {
+    cirurgias = gruposAtendimento.size;
+  }
 
   // viaAcesso agrupa por chaveAtendimento
   const viaAcessoGroups = new Set<string>();
@@ -53,7 +63,6 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
     viaAcessoGroups.add(chaveAtendimento(item));
   }
   guias += viaAcessoGroups.size;
-  cirurgias += viaAcessoGroups.size;
 
   // Remaining
   if (isPediatra(especialidade)) {
@@ -83,23 +92,23 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
 }
 
 /**
- * Detecta se existem grupos viaAcesso do mesmo paciente com itens em mais de uma data.
+ * Detecta se existem grupos de atendimento com itens em mais de uma data.
  */
 export function detectarModoProducao(itens: ItemProducao[]): ModoObservado {
   const { validos } = itensValidos(itens);
-  const viaAcessoItems = validos.filter((i) => i.viaAcesso);
 
-  const porPaciente = new Map<string, Set<string>>();
-  for (const item of viaAcessoItems) {
-    let datas = porPaciente.get(item.pacienteNome);
+  const porAtend = new Map<string, Set<string>>();
+  for (const item of validos) {
+    const chave = chaveAtendimento(item);
+    let datas = porAtend.get(chave);
     if (!datas) {
       datas = new Set<string>();
-      porPaciente.set(item.pacienteNome, datas);
+      porAtend.set(chave, datas);
     }
     datas.add(item.data);
   }
 
-  for (const datas of porPaciente.values()) {
+  for (const datas of porAtend.values()) {
     if (datas.size > 1) return 'sim';
   }
 
