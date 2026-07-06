@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listarClientes } from '@/server/integration/fin-api-client';
+import { listarClientes, listarProducoes } from '@/server/integration/fin-api-client';
 import { listarMedicos } from '@/server/repositories/medico-repository';
 
 export async function GET() {
@@ -8,7 +8,14 @@ export async function GET() {
     const medicos = await listarMedicos();
 
     // 2. Busca todos os clientes/origens e suas produções do fin-api-client
-    const clientesOrigem = await listarClientes();
+    const clientes = await listarClientes();
+    const clientesOrigem = await Promise.all(
+      clientes.map(async (c) => ({
+        id: c.id,
+        nome: c.nome,
+        producoes: await listarProducoes(c.id),
+      }))
+    );
 
     return NextResponse.json({
       medicos,
