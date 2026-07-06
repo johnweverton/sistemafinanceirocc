@@ -47,3 +47,10 @@ export interface ExecucaoResultado {
   status: StatusResultado;
   alertas: string[];
 }
+
+export interface ExecucaoSelecao {
+  execucaoId: string;
+  medicoId: string;
+  producaoExternaId: string;
+  producaoNome: string;
+}

@@ -15,10 +15,10 @@ export const POST = withErrorHandler(async (req) => {
   const sessao = await requireRole(['admin', 'colaborador']);
   const parsed = dispararExecucaoSchema.safeParse(await req.json());
   if (!parsed.success) {
-    throw new ApiError(422, 'Competência inválida', 'VALIDATION', { issues: parsed.error.issues });
+    throw new ApiError(422, 'Payload inválido', 'VALIDATION', { issues: parsed.error.issues });
   }
 
-  const execucao = await iniciarExecucao(parsed.data.competencia, sessao.userId);
+  const execucao = await iniciarExecucao(parsed.data.competencia, parsed.data.selecoes, sessao.userId);
 
   // Fire-and-forget: dispara o primeiro lote sem aguardar (responde 202 já).
   void dispararPrimeiroLote(execucao.id);

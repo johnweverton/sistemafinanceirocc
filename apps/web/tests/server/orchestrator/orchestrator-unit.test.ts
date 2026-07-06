@@ -38,50 +38,21 @@ describe('calcularProgresso', () => {
 });
 
 describe('iniciarExecucao', () => {
-  it('cria execução com o total de médicos ativos e status processando', async () => {
-    const state = novoEstado([
+  it('cria execução com as seleções passadas e status processando', async () => {
+    const medicos = [
       medicoFake({ id: '1', cpf: '00000000001', nome: 'A' }),
       medicoFake({ id: '2', cpf: '00000000002', nome: 'B' }),
-    ]);
+    ];
+    const selecoes = [
+      { medicoId: '1', producaoExternaId: 'p1', producaoNome: 'Prod 1' },
+      { medicoId: '2', producaoExternaId: 'p2', producaoNome: 'Prod 2' },
+    ];
+    const state = novoEstado(medicos);
     const deps = fakeDeps(state, 20, processarProximoLote);
-    const exec = await iniciarExecucao('2026-06', 'user-1', deps);
+    const exec = await iniciarExecucao('2026-06', selecoes, 'user-1', deps);
     expect(exec.status).toBe('processando');
     expect(exec.totalMedicos).toBe(2);
-  });
-});
-
-describe('iniciarExecucao — fase de descoberta', () => {
-  it('cria stubs para CPFs novos da Carmem antes de contar o total', async () => {
-    const state = novoEstado([
-      medicoFake({ id: '1', cpf: '00000000001', nome: 'Ja cadastrado' }),
-    ]);
-    // A Carmem reporta dois médicos: um já existe, outro é novo.
-    state.cpfsParaDescobrir = [
-      { cpf: '00000000001', nome: 'Ja cadastrado', especialidade: null },
-      { cpf: '00000000099', nome: 'Descoberto Novo', especialidade: 'Pediatria' },
-    ];
-    const deps = fakeDeps(state, 20, processarProximoLote);
-    await iniciarExecucao('2026-06', 'user-1', deps);
-
-    expect(state.stubsCriados).toEqual(['00000000099']); // só o novo
-    // Total da execução conta apenas o configurado (stub não entra no cálculo)
-    const exec = [...state.execucoes.values()][0]!;
-    expect(exec.totalMedicos).toBe(1);
-  });
-
-  it('falha na descoberta nao bloqueia a execucao', async () => {
-    const state = novoEstado([
-      medicoFake({ id: '1', cpf: '00000000001', nome: 'A' }),
-    ]);
-    const deps = fakeDeps(state, 20, processarProximoLote);
-    // Substitui descobrirMedicos por uma versão que lança
-    const depsComFalha = {
-      ...deps,
-      descobrirMedicos: async () => { throw new Error('API Carmem indisponivel'); },
-    };
-    const exec = await iniciarExecucao('2026-06', 'user-1', depsComFalha);
-    expect(exec.status).toBe('processando'); // execução criada normalmente
-    expect(exec.totalMedicos).toBe(1);
+    expect(state.selecoes.length).toBe(2);
   });
 });
 
@@ -90,9 +61,11 @@ describe('processarProximoLote — decisão de continuar/concluir', () => {
     const medicos = Array.from({ length: 5 }, (_, i) =>
       medicoFake({ id: String(i), cpf: `0000000000${i}`, nome: `M${i}` }),
     );
+    const selecoes = medicos.map(m => ({ medicoId: m.id, producaoExternaId: `p${m.id}`, producaoNome: 'P' }));
+    
     const state = novoEstado(medicos);
     const deps = fakeDeps(state, 2, processarProximoLote); // lote de 2, sem auto-encadear
-    const exec = await iniciarExecucao('2026-06', 'u', deps);
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
 
     const lote = await processarProximoLote(exec.id, deps);
     expect(lote.concluido).toBe(false);
@@ -106,9 +79,11 @@ describe('processarProximoLote — decisão de continuar/concluir', () => {
       medicoFake({ id: '1', cpf: '00000000001', nome: 'A' }),
       medicoFake({ id: '2', cpf: '00000000002', nome: 'B' }),
     ];
+    const selecoes = medicos.map(m => ({ medicoId: m.id, producaoExternaId: `p${m.id}`, producaoNome: 'P' }));
+    
     const state = novoEstado(medicos);
     const deps = fakeDeps(state, 5, processarProximoLote); // lote maior que o total
-    const exec = await iniciarExecucao('2026-06', 'u', deps);
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
 
     const lote = await processarProximoLote(exec.id, deps);
     expect(lote.concluido).toBe(true);
@@ -116,10 +91,10 @@ describe('processarProximoLote — decisão de continuar/concluir', () => {
     expect(state.execucoes.get(exec.id)!.status).toBe('concluido');
   });
 
-  it('zero médicos ativos → conclui imediatamente', async () => {
+  it('zero seleções → conclui imediatamente', async () => {
     const state = novoEstado([]);
     const deps = fakeDeps(state, 20, processarProximoLote);
-    const exec = await iniciarExecucao('2026-06', 'u', deps);
+    const exec = await iniciarExecucao('2026-06', [], 'u', deps);
     const lote = await processarProximoLote(exec.id, deps);
     expect(lote.concluido).toBe(true);
     expect(state.execucoes.get(exec.id)!.status).toBe('concluido');
@@ -130,15 +105,17 @@ describe('processarProximoLote — decisão de continuar/concluir', () => {
       medicoFake({ id: '1', cpf: '00000000001', nome: 'A' }),
       medicoFake({ id: '2', cpf: '00000000002', nome: 'B' }),
     ];
+    const selecoes = medicos.map(m => ({ medicoId: m.id, producaoExternaId: `p${m.id}`, producaoNome: 'P' }));
+    
     const state = novoEstado(medicos);
-    state.cpfsComFalha.add('00000000001'); // A falha ao buscar dados
+    state.producoesComFalha.add('p1'); // A falha ao buscar dados (produção p1)
     const deps = fakeDeps(state, 5, processarProximoLote);
-    const exec = await iniciarExecucao('2026-06', 'u', deps);
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
 
     await processarProximoLote(exec.id, deps);
     const resultados = state.resultados.get(exec.id)!;
     expect(resultados.length).toBe(2); // ambos gravados
-    const a = resultados.find((x) => x.r.cpf === '00000000001')!;
+    const a = resultados.find((x) => x.medicoId === '1')!;
     expect(a.r.status).toBe('alerta');
     expect(a.r.alertas[0]).toContain('Falha ao buscar dados');
   });

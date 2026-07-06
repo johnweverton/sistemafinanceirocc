@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api-error';
 import {
   toExecucao,
   toExecucaoResultado,
+  toExecucaoSelecao,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
 } from './mappers';
@@ -15,7 +16,7 @@ import {
 export async function criarExecucao(
   competencia: string,
   iniciadoPor: string,
-  totalMedicos: number,
+  selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[],
 ): Promise<Execucao> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -25,11 +26,23 @@ export async function criarExecucao(
       iniciado_por: iniciadoPor,
       status: 'processando',
       progresso: 0,
-      total_medicos: totalMedicos,
+      total_medicos: selecoes.length,
     })
     .select('*')
     .single();
   if (error) throw new ApiError(500, 'Falha ao criar execução', 'DB_ERROR', { error: error.message });
+  
+  const execucaoId = data.id;
+  const { error: selecoesError } = await db.from('execucao_selecoes').insert(
+    selecoes.map((s) => ({
+      execucao_id: execucaoId,
+      medico_id: s.medicoId,
+      producao_externa_id: s.producaoExternaId,
+      producao_nome: s.producaoNome,
+    }))
+  );
+  if (selecoesError) throw new ApiError(500, 'Falha ao inserir seleções', 'DB_ERROR', { error: selecoesError.message });
+
   return toExecucao(data as ExecucaoRow);
 }
 
@@ -38,6 +51,17 @@ export async function buscarExecucao(id: string): Promise<Execucao | null> {
   const { data, error } = await db.from('execucoes').select('*').eq('id', id).maybeSingle();
   if (error) throw new ApiError(500, 'Falha ao buscar execução', 'DB_ERROR', { error: error.message });
   return data ? toExecucao(data as ExecucaoRow) : null;
+}
+
+export async function listarSelecoes(execucaoId: string) {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_selecoes')
+    .select('*')
+    .eq('execucao_id', execucaoId)
+    .order('producao_nome', { ascending: true });
+  if (error) throw new ApiError(500, 'Falha ao buscar seleções', 'DB_ERROR', { error: error.message });
+  return (data as any[]).map(toExecucaoSelecao);
 }
 
 export async function listarExecucoes(): Promise<Execucao[]> {
@@ -143,7 +167,7 @@ export async function marcarErro(execucaoId: string): Promise<void> {
  * para alimentar a detecção de variação anômala (PRD §8.5). null se não houver.
  */
 export async function guiasExecucaoAnterior(
-  cpf: string,
+  medicoId: string,
   competenciaAtual: string,
 ): Promise<number | null> {
   const db = getSupabaseAdmin();
@@ -151,7 +175,7 @@ export async function guiasExecucaoAnterior(
   const { data, error } = await db
     .from('execucao_resultados')
     .select('guias, execucoes!inner(competencia, status)')
-    .eq('cpf', cpf)
+    .eq('medico_id', medicoId)
     .eq('execucoes.status', 'concluido')
     .lt('execucoes.competencia', competenciaAtual)
     .order('execucoes(competencia)', { ascending: false })

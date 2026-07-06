@@ -7,7 +7,7 @@ import type {
   TabelaPreco,
   Subtotal,
 } from '@cobranca/shared';
-import { contarGuias, consolidarPorAtendimento, procedimentosValidos } from './contagem';
+import { itensValidos, contarGuiasProducao, consolidarProducao, detectarModoProducao } from './contagem-producao';
 import { checar } from './conferencia';
 import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO } from './precos';
 
@@ -25,14 +25,14 @@ export function processarMedico(
   entrada: EntradaProcessamentoMedico,
   tabela: TabelaPreco = TABELA_PRECO_PADRAO,
 ): ResultadoMedico {
-  const { medico, procedimentos, historicoGuias } = entrada;
-  const validos = procedimentosValidos(procedimentos);
+  const { medico, itens, historicoGuias } = entrada;
+  const { validos } = itensValidos(itens);
 
   if (validos.length === 0) {
     return {
       cpf: medico.cpf ?? '', // snapshot informativo — médico importado pode não ter CPF (Épico 5 §3.4)
       nome: medico.nome,
-      procedimentos: 0,
+      procedimentos: 0, // mapeia itens totais? PRD original usava length validos, let's keep it 0.
       cirurgias: 0,
       guias: 0,
       guiasConsolidado: 0,
@@ -43,9 +43,10 @@ export function processarMedico(
     };
   }
 
-  const { guias, cirurgias } = contarGuias(procedimentos, medico.especialidade);
-  const guiasConsolidado = consolidarPorAtendimento(procedimentos, medico.especialidade);
-  const alertas = checar(procedimentos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade);
+  const { guias, cirurgias } = contarGuiasProducao(validos, medico.especialidade);
+  const guiasConsolidado = consolidarProducao(validos, medico.especialidade);
+  const modoObservado = detectarModoProducao(validos);
+  const alertas = checar(validos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade, modoObservado);
 
   const subtotais: Subtotal[] = [];
   let totalValor = 0;

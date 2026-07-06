@@ -222,6 +222,31 @@ export function toExecucao(row: ExecucaoRow): Execucao {
   };
 }
 
+export interface ExecucaoSelecaoRow {
+  execucao_id: string;
+  medico_id: string;
+  producao_externa_id: string;
+  producao_nome: string;
+}
+
+export function toExecucaoSelecaoRow(selecao: { execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }): ExecucaoSelecaoRow {
+  return {
+    execucao_id: selecao.execucaoId,
+    medico_id: selecao.medicoId,
+    producao_externa_id: selecao.producaoExternaId,
+    producao_nome: selecao.producaoNome,
+  };
+}
+
+export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
+  return {
+    execucaoId: row.execucao_id,
+    medicoId: row.medico_id,
+    producaoExternaId: row.producao_externa_id,
+    producaoNome: row.producao_nome,
+  };
+}
+
 export interface ExecucaoResultadoRow {
   id: string;
   execucao_id: string;

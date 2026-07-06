@@ -1,34 +1,31 @@
-// Harness de teste do Orchestrator: dependências em memória, sem Supabase nem rede.
-// Implementa OrchestratorDeps inteiro com estado em arrays/maps.
-import type { Execucao, Medico, Procedimento, ResultadoMedico } from '@cobranca/shared';
+import type { Execucao, Medico, ItemProducao, ResultadoMedico } from '@cobranca/shared';
 import type { OrchestratorDeps } from '../../../src/server/orchestrator/execucao-orchestrator';
 
 export interface FakeState {
   execucoes: Map<string, Execucao>;
   resultados: Map<string, { medicoId: string | null; r: ResultadoMedico }[]>;
-  medicosAtivos: Medico[];
-  procedimentosPorCpf: Record<string, Procedimento[]>;
-  guiasAnterioresPorCpf: Record<string, number | null>;
+  medicos: Map<string, Medico>;
+  selecoes: { execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }[];
+  itensPorProducao: Record<string, ItemProducao[]>;
+  guiasAnterioresPorMedicoId: Record<string, number | null>;
   chamadasProximoLote: number;
-  /** CPFs retornados pela fase de descoberta (simula API Carmem). */
-  cpfsParaDescobrir: { cpf: string; nome: string; especialidade: string | null }[];
-  /** CPFs que foram descobertos/criados como stubs pelo fake. */
-  stubsCriados: string[];
-  /** Se setado, buscarProcedimentos lança para esses CPFs (simula falha de rede). */
-  cpfsComFalha: Set<string>;
+  /** Se setado, buscarItens lança para essas producoes (simula falha de rede). */
+  producoesComFalha: Set<string>;
 }
 
 export function novoEstado(medicos: Medico[]): FakeState {
+  const medicosMap = new Map<string, Medico>();
+  for (const m of medicos) medicosMap.set(m.id, m);
+  
   return {
     execucoes: new Map(),
     resultados: new Map(),
-    medicosAtivos: medicos,
-    procedimentosPorCpf: {},
-    guiasAnterioresPorCpf: {},
+    medicos: medicosMap,
+    selecoes: [],
+    itensPorProducao: {},
+    guiasAnterioresPorMedicoId: {},
     chamadasProximoLote: 0,
-    cpfsParaDescobrir: [],
-    stubsCriados: [],
-    cpfsComFalha: new Set(),
+    producoesComFalha: new Set(),
   };
 }
 
@@ -62,10 +59,9 @@ export function fakeDeps(
   let proximoId = 1;
   const deps: OrchestratorDeps = {
     batchSize,
-    contarMedicosAtivos: async () => state.medicosAtivos.length,
-    listarMedicosAtivosPagina: async (offset, limite) =>
-      state.medicosAtivos.slice(offset, offset + limite),
-    criarExecucao: async (competencia, iniciadoPor, total) => {
+    listarSelecoes: async (execucaoId) => state.selecoes.filter(s => s.execucaoId === execucaoId),
+    buscarMedico: async (id) => state.medicos.get(id) ?? null,
+    criarExecucao: async (competencia, iniciadoPor, selecoes) => {
       const id = `exec-${proximoId++}`;
       const exec: Execucao = {
         id,
@@ -75,7 +71,7 @@ export function fakeDeps(
         finalizadoEm: null,
         status: 'processando',
         progresso: 0,
-        totalMedicos: total,
+        totalMedicos: selecoes.length,
         totalOk: null,
         totalAlerta: null,
         totalSemDados: null,
@@ -83,6 +79,12 @@ export function fakeDeps(
       };
       state.execucoes.set(id, exec);
       state.resultados.set(id, []);
+      
+      // Store selecoes for this execution
+      for (const s of selecoes) {
+        state.selecoes.push({ ...s, execucaoId: id });
+      }
+      
       return exec;
     },
     buscarExecucao: async (id) => state.execucoes.get(id) ?? null,
@@ -111,10 +113,10 @@ export function fakeDeps(
       const e = state.execucoes.get(id)!;
       state.execucoes.set(id, { ...e, status: 'erro' });
     },
-    guiasExecucaoAnterior: async (cpf) => state.guiasAnterioresPorCpf[cpf] ?? null,
-    buscarProcedimentos: async (cpf) => {
-      if (state.cpfsComFalha.has(cpf)) throw new Error('falha de rede simulada');
-      return state.procedimentosPorCpf[cpf] ?? [];
+    guiasExecucaoAnterior: async (medicoId) => state.guiasAnterioresPorMedicoId[medicoId] ?? null,
+    buscarItens: async (producaoExternaId) => {
+      if (state.producoesComFalha.has(producaoExternaId)) throw new Error('falha de rede simulada');
+      return state.itensPorProducao[producaoExternaId] ?? [];
     },
     listarResultados: async (id) => (state.resultados.get(id) ?? []).map((x) => x.r),
     agendarProximoLote: async (id) => {
@@ -122,15 +124,6 @@ export function fakeDeps(
       if (opts.autoEncadear) {
         await processarProximoLote(id, deps);
       }
-    },
-    descobrirMedicos: async (_competencia) => {
-      // Simula descoberta: para cada CPF em cpfsParaDescobrir que ainda não está em
-      // medicosAtivos, registra como stub criado (sem alterar medicosAtivos — stubs
-      // têm necessitaConfiguracao=true e não entram no processamento).
-      const cpfsConhecidos = new Set(state.medicosAtivos.map((m) => m.cpf));
-      const novos = state.cpfsParaDescobrir.filter((m) => !cpfsConhecidos.has(m.cpf));
-      for (const m of novos) state.stubsCriados.push(m.cpf);
-      return novos.length;
     },
   };
   return deps;

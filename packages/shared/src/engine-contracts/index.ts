@@ -17,6 +17,8 @@ export interface ResultadoFaixa {
   faixa: string;
 }
 
+import type { ItemProducao } from '../types/integracao';
+
 /** Entrada do processamento de um médico — dados já buscados (sem I/O no Engine). */
 export interface EntradaProcessamentoMedico {
   medico: Pick<
@@ -30,7 +32,7 @@ export interface EntradaProcessamentoMedico {
     | 'modoMudancaData'
     | 'especialidade'
   >;
-  procedimentos: Procedimento[];
+  itens: ItemProducao[];
   /** Guias da execução anterior do mesmo médico, p/ detecção de variação anômala (PRD §8.5). */
   historicoGuias?: number | null;
 }
