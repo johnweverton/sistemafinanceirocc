@@ -15,12 +15,8 @@ const serverSchema = z.object({
   // fecha a escalação de privilégio (antes, todo usuário sem perfil virava admin).
   // Formato: e-mails separados por vírgula. Vazio = nenhum auto-provisionamento.
   BOOTSTRAP_ADMIN_EMAILS: z.string().optional(),
-  CARMEM_API_URL: z.string().url().optional(),
-  CARMEM_API_KEY: z.string().optional(),
-  PROCEDIMENTOS_SOURCE: z.enum(['local', 'http']).default('local'),
   // ---------------------------------------------------------------------------
   // API REAL do Sistema Web (Épico 5) — fin-clientes/fin-producoes/fin-itens.
-  // Substitui CARMEM_*/PROCEDIMENTOS_SOURCE no cutover (story 5.5); até lá convivem.
   // ---------------------------------------------------------------------------
   API_FINANCEIRO_URL: z.string().url().optional(),
   API_FINANCEIRO_KEY: z.string().optional(),
@@ -58,9 +54,6 @@ export function getServerEnv() {
   return serverSchema.parse({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     BOOTSTRAP_ADMIN_EMAILS: process.env.BOOTSTRAP_ADMIN_EMAILS,
-    CARMEM_API_URL: process.env.CARMEM_API_URL,
-    CARMEM_API_KEY: process.env.CARMEM_API_KEY,
-    PROCEDIMENTOS_SOURCE: process.env.PROCEDIMENTOS_SOURCE,
     API_FINANCEIRO_URL: process.env.API_FINANCEIRO_URL,
     API_FINANCEIRO_KEY: process.env.API_FINANCEIRO_KEY,
     FIN_API_SOURCE: process.env.FIN_API_SOURCE,
