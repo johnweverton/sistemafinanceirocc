@@ -188,15 +188,17 @@ async function processarUmMedico(
   deps: OrchestratorDeps,
 ): Promise<void> {
   try {
-    const procedimentos = await deps.buscarProcedimentos(medico.cpf, competencia);
+    // cpf ?? '': médico importado pode não ter CPF (Épico 5 §3.4); no fluxo atual (pré-cutover)
+    // esses médicos têm necessita_configuracao=true e não chegam aqui — o fallback é defensivo.
+    const procedimentos = await deps.buscarProcedimentos(medico.cpf ?? '', competencia);
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
-    const historicoGuias = await deps.guiasExecucaoAnterior(medico.cpf, competencia);
+    const historicoGuias = await deps.guiasExecucaoAnterior(medico.cpf ?? '', competencia);
     const resultado = processarMedico({ medico, procedimentos, historicoGuias });
     await deps.gravarResultado(execucaoId, medico.id, resultado);
   } catch (e) {
     // Falha de infraestrutura ao buscar dados — médico vira alerta, competência segue.
     await deps.gravarResultado(execucaoId, medico.id, {
-      cpf: medico.cpf,
+      cpf: medico.cpf ?? '',
       nome: medico.nome,
       procedimentos: 0,
       cirurgias: 0,

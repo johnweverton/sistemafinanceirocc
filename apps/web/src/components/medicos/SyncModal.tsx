@@ -1,0 +1,185 @@
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { medicosService, queryKeys, type SyncRelatorio, type SyncCandidata, type SyncPendenciaSugestao } from '@/services/medicos';
+import { ApiClientError } from '@/lib/api-client';
+import type { ClienteExterno } from '@cobranca/shared';
+import { useToast } from '@/components/ui/Toast';
+
+interface SyncModalProps {
+  relatorio: SyncRelatorio;
+  onClose: () => void;
+}
+
+export function SyncModal({ relatorio, onClose }: SyncModalProps) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  
+  // Arrays mutáveis em memória para remover os itens já resolvidos sem precisar refetch na API
+  const [comSugestao, setComSugestao] = useState(relatorio.comSugestao);
+  const [semPar, setSemPar] = useState(relatorio.semPar);
+  const [vinculados, setVinculados] = useState(relatorio.jaVinculados);
+  const [criados, setCriados] = useState(0);
+
+  const vincular = useMutation({
+    mutationFn: (p: { medicoId: string; externalId: string }) => medicosService.vincularExterno(p),
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
+      setComSugestao(prev => prev.filter(p => p.cliente.id !== vars.externalId));
+      setVinculados(prev => prev + 1);
+      toast('Médico vinculado com sucesso', 'success');
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao vincular';
+      toast(msg, 'error');
+    },
+  });
+
+  const criar = useMutation({
+    mutationFn: (p: { externalId: string }) => medicosService.criarExterno(p),
+    onSuccess: (_, vars) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
+      setSemPar(prev => prev.filter(c => c.id !== vars.externalId));
+      setCriados(prev => prev + 1);
+      toast('Novo médico criado com sucesso', 'success');
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao criar';
+      toast(msg, 'error');
+    },
+  });
+
+  const isPending = vincular.isPending || criar.isPending;
+
+  function rejeitarSugestao(pendencia: SyncPendenciaSugestao) {
+    setComSugestao(prev => prev.filter(p => p.cliente.id !== pendencia.cliente.id));
+    setSemPar(prev => [pendencia.cliente, ...prev]);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-cc-surface card flex h-full max-h-[85vh] w-full max-w-4xl flex-col shadow-2xl">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-cc-hairline px-6 py-4">
+          <div>
+            <h2 className="text-xl font-bold text-cc-ink">Sincronização com o Sistema Web</h2>
+            <p className="text-sm text-cc-muted">
+              {relatorio.totalOrigem} clientes encontrados na origem. 
+              {vinculados > 0 && ` ${vinculados} já vinculados.`} 
+              {criados > 0 && ` ${criados} novos criados.`}
+            </p>
+          </div>
+          <button onClick={onClose} disabled={isPending} className="btn-ghost btn btn-sm">
+            Fechar
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-8">
+          
+          {/* Sessão Sugestões */}
+          {comSugestao.length > 0 && (
+            <section>
+              <h3 className="mb-4 text-lg font-semibold text-cc-ink">
+                Sugestões de vínculo ({comSugestao.length})
+              </h3>
+              <div className="space-y-4">
+                {comSugestao.map((pend) => (
+                  <div key={pend.cliente.id} className="rounded-lg border border-cc-hairline p-4">
+                    <div className="mb-3 flex items-start justify-between">
+                      <div>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-cc-muted">Origem</span>
+                        <p className="font-medium text-cc-ink">{pend.cliente.nome}</p>
+                        <p className="text-xs text-cc-ink-2">{pend.cliente.productionType}</p>
+                      </div>
+                      <button
+                        onClick={() => rejeitarSugestao(pend)}
+                        disabled={isPending}
+                        className="btn-ghost btn btn-sm text-cc-danger"
+                      >
+                        Nenhum corresponde (Mover para s/ par)
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 pl-4 border-l-2 border-cc-border">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-cc-muted">Possíveis pares locais</span>
+                      {pend.candidatas.map(cand => (
+                        <div key={cand.medicoId} className="flex items-center justify-between rounded bg-cc-surface-2 p-2">
+                          <div>
+                            <p className="font-medium text-cc-ink">{cand.nome}</p>
+                            <p className="text-xs text-cc-muted">Score de similaridade: {(cand.score * 100).toFixed(0)}%</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (confirm('Atenção: O vínculo é PERMANENTE. Tem certeza que deseja confirmar este par?')) {
+                                vincular.mutate({ medicoId: cand.medicoId, externalId: pend.cliente.id });
+                              }
+                            }}
+                            disabled={isPending}
+                            className="btn-primary btn btn-sm"
+                          >
+                            Confirmar vínculo
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Sessão Sem Par */}
+          {semPar.length > 0 && (
+            <section>
+              <h3 className="mb-4 text-lg font-semibold text-cc-ink">
+                Sem par local - Criar novos ({semPar.length})
+              </h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {semPar.map((cli) => (
+                  <div key={cli.id} className="flex flex-col justify-between rounded-lg border border-cc-hairline p-4">
+                    <div className="mb-3">
+                      <p className="font-medium text-cc-ink">{cli.nome}</p>
+                      <p className="text-xs text-cc-ink-2">{cli.productionType}</p>
+                    </div>
+                    <button
+                      onClick={() => criar.mutate({ externalId: cli.id })}
+                      disabled={isPending}
+                      className="btn-secondary btn btn-sm w-full"
+                    >
+                      Criar médico novo
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Sessão Não sincronizáveis */}
+          {relatorio.naoSincronizaveis.length > 0 && (
+            <section>
+              <h3 className="mb-4 text-lg font-semibold text-cc-ink">
+                Não sincronizáveis / Ignorados ({relatorio.naoSincronizaveis.length})
+              </h3>
+              <ul className="list-disc pl-5 text-sm text-cc-ink-2 space-y-1">
+                {relatorio.naoSincronizaveis.map((nao) => (
+                  <li key={nao.cliente.id}>
+                    <strong>{nao.cliente.nome}</strong>: {nao.motivo}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {comSugestao.length === 0 && semPar.length === 0 && (
+            <div className="py-12 text-center text-cc-ink-2">
+              <p className="text-lg font-medium">Tudo sincronizado!</p>
+              <p className="text-sm">Não há mais pendências de vínculo.</p>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -17,7 +17,18 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { MedicoForm } from './MedicoForm';
 
+import { SyncModal } from './SyncModal';
+
 type Modo = { tipo: 'lista' } | { tipo: 'novo' } | { tipo: 'editar'; medico: Medico };
+
+function pendenciasDoMedico(m: Medico): string[] {
+  const p: string[] = [];
+  if (!m.cpf) p.push('CPF ausente');
+  if (!m.especialidade) p.push('Especialidade ausente');
+  if (!cobrancaCompleta(m)) p.push('Dados de cobrança incompletos');
+  if (!m.externalId) p.push('Não vinculado à origem');
+  return p;
+}
 
 export function MedicosManager() {
   const qc = useQueryClient();
@@ -25,6 +36,8 @@ export function MedicosManager() {
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
+  const [syncRelatorio, setSyncRelatorio] = useState<any | null>(null);
+  const [filtroIncompleto, setFiltroIncompleto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const importar = useMutation({
@@ -45,6 +58,19 @@ export function MedicosManager() {
       setErro(msg);
       toast(msg, 'error');
       if (fileInputRef.current) fileInputRef.current.value = '';
+    },
+  });
+
+  const sincronizar = useMutation({
+    mutationFn: () => medicosService.sincronizar(),
+    onSuccess: (relatorio) => {
+      setSyncRelatorio(relatorio);
+      setErro(null);
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao sincronizar origem';
+      setErro(msg);
+      toast(msg, 'error');
     },
   });
 
@@ -134,11 +160,29 @@ export function MedicosManager() {
     );
   }
 
+  const medicosExibidos = (medicos ?? []).filter((m) => {
+    if (filtroIncompleto) {
+      return pendenciasDoMedico(m).length > 0;
+    }
+    return true;
+  });
+
   return (
     <section className="space-y-5">
+      {syncRelatorio && (
+        <SyncModal relatorio={syncRelatorio} onClose={() => setSyncRelatorio(null)} />
+      )}
+
       <div className="page-header">
         <h1 className="page-title">Médicos</h1>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => sincronizar.mutate()}
+            disabled={sincronizar.isPending}
+            className="btn btn-primary btn-sm"
+          >
+            {sincronizar.isPending ? 'Sincronizando...' : 'Sincronizar com sistema web'}
+          </button>
           <a
             href="/templates/medicos-modelo.csv"
             download
@@ -175,6 +219,18 @@ export function MedicosManager() {
             Novo médico
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-cc-ink">
+          <input 
+            type="checkbox" 
+            checked={filtroIncompleto} 
+            onChange={e => setFiltroIncompleto(e.target.checked)} 
+            className="rounded border-cc-hairline accent-cc-accent"
+          />
+          Mostrar apenas pendentes / incompletos
+        </label>
       </div>
 
       {erro && <p role="alert" className="alert-error">{erro}</p>}
@@ -225,7 +281,7 @@ export function MedicosManager() {
         <div className="card p-8 text-center">
           <p className="text-sm text-cc-danger">Não foi possível carregar a lista de médicos. Recarregue a página.</p>
         </div>
-      ) : (medicos ?? []).length === 0 ? (
+      ) : medicosExibidos.length === 0 ? (
         <EmptyState
           icon={
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -234,8 +290,8 @@ export function MedicosManager() {
               <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
           }
-          title="Nenhum médico cadastrado ainda"
-          description="Cadastre manualmente ou importe uma planilha CSV para começar."
+          title={filtroIncompleto ? "Nenhum médico incompleto" : "Nenhum médico cadastrado ainda"}
+          description={filtroIncompleto ? "Todos os médicos listados estão com o cadastro em dia." : "Cadastre manualmente ou importe uma planilha CSV para começar."}
           action={
             <button onClick={() => setModo({ tipo: 'novo' })} className="btn-primary btn-sm btn">
               Novo médico
@@ -250,56 +306,62 @@ export function MedicosManager() {
                 <th>Nome</th>
                 <th>CPF</th>
                 <th>Tipo</th>
-                <th>Modo</th>
                 <th>Status</th>
                 <th className="text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {(medicos ?? []).map((m) => (
-                <tr
-                  key={m.id}
-                  onClick={() => {
-                    setErro(null);
-                    setModo({ tipo: 'editar', medico: m });
-                  }}
-                  className={`cursor-pointer ${m.necessitaConfiguracao ? 'opacity-70' : ''}`}
-                >
-                  <td className="font-medium">{m.nome}</td>
-                  <td className="font-mono text-cc-ink-2 tabular">{formatCpf(m.cpf)}</td>
-                  <td>
-                    {m.necessitaConfiguracao ? (
-                      <span className="badge-amber">Aguarda config</span>
-                    ) : (
-                      <span className="badge-slate">{tipoSeguro(m)}</span>
-                    )}
-                  </td>
-                  <td className="text-cc-ink-2">
-                    {m.necessitaConfiguracao ? '-' : m.modoMudancaData === 'sim' ? 'Muda data' : 'Normal'}
-                  </td>
-                  <td>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {m.necessitaConfiguracao ? (
-                        <span className="badge-amber">Pendente</span>
-                      ) : m.ativo ? (
-                        <span className="badge-green">Ativo</span>
-                      ) : (
-                        <span className="badge-slate">Inativo</span>
-                      )}
-                      {!m.necessitaConfiguracao && !cobrancaCompleta(m) && (
-                        <span className="badge-amber" title="Dados de cobrança incompletos — não emite boleto">
-                          Cobrança ⚠
+              {medicosExibidos.map((m) => {
+                const pendencias = pendenciasDoMedico(m);
+                return (
+                  <tr
+                    key={m.id}
+                    onClick={() => {
+                      setErro(null);
+                      setModo({ tipo: 'editar', medico: m });
+                    }}
+                    className={`cursor-pointer ${m.necessitaConfiguracao ? 'opacity-70' : ''}`}
+                  >
+                    <td className="font-medium">
+                      {m.nome}
+                      {pendencias.length > 0 && (
+                        <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" title={pendencias.join('\n')}>
+                          Incompleto
                         </span>
                       )}
-                    </div>
-                  </td>
-                  <td className="text-right">
-                    <span className="link-action">
-                      {m.necessitaConfiguracao ? 'Configurar' : 'Editar'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="font-mono text-cc-ink-2 tabular">{m.cpf ? formatCpf(m.cpf) : '—'}</td>
+                    <td>
+                      {m.necessitaConfiguracao ? (
+                        <span className="badge-amber">Aguarda config</span>
+                      ) : (
+                        <span className="badge-slate">{tipoSeguro(m)}</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {m.necessitaConfiguracao ? (
+                          <span className="badge-amber">Pendente</span>
+                        ) : m.ativo ? (
+                          <span className="badge-green">Ativo</span>
+                        ) : (
+                          <span className="badge-slate">Inativo</span>
+                        )}
+                        {!m.necessitaConfiguracao && !cobrancaCompleta(m) && (
+                          <span className="badge-amber" title="Dados de cobrança incompletos — não emite boleto">
+                            Cobrança ⚠
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="text-right">
+                      <span className="link-action">
+                        {m.necessitaConfiguracao ? 'Configurar' : 'Editar'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

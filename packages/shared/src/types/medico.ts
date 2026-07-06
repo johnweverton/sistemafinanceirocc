@@ -40,7 +40,12 @@ export interface CondicoesCobranca {
 
 export interface Medico {
   id: string;
-  cpf: string; // 11 dígitos, sem pontuação — chave de cruzamento com a API externa
+  /**
+   * CPF (11 dígitos, sem pontuação). Desde o Épico 5 (§3.4 da arquitetura) é dado
+   * CADASTRAL, não chave interna: null = médico importado da origem, pendência de
+   * cadastro. A chave de vínculo com a origem é `externalId`.
+   */
+  cpf: string | null;
   nome: string;
   especialidade: string | null;
   statusHapvida: StatusHapvida;
@@ -51,6 +56,8 @@ export interface Medico {
   ativo: boolean;
   /** true = médico auto-descoberto, parâmetros de faturamento ainda não configurados. */
   necessitaConfiguracao: boolean;
+  /** UUID do médico na origem (fin-clientes.id) — vínculo permanente; null/ausente = sem vínculo (Épico 5). */
+  externalId?: string | null;
   /** Bloco de cobrança do pagador; null enquanto não configurado (Fase 3). */
   cobranca?: DadosCobranca | null;
   /** Overrides comerciais; null/campos nulos herdam config_cobranca global. */

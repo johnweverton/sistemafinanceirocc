@@ -77,7 +77,7 @@ export function CommandPalette() {
     const med: Item[] = (medicos ?? []).map((m) => ({
       id: `med-${m.id}`,
       label: m.nome,
-      hint: formatCpf(m.cpf),
+      hint: m.cpf ? formatCpf(m.cpf) : '',
       group: 'Médicos',
       href: `/medicos/${m.id}/historico`,
     }));

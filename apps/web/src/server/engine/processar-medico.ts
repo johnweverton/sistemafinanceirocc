@@ -30,7 +30,7 @@ export function processarMedico(
 
   if (validos.length === 0) {
     return {
-      cpf: medico.cpf,
+      cpf: medico.cpf ?? '', // snapshot informativo — médico importado pode não ter CPF (Épico 5 §3.4)
       nome: medico.nome,
       procedimentos: 0,
       cirurgias: 0,
@@ -62,7 +62,7 @@ export function processarMedico(
   }
 
   return {
-    cpf: medico.cpf,
+    cpf: medico.cpf ?? '',
     nome: medico.nome,
     procedimentos: validos.length,
     cirurgias,

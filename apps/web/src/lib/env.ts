@@ -18,6 +18,13 @@ const serverSchema = z.object({
   CARMEM_API_URL: z.string().url().optional(),
   CARMEM_API_KEY: z.string().optional(),
   PROCEDIMENTOS_SOURCE: z.enum(['local', 'http']).default('local'),
+  // ---------------------------------------------------------------------------
+  // API REAL do Sistema Web (Épico 5) — fin-clientes/fin-producoes/fin-itens.
+  // Substitui CARMEM_*/PROCEDIMENTOS_SOURCE no cutover (story 5.5); até lá convivem.
+  // ---------------------------------------------------------------------------
+  API_FINANCEIRO_URL: z.string().url().optional(),
+  API_FINANCEIRO_KEY: z.string().optional(),
+  FIN_API_SOURCE: z.enum(['local', 'http']).default('local'),
   INTERNAL_SECRET: z.string().optional(),
   // Base URL da própria app, usada pela função para se auto-invocar entre lotes (Fase 2).
   // Em Vercel, derivar de VERCEL_URL; local, http://localhost:3000.
@@ -54,6 +61,9 @@ export function getServerEnv() {
     CARMEM_API_URL: process.env.CARMEM_API_URL,
     CARMEM_API_KEY: process.env.CARMEM_API_KEY,
     PROCEDIMENTOS_SOURCE: process.env.PROCEDIMENTOS_SOURCE,
+    API_FINANCEIRO_URL: process.env.API_FINANCEIRO_URL,
+    API_FINANCEIRO_KEY: process.env.API_FINANCEIRO_KEY,
+    FIN_API_SOURCE: process.env.FIN_API_SOURCE,
     INTERNAL_SECRET: process.env.INTERNAL_SECRET,
     APP_BASE_URL:
       process.env.APP_BASE_URL ??

@@ -219,6 +219,132 @@ export async function atualizarMedico(
   return toMedico(atualizado as MedicoRow);
 }
 
+// ---------------------------------------------------------------------------
+// Vínculo com a origem (Épico 5 — sincronização com a API do sistema web)
+// ---------------------------------------------------------------------------
+
+/** Busca médico pelo vínculo com a origem (fin-clientes.id). */
+export async function buscarPorExternalId(externalId: string): Promise<Medico | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('medicos')
+    .select('*')
+    .eq('external_id', externalId)
+    .maybeSingle();
+  if (error) throw new ApiError(500, 'Falha ao buscar médico por vínculo', 'DB_ERROR', { error: error.message });
+  return data ? toMedico(data as MedicoRow) : null;
+}
+
+/**
+ * Confirma o vínculo médico ↔ cliente da origem. O vínculo é PERMANENTE (decisão 4 do
+ * épico) — falha 409 se qualquer lado já estiver vinculado. Gera histórico (requisito
+ * não-opcional, PRD §7).
+ */
+export async function vincularExternalId(
+  medicoId: string,
+  externalId: string,
+  autorId: string,
+  motivo: string,
+): Promise<Medico> {
+  const db = getSupabaseAdmin();
+  const atual = await buscarMedico(medicoId);
+  if (!atual) throw new ApiError(404, 'Médico não encontrado', 'NOT_FOUND');
+  if (atual.externalId) {
+    throw new ApiError(409, 'Médico já vinculado a um cliente da origem', 'JA_VINCULADO');
+  }
+  const ocupado = await buscarPorExternalId(externalId);
+  if (ocupado) {
+    throw new ApiError(409, 'Cliente da origem já vinculado a outro médico', 'EXTERNAL_ID_DUPLICADO');
+  }
+
+  const { data, error } = await db
+    .from('medicos')
+    .update({ external_id: externalId, updated_at: new Date().toISOString() })
+    .eq('id', medicoId)
+    .select('*')
+    .single();
+  if (error) {
+    // Defesa final: UNIQUE parcial uq_medicos_external_id (0011) em corrida.
+    if (error.code === '23505') {
+      throw new ApiError(409, 'Cliente da origem já vinculado a outro médico', 'EXTERNAL_ID_DUPLICADO');
+    }
+    throw new ApiError(500, 'Falha ao vincular médico', 'DB_ERROR', { error: error.message });
+  }
+
+  const { error: histErr } = await db.from('medicos_historico').insert({
+    medico_id: medicoId,
+    campo_alterado: 'external_id',
+    valor_anterior: '',
+    valor_novo: externalId,
+    alterado_por: autorId,
+    motivo,
+  });
+  if (histErr) {
+    throw new ApiError(500, 'Médico vinculado mas histórico falhou — verificar', 'HISTORICO_ERROR', {
+      error: histErr.message,
+    });
+  }
+
+  return toMedico(data as MedicoRow);
+}
+
+/**
+ * Médico novo criado a partir da origem: sem CPF, pendente de configuração (decisão 1).
+ * `statusHapvida` restrito aos valores deriváveis — NUNCA 'nenhum' (o CHECK
+ * combinacao_classe_valida da 0001 proíbe 'nenhum' + faz_outros_hospitais=false).
+ */
+export interface NovoMedicoExterno {
+  externalId: string;
+  nome: string;
+  statusHapvida: 'credenciado' | 'nao_credenciado';
+}
+
+export async function criarMedicoExterno(
+  dados: NovoMedicoExterno,
+  autorId: string,
+): Promise<Medico> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('medicos')
+    .insert({
+      cpf: null,
+      nome: dados.nome,
+      especialidade: null,
+      status_hapvida: dados.statusHapvida,
+      faz_outros_hospitais: false,
+      faz_imobilizacoes: false,
+      modo_mudanca_data: 'nao' as const,
+      colaborador_responsavel: null,
+      ativo: true,
+      necessita_configuracao: true, // fora das execuções até o operador completar (0005)
+      external_id: dados.externalId,
+    })
+    .select('*')
+    .single();
+  if (error) {
+    if (error.code === '23505') {
+      throw new ApiError(409, 'Cliente da origem já vinculado a um médico', 'EXTERNAL_ID_DUPLICADO');
+    }
+    throw new ApiError(500, 'Falha ao criar médico da origem', 'DB_ERROR', { error: error.message });
+  }
+
+  const medico = toMedico(data as MedicoRow);
+  const { error: histErr } = await db.from('medicos_historico').insert({
+    medico_id: medico.id,
+    campo_alterado: 'external_id',
+    valor_anterior: '',
+    valor_novo: dados.externalId,
+    alterado_por: autorId,
+    motivo: 'Criado via sincronização com o sistema web',
+  });
+  if (histErr) {
+    throw new ApiError(500, 'Médico criado mas histórico falhou — verificar', 'HISTORICO_ERROR', {
+      error: histErr.message,
+    });
+  }
+  return medico;
+}
+
 export async function historicoDoMedico(id: string): Promise<MedicoHistorico[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db

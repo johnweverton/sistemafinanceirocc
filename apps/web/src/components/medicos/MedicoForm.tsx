@@ -57,7 +57,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const [form, setForm] = useState<FormState>(
     inicial
       ? {
-          cpf: inicial.cpf,
+          cpf: inicial.cpf ?? '',
           nome: inicial.nome,
           especialidade: inicial.especialidade,
           statusHapvida: inicial.statusHapvida,
@@ -76,7 +76,9 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const combinacaoValida = useMemo(() => combinacaoClasseValida(form), [form]);
   const tipo = useMemo(() => (combinacaoValida ? tipoDoMedico(form) : null), [combinacaoValida, form]);
   const motivoOk = !exigeMotivo || motivo.trim().length > 0;
-  const podeSalvar = combinacaoValida && motivoOk && form.cpf.length === 11 && form.nome.trim().length > 0;
+  // CPF opcional: se tem tamanho, tem que ser 11, se não, é válido.
+  const cpfOk = form.cpf.length === 0 || form.cpf.length === 11;
+  const podeSalvar = combinacaoValida && motivoOk && cpfOk && form.nome.trim().length > 0;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -123,8 +125,15 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
       }}
       className="space-y-6"
     >
+      {inicial?.externalId && (
+        <div className="alert-info text-sm py-2 mb-4">
+          <span className="font-semibold">Vínculo: </span> 
+          Este médico está sincronizado com o sistema web (ID: {inicial.externalId}).
+        </div>
+      )}
+      
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="CPF (11 dígitos)">
+        <Field label="CPF (11 dígitos)" optional>
           <input
             name="cpf"
             value={form.cpf}

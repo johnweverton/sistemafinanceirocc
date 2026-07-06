@@ -1,10 +1,28 @@
-import type { Medico, MedicoHistorico, DadosCobranca, CondicoesCobranca } from '@cobranca/shared';
+import type { Medico, MedicoHistorico, DadosCobranca, CondicoesCobranca, ClienteExterno } from '@cobranca/shared';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import type { ApiErrorBody } from '@/lib/api-error';
 
 export interface ImportarResultado {
   criados: number;
   erros: { linha: number; cpf: string; erro: string }[];
+}
+
+export interface SyncCandidata {
+  medicoId: string;
+  nome: string;
+  score: number;
+}
+export interface SyncPendenciaSugestao {
+  cliente: ClienteExterno;
+  candidatas: SyncCandidata[];
+}
+export interface SyncRelatorio {
+  totalOrigem: number;
+  jaVinculados: number;
+  atualizados: number;
+  comSugestao: SyncPendenciaSugestao[];
+  semPar: ClienteExterno[];
+  naoSincronizaveis: { cliente: ClienteExterno; motivo: string }[];
 }
 
 export interface NovoMedicoPayload {
@@ -46,6 +64,11 @@ export const medicosService = {
     }
     return res.json() as Promise<ImportarResultado>;
   },
+  sincronizar: () => apiFetch<any>('/sync/medicos', { method: 'POST' }),
+  vincularExterno: (payload: { medicoId: string; externalId: string }) =>
+    apiFetch<Medico>('/sync/medicos/vincular', { method: 'POST', body: JSON.stringify(payload) }),
+  criarExterno: (payload: { externalId: string }) =>
+    apiFetch<Medico>('/sync/medicos/criar', { method: 'POST', body: JSON.stringify(payload) }),
 };
 
 export const queryKeys = {

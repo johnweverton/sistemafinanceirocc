@@ -64,3 +64,80 @@ roda manualmente. As stories assumem o schema aplicado.
 ## Fora de escopo
 Registrar a URL de webhook no Cora e ligar a emissão (`GATEWAY_EMISSAO_HABILITADA`) seguem como
 ações externas de @devops/negócio quando a emissão for a produção.
+
+---
+
+# Épico 5 — Integração com a API real do Sistema Web (médicos + produções)
+
+**Fonte de verdade:** `docs/architecture/feature-integracao-api-financeiro.md`
+**Contrato externo:** `docs/integracao/api-financeiro-sistema-web.md` (documentação entregue pelo programador do sistema web)
+**Objetivo:** substituir a entrada manual/CSV de produção pela API real do Sistema Web
+(Carmem Cavalcante): sincronizar médicos e importar produções/itens direto da origem.
+
+## Descoberta crítica (define o escopo)
+O client existente (`apps/web/src/server/integration/procedimentos-client.ts`) foi construído sobre
+o contrato **presumido** do PRD §6.4 (`GET /api/procedimentos?cpf=&competencia=`, campos
+`numero_atendimento`/`senha_procedimento`/`tipo M-A1-A2`). A API **real** entrega recursos e
+semântica diferentes: `fin-clientes` (sem CPF, sem especialidade) → `fin-producoes` (produções
+nomeadas, ex. "Janeiro 2026") → `fin-itens` (`date`, `patient_name`, `proc_code`, `status`,
+`via_acesso`, `charged_val`, `paid_val`). **Não é "ligar a chave"**: exige adaptar a camada de
+integração e revisar a regra de contagem, que hoje filtra por `numeroAtendimento`+`senha`
+(campos que não existem na API real).
+
+## Decisões fechadas (dono)
+1. Importação cria médico incompleto (`necessitaConfiguracao=true`); o guard de emissão (422)
+   já bloqueia boleto até completar o cadastro — estado previsto, sem gambiarra.
+2. UI de pendências de cadastro (filtro/badge "incompleto para cobrança" via `cobrancaCompleta()`);
+   completude individual pelo MedicoForm/ViaCEP (story 3.3).
+3. CSV estendido (story 3.4) permanece como via de completude **em massa** na carga inicial.
+4. UUID externo (`external_id`) é a chave de vínculo permanente com a origem. CPF no
+   `fin-clientes` foi solicitado ao programador (resposta pendente) — **o épico não bloqueia nisso**.
+5. **Todas as guias entram na cobrança**, independente do status da origem (Devidamente Pago /
+   Glosado / Recurso / Aguardando Fechamento). Única regra especial: `via_acesso = "Sim"` agrupa
+   itens do mesmo paciente/atendimento em **uma** guia.
+6. Credenciais só em ambiente: `API_FINANCEIRO_URL` / `API_FINANCEIRO_KEY` em
+   `apps/web/.env.local` + painel Vercel. Nunca versionadas.
+7. **Seleção manual da produção** na tela de execução (sem mapeamento automático
+   nome↔competência): o usuário escolhe médico → produção listada pela API. (ex-Q1)
+8. **Preço segue interno**: o valor cobrado continua vindo da tabela de preços do sistema
+   (engine `precos.ts`); `charged_val`/`paid_val` da origem são apenas informativos. (ex-Q5)
+9. **Matching assistido na carga inicial**: sem CPF na API, o sistema sugere pares
+   (médico da API ↔ cadastro existente, por similaridade de nome) e o usuário confirma;
+   sem par sugerido/confirmado, cria médico novo vinculado por `external_id`. (ex-Q3)
+10. **`production_type` deriva `statusHapvida`**: "Produção Credenciada" → `credenciado`,
+    "Produção VH" → `nao_credenciado` (confirmado pelo dono 2026-07-06); preenchido
+    automaticamente na importação. (ex-Q4)
+11. **Regra do pediatra mantida** (teto n/3): via de acesso é independente da regra do pediatra;
+    interação das duas regras especificada na arquitetura §3.3.
+
+## Questões abertas
+- **Q2 resolvida na arquitetura (§3.3):** contagem nova em `contagem-producao.ts` — grupo
+  `via_acesso` por (paciente, data) = 1 guia; item sem `via_acesso` = 1 guia; status nunca filtra.
+  Restam 3 decisões de negócio no §10 da arquitetura (pediatra n/3, mapeamento do VH,
+  campo de agrupamento explícito na origem).
+
+## Pré-requisitos operacionais
+- Migration `0011_integracao_api_financeiro.sql` (`external_id`, `cpf` nullable + UNIQUE parcial,
+  snapshot de seleções) — @data-engineer (arquitetura §4).
+- **Pendências externas (programador da origem, pedidas 2026-07-06):** CPF no `fin-clientes` +
+  senha/nº de atendimento no `fin-itens`. Não bloqueiam 5.1–5.4; o **cutover (5.5) deve
+  preferencialmente esperar o campo de atendimento** (fallback paciente+data subconta guias —
+  arquitetura §10.3).
+- URL base e chave da API entregues pelo programador — dono configura nos ambientes.
+
+## Stories (proposta — @sm detalha após a arquitetura)
+
+| # | Story | Depende de | Foco |
+|---|-------|-----------|------|
+| 5.1 | Client da API real + tipos do contrato | arquitetura | `fin-clientes/producoes/itens`, retry/timeout/401, camada anti-corrupção |
+| 5.2 | Sincronização de médicos (`external_id`) | 5.1, migration | importar/vincular médicos, `necessitaConfiguracao=true` |
+| 5.3 | Contagem sob a semântica real | 5.1, Q2 | engine: `via_acesso`, todos os status, testes de paridade |
+| 5.4 | UI de pendências de cadastro | — (paralela) | filtro/badge + fluxo de completude |
+| 5.5 | Execução por produção | 5.1–5.3 | orchestrator + seleção manual de produção na UI (decisão 7) |
+
+5.4 é paralelizável desde já; 5.2 e 5.3 paralelizáveis após 5.1; 5.5 fecha o épico.
+
+## Fora de escopo
+- CPF no endpoint `fin-clientes` (dependência externa; quando chegar, vira melhoria do matching).
+- Ligar emissão/webhook em produção (gates dos Épicos 3–4).
+- Qualquer escrita na API do sistema web (contrato é read-only).

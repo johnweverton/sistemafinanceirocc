@@ -85,5 +85,19 @@ export const atualizarMedicoSchema = z
   })
   .strict();
 
+// Sincronização com a origem (Épico 5) — vínculo confirmado pelo usuário.
+export const vincularMedicoSchema = z
+  .object({
+    externalId: z.string().uuid('externalId deve ser um UUID'),
+    medicoId: z.string().uuid('medicoId deve ser um UUID'),
+  })
+  .strict();
+
+export const criarMedicoExternoSchema = z
+  .object({
+    externalId: z.string().uuid('externalId deve ser um UUID'),
+  })
+  .strict();
+
 export type NovoMedicoInput = z.infer<typeof novoMedicoSchema>;
 export type AtualizarMedicoInput = z.infer<typeof atualizarMedicoSchema>;

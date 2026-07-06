@@ -9,3 +9,10 @@ export {
 export { checar, LIMIAR_VARIACAO } from './conferencia';
 export { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO } from './precos';
 export { processarMedico } from './processar-medico';
+export {
+  itensValidos,
+  chaveAtendimento,
+  contarGuiasProducao,
+  detectarModoProducao,
+  consolidarProducao,
+} from './contagem-producao';

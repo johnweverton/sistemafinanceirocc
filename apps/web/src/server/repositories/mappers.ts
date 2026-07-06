@@ -16,7 +16,7 @@ import type {
 
 export interface MedicoRow {
   id: string;
-  cpf: string;
+  cpf: string | null; // nullable desde a migration 0011 (médico importado sem CPF)
   nome: string;
   especialidade: string | null;
   status_hapvida: Medico['statusHapvida'];
@@ -26,6 +26,8 @@ export interface MedicoRow {
   colaborador_responsavel: string | null;
   ativo: boolean;
   necessita_configuracao: boolean;
+  /** Vínculo com a origem (migration 0011) — ausente em bancos sem a migration aplicada. */
+  external_id?: string | null;
   // Dados de cobrança (migration 0006) — todas nullable.
   pagador_tipo: 'PF' | 'PJ' | null;
   pagador_documento: string | null;
@@ -97,6 +99,7 @@ export function toMedico(row: MedicoRow): Medico {
     colaboradorResponsavel: row.colaborador_responsavel,
     ativo: row.ativo,
     necessitaConfiguracao: row.necessita_configuracao ?? false,
+    externalId: row.external_id ?? null,
     cobranca: toDadosCobranca(row),
     condicoes: toCondicoes(row),
     createdAt: row.created_at,
