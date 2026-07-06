@@ -16,6 +16,10 @@ export interface SyncPendenciaSugestao {
   cliente: ClienteExterno;
   candidatas: SyncCandidata[];
 }
+export interface CriarTodosResultado {
+  criados: number;
+  ignorados: { externalId: string; nome: string | null; motivo: string }[];
+}
 export interface SyncRelatorio {
   totalOrigem: number;
   jaVinculados: number;
@@ -69,6 +73,8 @@ export const medicosService = {
     apiFetch<Medico>('/sync/medicos/vincular', { method: 'POST', body: JSON.stringify(payload) }),
   criarExterno: (payload: { externalId: string }) =>
     apiFetch<Medico>('/sync/medicos/criar', { method: 'POST', body: JSON.stringify(payload) }),
+  criarTodosExternos: (payload: { externalIds: string[] }) =>
+    apiFetch<CriarTodosResultado>('/sync/medicos/criar-todos', { method: 'POST', body: JSON.stringify(payload) }),
 };
 
 export const queryKeys = {

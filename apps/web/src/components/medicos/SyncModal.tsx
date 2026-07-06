@@ -48,7 +48,26 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
     },
   });
 
-  const isPending = vincular.isPending || criar.isPending;
+  const criarTodos = useMutation({
+    mutationFn: (externalIds: string[]) => medicosService.criarTodosExternos({ externalIds }),
+    onSuccess: (resultado) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
+      const idsIgnorados = new Set(resultado.ignorados.map(i => i.externalId));
+      setSemPar(prev => prev.filter(c => idsIgnorados.has(c.id)));
+      setCriados(prev => prev + resultado.criados);
+      if (resultado.ignorados.length > 0) {
+        toast(`${resultado.criados} médicos criados; ${resultado.ignorados.length} não puderam ser criados`, 'error');
+      } else {
+        toast(`${resultado.criados} médicos criados com sucesso`, 'success');
+      }
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao criar em lote';
+      toast(msg, 'error');
+    },
+  });
+
+  const isPending = vincular.isPending || criar.isPending || criarTodos.isPending;
 
   function rejeitarSugestao(pendencia: SyncPendenciaSugestao) {
     setComSugestao(prev => prev.filter(p => p.cliente.id !== pendencia.cliente.id));
@@ -132,9 +151,22 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
           {/* Sessão Sem Par */}
           {semPar.length > 0 && (
             <section>
-              <h3 className="mb-4 text-lg font-semibold text-cc-ink">
-                Sem par local - Criar novos ({semPar.length})
-              </h3>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-cc-ink">
+                  Sem par local - Criar novos ({semPar.length})
+                </h3>
+                <button
+                  onClick={() => {
+                    if (confirm(`Criar os ${semPar.length} médicos de uma vez? Eles entram como "necessita configuração" até o cadastro ser completado.`)) {
+                      criarTodos.mutate(semPar.map(c => c.id));
+                    }
+                  }}
+                  disabled={isPending}
+                  className="btn-primary btn btn-sm"
+                >
+                  {criarTodos.isPending ? 'Criando...' : `Criar todos (${semPar.length})`}
+                </button>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {semPar.map((cli) => (
                   <div key={cli.id} className="flex flex-col justify-between rounded-lg border border-cc-hairline p-4">

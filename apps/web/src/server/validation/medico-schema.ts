@@ -86,16 +86,24 @@ export const atualizarMedicoSchema = z
   .strict();
 
 // Sincronização com a origem (Épico 5) — vínculo confirmado pelo usuário.
+// externalId NÃO é UUID: a API real da Carmem usa IDs numéricos serializados
+// como string (ex.: "313") — contrato real ≠ presumido (Épico 5).
 export const vincularMedicoSchema = z
   .object({
-    externalId: z.string().uuid('externalId deve ser um UUID'),
+    externalId: z.string().min(1, 'externalId é obrigatório'),
     medicoId: z.string().uuid('medicoId deve ser um UUID'),
   })
   .strict();
 
 export const criarMedicoExternoSchema = z
   .object({
-    externalId: z.string().uuid('externalId deve ser um UUID'),
+    externalId: z.string().min(1, 'externalId é obrigatório'),
+  })
+  .strict();
+
+export const criarMedicosExternosSchema = z
+  .object({
+    externalIds: z.array(z.string().min(1)).min(1, 'Informe pelo menos um externalId'),
   })
   .strict();
 
