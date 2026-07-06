@@ -1,5 +1,5 @@
 import type { ItemProducao, ResultadoContagem, ModoObservado } from '@cobranca/shared';
-import { isPediatra } from './contagem';
+
 
 /**
  * Filtra itens válidos e inválidos.
@@ -89,6 +89,12 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
   }
 
   return { guias, cirurgias };
+}
+
+export function isPediatra(especialidade?: string | null): boolean {
+  if (!especialidade) return false;
+  const esp = especialidade.toLowerCase();
+  return esp.includes('pediatra') || esp.includes('pediatria');
 }
 
 /**

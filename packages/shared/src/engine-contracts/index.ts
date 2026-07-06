@@ -1,6 +1,5 @@
 // Contratos de entrada/saída do motor (Engine). Funções puras, sem I/O.
 import type { Medico } from '../types/medico';
-import type { Procedimento } from '../types/procedimento';
 import type { ExecucaoResultado, Subtotal } from '../types/execucao';
 
 /** Resultado da contagem de guias (PRD §5.2). */
