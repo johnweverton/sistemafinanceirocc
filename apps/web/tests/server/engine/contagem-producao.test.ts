@@ -41,8 +41,9 @@ describe('Engine: Contagem de Produção', () => {
       const resultado = contarGuiasProducao(itens, 'Cirurgia');
       expect(resultado.guias).toBe(2);
       expect(resultado.cirurgias).toBe(2);
-      // Fallback usa (paciente + data) como chave. Portanto, as chaves são distintas e não compartilham data.
-      expect(detectarModoProducao(itens)).toBe('nao');
+      // Detecção de modo agrupa por PACIENTE no fallback (QA M-3): mesmo paciente
+      // em 2 datas → modo observado 'sim'.
+      expect(detectarModoProducao(itens)).toBe('sim');
     });
 
     it('c. itens Glosado/Recurso/Aguardando Fechamento → contam igual a Devidamente Pago', () => {
@@ -146,10 +147,27 @@ describe('Engine: Contagem de Produção', () => {
       expect(detectarModoProducao(itens)).toBe('nao');
     });
     
-    it('ignora itens que nao sao viaAcesso para deteccao de modo', () => {
+    it('detecta por paciente no fallback mesmo sem viaAcesso (QA M-3)', () => {
       const itens: ItemProducao[] = [
         { ...baseItem(), pacienteNome: 'Maria', data: '2026-07-01', viaAcesso: false },
         { ...baseItem(), pacienteNome: 'Maria', data: '2026-07-02', viaAcesso: false },
+      ];
+      expect(detectarModoProducao(itens)).toBe('sim');
+    });
+
+    it('pacientes diferentes em datas diferentes → nao (sem grupo multi-data)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'Maria', data: '2026-07-01' },
+        { ...baseItem(), pacienteNome: 'José', data: '2026-07-02' },
+      ];
+      expect(detectarModoProducao(itens)).toBe('nao');
+    });
+
+    it('atendimentoExternoId distintos do mesmo paciente em datas diferentes → nao', () => {
+      // Com o campo da origem presente, dois atendimentos separados NÃO são "mudança de data".
+      const itens: ItemProducao[] = [
+        { ...baseItem(), atendimentoExternoId: 'at-1', data: '2026-07-01' },
+        { ...baseItem(), atendimentoExternoId: 'at-2', data: '2026-07-02' },
       ];
       expect(detectarModoProducao(itens)).toBe('nao');
     });

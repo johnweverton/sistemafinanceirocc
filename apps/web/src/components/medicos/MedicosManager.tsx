@@ -11,6 +11,7 @@ import {
   type NovoMedicoPayload,
   type AtualizarMedicoPayload,
   type ImportarResultado,
+  type SyncRelatorio,
 } from '@/services/medicos';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -36,7 +37,7 @@ export function MedicosManager() {
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
-  const [syncRelatorio, setSyncRelatorio] = useState<any | null>(null);
+  const [syncRelatorio, setSyncRelatorio] = useState<SyncRelatorio | null>(null);
   const [filtroIncompleto, setFiltroIncompleto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

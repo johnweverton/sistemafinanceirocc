@@ -10,7 +10,7 @@
 import type { Execucao, Medico, ItemProducao, ResultadoMedico } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
 import { buscarItens } from '@/server/integration/fin-api-client';
-import { buscarMedico } from '@/server/repositories/medico-repository';
+import { buscarMedico, listarMedicosPorIds } from '@/server/repositories/medico-repository';
 import {
   criarExecucao,
   buscarExecucao,
@@ -24,6 +24,7 @@ import {
   listarSelecoes,
 } from '@/server/repositories/execucao-repository';
 import { getServerEnv } from '@/lib/env';
+import { ApiError } from '@/lib/api-error';
 
 /** Médicos por lote — pior caso ~30s, dentro do maxDuration de 60s (architecture). */
 export const BATCH_SIZE = 20;
@@ -31,6 +32,7 @@ export const BATCH_SIZE = 20;
 export interface OrchestratorDeps {
   listarSelecoes: (execucaoId: string) => Promise<{ execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }[]>;
   buscarMedico: (id: string) => Promise<Medico | null>;
+  listarMedicosPorIds: (ids: string[]) => Promise<Medico[]>;
   criarExecucao: (competencia: string, iniciadoPor: string, selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[]) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
@@ -55,6 +57,7 @@ export function depsPadrao(): OrchestratorDeps {
   return {
     listarSelecoes,
     buscarMedico,
+    listarMedicosPorIds,
     criarExecucao,
     buscarExecucao,
     contarResultados,
@@ -107,6 +110,31 @@ export async function iniciarExecucao(
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
 ): Promise<Execucao> {
+  // QA M-1: validação server-side das seleções (defesa em profundidade — a UI já filtra,
+  // mas o invariante da 0005 não pode depender só dela). Médico precisa existir, estar
+  // ativo, configurado e vinculado à origem; medicoId duplicado é rejeitado.
+  const ids = selecoes.map((s) => s.medicoId);
+  const duplicados = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+  if (duplicados.length > 0) {
+    throw new ApiError(422, 'Seleções duplicadas para o mesmo médico', 'SELECAO_DUPLICADA', {
+      medicoIds: duplicados,
+    });
+  }
+
+  const medicos = await deps.listarMedicosPorIds(ids);
+  const porId = new Map(medicos.map((m) => [m.id, m]));
+  const invalidos: string[] = [];
+  for (const s of selecoes) {
+    const m = porId.get(s.medicoId);
+    if (!m) invalidos.push(`${s.medicoId}: médico não encontrado`);
+    else if (!m.ativo) invalidos.push(`${m.nome}: inativo`);
+    else if (m.necessitaConfiguracao) invalidos.push(`${m.nome}: cadastro pendente de configuração`);
+    else if (!m.externalId) invalidos.push(`${m.nome}: sem vínculo com o sistema web`);
+  }
+  if (invalidos.length > 0) {
+    throw new ApiError(422, 'Seleções inválidas para execução', 'SELECAO_INVALIDA', { invalidos });
+  }
+
   return deps.criarExecucao(competencia, usuarioId, selecoes);
 }
 

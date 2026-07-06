@@ -39,6 +39,8 @@ export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; no
     colaboradorResponsavel: null,
     ativo: true,
     necessitaConfiguracao: false,
+    // Vinculado por padrão — a validação de seleções (QA M-1) exige externalId.
+    externalId: `ext-${over.id}`,
     createdAt: '2026-06-01T00:00:00Z',
     updatedAt: '2026-06-01T00:00:00Z',
     ...over,
@@ -61,6 +63,8 @@ export function fakeDeps(
     batchSize,
     listarSelecoes: async (execucaoId) => state.selecoes.filter(s => s.execucaoId === execucaoId),
     buscarMedico: async (id) => state.medicos.get(id) ?? null,
+    listarMedicosPorIds: async (ids) =>
+      ids.map((id) => state.medicos.get(id)).filter((m): m is Medico => m != null),
     criarExecucao: async (competencia, iniciadoPor, selecoes) => {
       const id = `exec-${proximoId++}`;
       const exec: Execucao = {

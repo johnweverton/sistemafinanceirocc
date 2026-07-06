@@ -54,6 +54,42 @@ describe('iniciarExecucao', () => {
     expect(exec.totalMedicos).toBe(2);
     expect(state.selecoes.length).toBe(2);
   });
+
+  // Validação server-side das seleções (QA M-1 — invariante da 0005 não depende da UI)
+  it('rejeita medicoId duplicado com 422 SELECAO_DUPLICADA', async () => {
+    const medicos = [medicoFake({ id: '1', cpf: '00000000001', nome: 'A' })];
+    const selecoes = [
+      { medicoId: '1', producaoExternaId: 'p1', producaoNome: 'Prod 1' },
+      { medicoId: '1', producaoExternaId: 'p2', producaoNome: 'Prod 2' },
+    ];
+    const state = novoEstado(medicos);
+    const deps = fakeDeps(state, 20, processarProximoLote);
+    await expect(iniciarExecucao('2026-06', selecoes, 'u', deps)).rejects.toMatchObject({
+      status: 422,
+      code: 'SELECAO_DUPLICADA',
+    });
+    expect(state.execucoes.size).toBe(0); // nada criado
+  });
+
+  it('rejeita médico inexistente, inativo, pendente de configuração ou sem vínculo (422)', async () => {
+    const medicos = [
+      medicoFake({ id: 'inativo', cpf: '00000000001', nome: 'Inativo', ativo: false }),
+      medicoFake({ id: 'pendente', cpf: '00000000002', nome: 'Pendente', necessitaConfiguracao: true }),
+      medicoFake({ id: 'sem-vinculo', cpf: '00000000003', nome: 'SemVinculo', externalId: null }),
+    ];
+    const selecoes = [
+      { medicoId: 'fantasma', producaoExternaId: 'p0', producaoNome: 'P' },
+      { medicoId: 'inativo', producaoExternaId: 'p1', producaoNome: 'P' },
+      { medicoId: 'pendente', producaoExternaId: 'p2', producaoNome: 'P' },
+      { medicoId: 'sem-vinculo', producaoExternaId: 'p3', producaoNome: 'P' },
+    ];
+    const state = novoEstado(medicos);
+    const deps = fakeDeps(state, 20, processarProximoLote);
+    const erro = await iniciarExecucao('2026-06', selecoes, 'u', deps).catch((e) => e);
+    expect(erro).toMatchObject({ status: 422, code: 'SELECAO_INVALIDA' });
+    expect(erro.details.invalidos).toHaveLength(4);
+    expect(state.execucoes.size).toBe(0); // nada criado
+  });
 });
 
 describe('processarProximoLote — decisão de continuar/concluir', () => {

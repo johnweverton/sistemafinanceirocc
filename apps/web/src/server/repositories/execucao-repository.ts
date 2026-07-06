@@ -11,6 +11,7 @@ import {
   toExecucaoSelecao,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
+  type ExecucaoSelecaoRow,
 } from './mappers';
 
 export async function criarExecucao(
@@ -41,7 +42,17 @@ export async function criarExecucao(
       producao_nome: s.producaoNome,
     }))
   );
-  if (selecoesError) throw new ApiError(500, 'Falha ao inserir seleções', 'DB_ERROR', { error: selecoesError.message });
+  if (selecoesError) {
+    // QA M-2: sem as seleções a execução nunca progride — marca erro para não deixar
+    // registro zumbi em 'processando' (o insert de execucoes já foi commitado).
+    await db
+      .from('execucoes')
+      .update({ status: 'erro', finalizado_em: new Date().toISOString() })
+      .eq('id', execucaoId);
+    throw new ApiError(500, 'Falha ao inserir seleções — execução marcada como erro', 'DB_ERROR', {
+      error: selecoesError.message,
+    });
+  }
 
   return toExecucao(data as ExecucaoRow);
 }
@@ -55,13 +66,16 @@ export async function buscarExecucao(id: string): Promise<Execucao | null> {
 
 export async function listarSelecoes(execucaoId: string) {
   const db = getSupabaseAdmin();
+  // QA H-1: ordenação por chave ÚNICA e estável. producao_nome empata em quase todas as
+  // linhas ("Janeiro 2026" ×120) e ordem de empate não é determinística — o cursor de lote
+  // (slice) refaz esta query a cada lote, então empate instável duplicaria/pularia médico.
   const { data, error } = await db
     .from('execucao_selecoes')
     .select('*')
     .eq('execucao_id', execucaoId)
-    .order('producao_nome', { ascending: true });
+    .order('medico_id', { ascending: true });
   if (error) throw new ApiError(500, 'Falha ao buscar seleções', 'DB_ERROR', { error: error.message });
-  return (data as any[]).map(toExecucaoSelecao);
+  return (data as ExecucaoSelecaoRow[]).map(toExecucaoSelecao);
 }
 
 export async function listarExecucoes(): Promise<Execucao[]> {

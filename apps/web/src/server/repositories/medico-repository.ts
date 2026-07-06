@@ -57,6 +57,15 @@ export async function listarAguardandoConfiguracao(): Promise<Medico[]> {
   return (data as MedicoRow[]).map(toMedico);
 }
 
+/** Busca médicos por lista de ids (1 query) — usado na validação de seleções da execução. */
+export async function listarMedicosPorIds(ids: string[]): Promise<Medico[]> {
+  if (ids.length === 0) return [];
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from('medicos').select('*').in('id', ids);
+  if (error) throw new ApiError(500, 'Falha ao buscar médicos', 'DB_ERROR', { error: error.message });
+  return (data as MedicoRow[]).map(toMedico);
+}
+
 export async function buscarMedico(id: string): Promise<Medico | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.from('medicos').select('*').eq('id', id).maybeSingle();

@@ -98,23 +98,30 @@ export function isPediatra(especialidade?: string | null): boolean {
 }
 
 /**
- * Detecta se existem grupos de atendimento com itens em mais de uma data.
+ * Detecta se existem grupos de atendimento com itens em mais de uma data (PRD §5.3).
+ * QA M-3: a chave do grupo NÃO pode conter a data — usa atendimentoExternoId quando a
+ * origem entregar; fallback é o PACIENTE (arquitetura §3.3). Se usasse chaveAtendimento()
+ * (fallback paciente|data), um grupo jamais teria 2 datas e o modo seria sempre 'nao',
+ * gerando alerta falso "MODO INCONSISTENTE" para pediatra cadastrado como 'sim'.
  */
 export function detectarModoProducao(itens: ItemProducao[]): ModoObservado {
   const { validos } = itensValidos(itens);
 
-  const porAtend = new Map<string, Set<string>>();
+  const porGrupo = new Map<string, Set<string>>();
   for (const item of validos) {
-    const chave = chaveAtendimento(item);
-    let datas = porAtend.get(chave);
+    const chave =
+      item.atendimentoExternoId && item.atendimentoExternoId.trim() !== ''
+        ? item.atendimentoExternoId
+        : item.pacienteNome;
+    let datas = porGrupo.get(chave);
     if (!datas) {
       datas = new Set<string>();
-      porAtend.set(chave, datas);
+      porGrupo.set(chave, datas);
     }
     datas.add(item.data);
   }
 
-  for (const datas of porAtend.values()) {
+  for (const datas of porGrupo.values()) {
     if (datas.size > 1) return 'sim';
   }
 

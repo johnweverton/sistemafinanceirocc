@@ -64,7 +64,7 @@ export const medicosService = {
     }
     return res.json() as Promise<ImportarResultado>;
   },
-  sincronizar: () => apiFetch<any>('/sync/medicos', { method: 'POST' }),
+  sincronizar: () => apiFetch<SyncRelatorio>('/sync/medicos', { method: 'POST' }),
   vincularExterno: (payload: { medicoId: string; externalId: string }) =>
     apiFetch<Medico>('/sync/medicos/vincular', { method: 'POST', body: JSON.stringify(payload) }),
   criarExterno: (payload: { externalId: string }) =>

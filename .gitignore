@@ -13,6 +13,7 @@ next-env.d.ts
 
 # Supabase local
 .supabase/
+supabase/.temp/
 
 # OS / editor
 .DS_Store
