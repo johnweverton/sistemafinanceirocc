@@ -340,11 +340,11 @@ export function MedicosManager() {
           <a
             href="/templates/medicos-modelo.xlsx"
             download
-            className="btn-secondary btn flex-1 justify-center whitespace-nowrap sm:flex-none"
+            className="btn btn-primary btn-sm"
           >
             Baixar modelo Excel
           </a>
-          <label className={`btn btn-secondary btn-sm cursor-pointer ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}>
+          <label className={`btn btn-primary btn-sm cursor-pointer ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}>
             {importar.isPending ? 'Importando...' : 'Importar Planilha'}
             <input
               ref={fileInputRef}
