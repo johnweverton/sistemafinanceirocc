@@ -6,6 +6,7 @@ export class ApiClientError extends Error {
     public readonly status: number,
     message: string,
     public readonly code: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiClientError';
@@ -28,6 +29,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       res.status,
       body?.error?.message ?? `Erro ${res.status}`,
       body?.error?.code ?? 'ERROR',
+      body?.error?.details,
     );
   }
   if (res.status === 204) return undefined as T;

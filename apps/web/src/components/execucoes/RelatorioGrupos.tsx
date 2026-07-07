@@ -1,7 +1,11 @@
 'use client';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ExecucaoResultado } from '@cobranca/shared';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
+import { boletosService, CAMPO_COBRANCA_LABEL } from '@/services/boletos';
+import { ApiClientError } from '@/lib/api-client';
+import { useToast } from '@/components/ui/Toast';
 
 function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -12,6 +16,38 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: execucaoQueryKeys.resultados(execucaoId),
     queryFn: () => execucoesService.resultados(execucaoId),
+  });
+  const { toast } = useToast();
+  const [emitidos, setEmitidos] = useState<Set<string>>(new Set());
+
+  // Emissão é manual, um resultado por vez (PRD §10) — sem lote, sem automação.
+  const emitir = useMutation({
+    mutationFn: (resultadoId: string) => boletosService.emitir(resultadoId),
+    onSuccess: (_res, resultadoId) => {
+      setEmitidos((prev) => new Set(prev).add(resultadoId));
+      toast('Boleto emitido com sucesso', 'success');
+    },
+    onError: (e, resultadoId) => {
+      if (e instanceof ApiClientError) {
+        if (e.code === 'BOLETO_JA_EMITIDO') {
+          setEmitidos((prev) => new Set(prev).add(resultadoId));
+          toast('Este resultado já tem boleto emitido', 'info');
+          return;
+        }
+        if (e.code === 'COBRANCA_INCOMPLETA') {
+          const faltantes = (e.details?.faltantes as string[] | undefined) ?? [];
+          const labels = faltantes.map((f) => CAMPO_COBRANCA_LABEL[f] ?? f).join(', ');
+          toast(
+            `Dados de cobrança incompletos (${labels || 'campos obrigatórios'}). Complete o cadastro do médico em Médicos.`,
+            'error',
+          );
+          return;
+        }
+        toast(e.message, 'error');
+        return;
+      }
+      toast('Erro ao emitir boleto', 'error');
+    },
   });
 
   if (isLoading) return <p className="text-sm text-cc-muted">Carregando relatório…</p>;
@@ -25,7 +61,15 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
 
   return (
     <div className="space-y-8">
-      <Grupo titulo="Prontos para emissão" count={ok.length} cor="green" resultados={ok} />
+      <Grupo
+        titulo="Prontos para emissão"
+        count={ok.length}
+        cor="green"
+        resultados={ok}
+        emitidos={emitidos}
+        emitindoId={emitir.isPending ? emitir.variables : null}
+        onEmitir={(id) => emitir.mutate(id)}
+      />
       <Grupo titulo="Requerem revisão" count={alerta.length} cor="amber" resultados={alerta} mostrarAlertas />
       <Grupo titulo="Sem dados no sistema" count={semDados.length} cor="gray" resultados={semDados} resumido />
       <div className="flex items-center justify-between border-t border-cc-hairline pt-4">
@@ -43,6 +87,9 @@ function Grupo({
   resultados,
   mostrarAlertas = false,
   resumido = false,
+  emitidos,
+  emitindoId,
+  onEmitir,
 }: {
   titulo: string;
   count: number;
@@ -50,6 +97,9 @@ function Grupo({
   resultados: ExecucaoResultado[];
   mostrarAlertas?: boolean;
   resumido?: boolean;
+  emitidos?: Set<string>;
+  emitindoId?: string | null;
+  onEmitir?: (resultadoId: string) => void;
 }) {
   const barra =
     cor === 'green' ? 'bg-cc-success' : cor === 'amber' ? 'bg-cc-warning' : 'bg-cc-muted';
@@ -101,6 +151,22 @@ function Grupo({
                   </p>
                 ))}
               {resumido && r.alertas[0] && <p className="mt-1 text-xs text-cc-muted">{r.alertas[0]}</p>}
+              {onEmitir && (
+                <div className="mt-3 flex items-center justify-end border-t border-cc-hairline pt-3">
+                  {emitidos?.has(r.id) ? (
+                    <span className="badge-green">Boleto emitido</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-primary btn btn-sm"
+                      disabled={emitindoId != null}
+                      onClick={() => onEmitir(r.id)}
+                    >
+                      {emitindoId === r.id ? 'Emitindo…' : 'Emitir boleto'}
+                    </button>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>
