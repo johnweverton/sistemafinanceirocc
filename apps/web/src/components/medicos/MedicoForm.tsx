@@ -109,9 +109,12 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
     }
   }
 
+  const isPediatra = form.especialidade?.toLowerCase().includes('pediat') ?? false;
+
   function handleSubmit() {
     const payload: FormState = {
       ...form,
+      modoMudancaData: isPediatra ? form.modoMudancaData : 'nao',
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
     };
     void onSubmit(payload, motivo);
@@ -188,17 +191,19 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           />
         </Field>
 
-        <Field label="Mudança de data">
-          <select
-            name="modoMudancaData"
-            value={form.modoMudancaData}
-            onChange={(e) => set('modoMudancaData', e.target.value as FormState['modoMudancaData'])}
-            className="input"
-          >
-            <option value="nao">Não muda data</option>
-            <option value="sim">Muda data</option>
-          </select>
-        </Field>
+        {isPediatra && (
+          <Field label="Mudança de data (Pediatria)">
+            <select
+              name="modoMudancaData"
+              value={form.modoMudancaData}
+              onChange={(e) => set('modoMudancaData', e.target.value as FormState['modoMudancaData'])}
+              className="input"
+            >
+              <option value="nao">Não muda data</option>
+              <option value="sim">Muda data</option>
+            </select>
+          </Field>
+        )}
       </div>
 
       {/* Checkboxes */}

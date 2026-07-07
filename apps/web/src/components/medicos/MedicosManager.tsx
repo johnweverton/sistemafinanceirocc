@@ -137,7 +137,7 @@ export function MedicosManager() {
         <div className="card p-6">
           <MedicoForm
             inicial={modo.medico}
-            exigeMotivo
+            exigeMotivo={!modo.medico.necessitaConfiguracao}
             salvando={atualizar.isPending}
             onSubmit={(dados, motivo) =>
               atualizar.mutate({
