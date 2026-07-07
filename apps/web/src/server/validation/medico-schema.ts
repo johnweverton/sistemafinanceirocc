@@ -53,7 +53,7 @@ export const configCobrancaSchema = z.object({
 });
 
 export const novoMedicoSchema = z.object({
-  cpf: z.string().regex(/^\d{11}$/, 'CPF deve ter 11 dígitos sem pontuação'),
+  cpf: z.string().regex(/^\d{11}$/, 'CPF deve ter 11 dígitos sem pontuação').or(z.literal('')),
   nome: z.string().min(1, 'Nome é obrigatório'),
   especialidade: z.string().nullable().optional().default(null),
   statusHapvida: statusHapvidaSchema,
@@ -69,7 +69,7 @@ export const novoMedicoSchema = z.object({
 
 export const atualizarMedicoSchema = z
   .object({
-    cpf: z.string().regex(/^\d{11}$/).optional(),
+    cpf: z.string().regex(/^\d{11}$/).or(z.literal('')).optional(),
     nome: z.string().min(1).optional(),
     especialidade: z.string().nullable().optional(),
     statusHapvida: statusHapvidaSchema.optional(),
