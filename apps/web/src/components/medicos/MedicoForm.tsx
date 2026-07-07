@@ -117,7 +117,9 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
       modoMudancaData: isPediatra ? form.modoMudancaData : 'nao',
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
     };
-    void onSubmit(payload, motivo);
+    // O servidor sempre exige motivo não-vazio (histórico é requisito não-opcional);
+    // quando o campo não é exibido (1ª configuração), manda um motivo padrão em vez de ''.
+    void onSubmit(payload, exigeMotivo ? motivo : 'Configuração inicial do médico');
   }
 
   return (

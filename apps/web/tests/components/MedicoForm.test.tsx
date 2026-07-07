@@ -41,6 +41,26 @@ describe('MedicoForm', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Salvar/i })).toBeEnabled();
   });
+
+  it('quando exigeMotivo é false, envia um motivo padrão em vez de string vazia (o servidor sempre exige motivo)', () => {
+    const onSubmit = vi.fn();
+    render(<MedicoForm onSubmit={onSubmit} exigeMotivo={false} />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
+      target: { value: '12345678901' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /Nome completo/i }), {
+      target: { value: 'Dr. Teste' },
+    });
+    expect(screen.queryByLabelText(/Motivo da alteração/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const motivoEnviado = onSubmit.mock.calls[0]?.[1];
+    expect(motivoEnviado).toBeTruthy();
+    expect(motivoEnviado.trim().length).toBeGreaterThan(0);
+  });
 });
 
 describe('MedicoForm — seção de cobrança (Story 3.3)', () => {
