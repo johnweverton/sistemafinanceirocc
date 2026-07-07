@@ -78,6 +78,17 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     },
   });
 
+  const reenviar = useMutation({
+    mutationFn: (resultadoId: string) => boletosService.reenviar(resultadoId),
+    onSuccess: () => {
+      toast('Notificações reenviadas com sucesso', 'success');
+      void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) });
+    },
+    onError: (e) => {
+      toast(e instanceof ApiClientError ? e.message : 'Erro ao reenviar boleto', 'error');
+    },
+  });
+
   if (isLoading) return <p className="text-sm text-cc-muted">Carregando relatório…</p>;
   if (error) return <p className="alert-error">Falha ao carregar o relatório.</p>;
 
@@ -119,6 +130,8 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         emitidos={emitidos}
         emitindoId={emitir.isPending ? emitir.variables : null}
         onEmitir={(id) => emitir.mutate(id)}
+        reenviarPendingId={reenviar.isPending ? reenviar.variables : null}
+        onReenviar={(id) => reenviar.mutate(id)}
       />
       <Grupo
         titulo="Requerem revisão"
@@ -150,6 +163,8 @@ function Grupo({
   onEmitir,
   onRevisar,
   revisarPendingId,
+  reenviarPendingId,
+  onReenviar,
 }: {
   titulo: string;
   count: number;
@@ -162,6 +177,8 @@ function Grupo({
   emitidos?: Set<string>;
   emitindoId?: string | null;
   onEmitir?: (resultadoId: string) => void;
+  reenviarPendingId?: string | null;
+  onReenviar?: (resultadoId: string) => void;
 }) {
   const barra =
     cor === 'green' ? 'bg-cc-success' : cor === 'amber' ? 'bg-cc-warning' : 'bg-cc-muted';
@@ -230,19 +247,45 @@ function Grupo({
                 />
               )}
               {onEmitir && (
-                <div className="mt-3 flex items-center justify-end border-t border-cc-hairline pt-3">
-                  {emitidos?.has(r.id) ? (
-                    <span className="badge-green">Boleto emitido</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn-primary btn btn-sm"
-                      disabled={emitindoId != null}
-                      onClick={() => onEmitir(r.id)}
-                    >
-                      {emitindoId === r.id ? 'Emitindo…' : 'Emitir boleto'}
-                    </button>
-                  )}
+                <div className="mt-3 flex flex-wrap items-center justify-between border-t border-cc-hairline pt-3">
+                  <div className="flex gap-2">
+                    {r.disparos?.map((d, idx) => (
+                      <span
+                        key={idx}
+                        className={d.status === 'sucesso' ? 'badge-green' : 'badge-amber'}
+                        title={d.mensagemErro ?? undefined}
+                      >
+                        {d.canal === 'whatsapp' ? '📱 WhatsApp' : '📧 E-mail'}
+                        {d.status === 'falha' && ' (Falha)'}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    {emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0) ? (
+                      <>
+                        <span className="badge-green">Boleto emitido</span>
+                        {onReenviar && (
+                           <button
+                             type="button"
+                             className="btn-secondary btn btn-sm"
+                             disabled={reenviarPendingId != null}
+                             onClick={() => onReenviar(r.id)}
+                           >
+                             {reenviarPendingId === r.id ? 'Reenviando…' : 'Reenviar notificações'}
+                           </button>
+                        )}
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-primary btn btn-sm"
+                        disabled={emitindoId != null}
+                        onClick={() => onEmitir(r.id)}
+                      >
+                        {emitindoId === r.id ? 'Emitindo…' : 'Emitir boleto'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </li>

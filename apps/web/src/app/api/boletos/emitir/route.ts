@@ -16,6 +16,7 @@ import { ZappyGateway } from '@/server/gateway/zappy-gateway';
 import { EmailGateway } from '@/server/gateway/email-gateway';
 import { calcularVencimento } from '@/server/gateway/vencimento';
 import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
+import { registrarDisparo } from '@/server/repositories/boleto-disparo-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
 import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -181,14 +182,26 @@ export const POST = withErrorHandler(async (req) => {
       await Promise.allSettled([
         (async () => {
           if (cobranca.whatsapp) {
-            const zappy = new ZappyGateway();
-            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl);
+            try {
+              const zappy = new ZappyGateway();
+              await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl);
+              await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
+            } catch (err: any) {
+              await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
+              throw err;
+            }
           }
         })(),
         (async () => {
           if (cobranca.email) {
-            const emailGtw = new EmailGateway();
-            await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl);
+            try {
+              const emailGtw = new EmailGateway();
+              await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl);
+              await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
+            } catch (err: any) {
+              await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
+              throw err;
+            }
           }
         })(),
       ]).then((results) => {

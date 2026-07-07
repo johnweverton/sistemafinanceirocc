@@ -54,6 +54,13 @@ export interface ExecucaoResultado {
   revisadoPor?: string | null;
   revisadoEm?: string | null;
   motivoRevisao?: string | null;
+  /** Status do envio do boleto via WhatsApp/Email (auditoria) */
+  disparos?: {
+    canal: 'whatsapp' | 'email';
+    status: 'sucesso' | 'falha';
+    mensagemErro: string | null;
+    enviadoEm: string;
+  }[];
 }
 
 export interface ExecucaoSelecao {

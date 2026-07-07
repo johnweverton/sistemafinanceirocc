@@ -36,6 +36,21 @@ export async function criarBoleto(params: CriarBoletoParams): Promise<Boleto> {
   return toBoleto(data as BoletoRow);
 }
 
+/** Busca um boleto pelo ID interno. */
+export async function buscarBoleto(id: string): Promise<Boleto | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null; // not found
+    throw new ApiError(500, 'Falha ao buscar boleto por ID', 'DB_ERROR', { error: error.message });
+  }
+  return data ? toBoleto(data as BoletoRow) : null;
+}
+
 /** Busca um boleto pelo id externo do gateway (invoice id da Cora). */
 export async function buscarBoletoPorIdExterno(idExterno: string): Promise<Boleto | null> {
   const db = getSupabaseAdmin();

@@ -7,6 +7,10 @@ export const boletosService = {
       method: 'POST',
       body: JSON.stringify({ execucaoResultadoId }),
     }),
+  reenviar: (execucaoResultadoId: string) =>
+    apiFetch<{ message: string }>(`/execucoes/resultados/${execucaoResultadoId}/reenviar_boleto`, {
+      method: 'POST',
+    }),
 };
 
 /** Rótulos amigáveis para os campos de `details.faltantes` do erro 422 COBRANCA_INCOMPLETA. */
