@@ -34,28 +34,45 @@ export function NovaExecucao() {
   const { medicos, producoes } = useMemo(() => {
     if (!apoio) return { medicos: [], producoes: [] };
     const prods = apoio.clientesOrigem.flatMap(c => 
-      c.producoes.map(p => ({ ...p, clienteNome: c.nome }))
+      c.producoes.map(p => ({ ...p, clienteId: c.id, clienteNome: c.nome }))
     );
     return { medicos: apoio.medicos, producoes: prods };
   }, [apoio]);
 
   // Derived selections
   const selecoesInfo = useMemo(() => {
+    const validMedicos = medicos.filter(m => m.ativo && !m.necessitaConfiguracao && m.externalId);
+    const invalidMedicos = medicos.filter(m => !m.ativo || m.necessitaConfiguracao || !m.externalId);
+
     const matched: Array<{ medico: any; producao: any }> = [];
-    const unmatched: Array<{ medico: any }> = [];
+    const unmatched: Array<{ medico: any; producoesDisponiveis: any[] }> = [];
     const finalPayload: ExecucaoSelecaoPayload[] = [];
 
-    for (const med of medicos) {
+    const mesesNfd = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const compValida = /^\d{4}-\d{2}$/.test(competencia);
+    const [ano, mes] = compValida ? competencia.split('-') : ['', ''];
+    const mesIndex = compValida ? parseInt(mes, 10) - 1 : -1;
+    const mesNome = mesIndex >= 0 ? mesesNfd[mesIndex] : '';
+
+    for (const med of validMedicos) {
+      const producoesDoMedico = producoes.filter(p => p.clienteId === med.externalId);
       const manualProdId = manualSelections[med.id];
+      
       if (manualProdId === 'IGNORE') {
-        unmatched.push({ medico: med });
+        unmatched.push({ medico: med, producoesDisponiveis: producoesDoMedico });
         continue;
       }
 
-      let match = producoes.find(p => p.id === manualProdId);
-      if (!match) {
-        const normMedico = normalizeName(med.nome);
-        match = producoes.find(p => normalizeName(p.nome) === normMedico);
+      let match = producoesDoMedico.find(p => p.id === manualProdId);
+      
+      // Auto-match
+      if (!match && compValida) {
+        match = producoesDoMedico.find(p => {
+          const norm = normalizeName(p.nome);
+          const hasData = norm.includes(`${ano}-${mes}`) || norm.includes(`${mes}/${ano}`) || norm.includes(`${mes}-${ano}`);
+          const hasExtenso = norm.includes(mesNome) && norm.includes(ano);
+          return hasData || hasExtenso;
+        });
       }
 
       if (match) {
@@ -66,12 +83,12 @@ export function NovaExecucao() {
           producaoNome: match.nome,
         });
       } else {
-        unmatched.push({ medico: med });
+        unmatched.push({ medico: med, producoesDisponiveis: producoesDoMedico });
       }
     }
 
-    return { matched, unmatched, finalPayload };
-  }, [medicos, producoes, manualSelections]);
+    return { matched, unmatched, invalidMedicos, finalPayload };
+  }, [medicos, producoes, manualSelections, competencia]);
 
   const disparar = useMutation({
     mutationFn: (c: string) => execucoesService.disparar(c, selecoesInfo.finalPayload),
@@ -124,7 +141,7 @@ export function NovaExecucao() {
                   className="input font-mono"
                   maxLength={7}
                 />
-                <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM</p>
+                <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM (Ex: 2026-05)</p>
               </div>
 
               {erro && <p role="alert" className="alert-error">{erro}</p>}
@@ -138,6 +155,27 @@ export function NovaExecucao() {
               </button>
             </form>
           </div>
+          
+          {!isApoioLoading && selecoesInfo.invalidMedicos.length > 0 && (
+            <div className="card p-4 border-amber-200 bg-amber-50/50">
+              <h3 className="font-medium text-amber-800 text-sm mb-2">
+                Fora da Execução ({selecoesInfo.invalidMedicos.length})
+              </h3>
+              <p className="text-xs text-amber-700 mb-3">
+                Completar cadastro ou vínculo destes médicos para poder executá-los.
+              </p>
+              <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                {selecoesInfo.invalidMedicos.map(m => (
+                  <div key={m.id} className="text-xs text-amber-900 bg-amber-100/50 p-1.5 rounded flex justify-between items-center">
+                    <span className="truncate mr-2">{m.nome}</span>
+                    <span className="shrink-0 opacity-75">
+                      {!m.ativo ? 'Inativo' : m.necessitaConfiguracao ? 'Pend. Config' : 'Sem Vínculo'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 space-y-6">
@@ -149,36 +187,41 @@ export function NovaExecucao() {
               <div className="space-y-6">
                 <div>
                   <h3 className="font-medium text-cc-ink mb-2">
-                    Médicos com Produção Encontrada ({selecoesInfo.matched.length})
+                    ✅ Prontos para processar ({selecoesInfo.matched.length})
                   </h3>
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                    {selecoesInfo.matched.map(({ medico, producao }) => (
-                      <div key={medico.id} className="flex justify-between items-center text-sm p-2 bg-cc-surface rounded border border-cc-border">
-                        <span className="font-medium">{medico.nome}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-cc-muted text-xs bg-cc-border/30 px-2 py-0.5 rounded">
-                            {producao.clienteNome} / {producao.nome}
-                          </span>
-                          <button 
-                            onClick={() => setManualSelections(prev => ({ ...prev, [medico.id]: 'IGNORE' }))}
-                            className="text-red-500 hover:text-red-700 p-1"
-                            title="Ignorar"
-                          >
-                            &times;
-                          </button>
+                  {selecoesInfo.matched.length === 0 ? (
+                    <p className="text-sm text-cc-muted italic">Nenhum médico pareado para esta competência.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                      {selecoesInfo.matched.map(({ medico, producao }) => (
+                        <div key={medico.id} className="flex justify-between items-center text-sm p-2 bg-cc-surface rounded border border-cc-border">
+                          <span className="font-medium">{medico.nome}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-cc-muted text-xs bg-cc-border/30 px-2 py-0.5 rounded truncate max-w-[200px]">
+                              {producao.nome}
+                            </span>
+                            <button 
+                              onClick={() => setManualSelections(prev => ({ ...prev, [medico.id]: 'IGNORE' }))}
+                              className="text-red-500 hover:text-red-700 p-1"
+                              title="Remover desta execução"
+                            >
+                              &times;
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {selecoesInfo.unmatched.length > 0 && (
-                  <div>
+                  <div className="pt-4 border-t border-cc-border">
                     <h3 className="font-medium text-amber-600 mb-2">
-                      Sem Produção (Não serão processados) ({selecoesInfo.unmatched.length})
+                      ⚠️ Vínculo manual pendente ({selecoesInfo.unmatched.length})
                     </h3>
+                    <p className="text-xs text-cc-muted mb-3">Estes médicos possuem vínculo com a origem, mas nenhuma produção correspondente foi auto-identificada.</p>
                     <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                      {selecoesInfo.unmatched.map(({ medico }) => (
+                      {selecoesInfo.unmatched.map(({ medico, producoesDisponiveis }) => (
                         <div key={medico.id} className="flex flex-col gap-2 p-2 bg-amber-50 rounded border border-amber-200">
                           <div className="flex justify-between items-center">
                             <span className="font-medium text-sm text-amber-900">{medico.nome}</span>
@@ -192,9 +235,9 @@ export function NovaExecucao() {
                             }}
                           >
                             <option value="">-- Vincular manualmente --</option>
-                            {producoes.map(p => (
+                            {producoesDisponiveis.map(p => (
                               <option key={p.id} value={p.id}>
-                                {p.clienteNome} / {p.nome}
+                                {p.nome}
                               </option>
                             ))}
                           </select>
