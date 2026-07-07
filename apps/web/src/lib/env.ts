@@ -19,9 +19,14 @@ const serverSchema = z.object({
   // API REAL do Sistema Web (Épico 5) — fin-clientes/fin-producoes/fin-itens.
   // ---------------------------------------------------------------------------
   API_FINANCEIRO_URL: z.string().url().optional(),
-  API_FINANCEIRO_KEY: z.string().optional(),
+  // Achado M-2: entropia mínima de 20 caracteres quando presente.
+  API_FINANCEIRO_KEY: z.string().min(20, 'API_FINANCEIRO_KEY deve ter pelo menos 20 caracteres').optional(),
   FIN_API_SOURCE: z.enum(['local', 'http']).default('local'),
-  INTERNAL_SECRET: z.string().optional(),
+  // Achado M-1: obrigatório em produção, mínimo 32 caracteres para entropia adequada.
+  // Em dev (NODE_ENV !== 'production') aceita qualquer string para não bloquear DX.
+  INTERNAL_SECRET: process.env.NODE_ENV === 'production'
+    ? z.string().min(32, 'INTERNAL_SECRET deve ter pelo menos 32 caracteres em produção')
+    : z.string().optional(),
   // Base URL da própria app, usada pela função para se auto-invocar entre lotes (Fase 2).
   // Em Vercel, derivar de VERCEL_URL; local, http://localhost:3000.
   APP_BASE_URL: z.string().url().optional(),
@@ -41,7 +46,8 @@ const serverSchema = z.object({
   // Client ID da Cora para autenticação OAuth2 + mTLS.
   CORA_CLIENT_ID: z.string().optional(),
   // Segredo do path do webhook do Cora (Épico 4). Comparado em tempo constante.
-  CORA_WEBHOOK_SECRET: z.string().optional(),
+  // Achado M-1: entropia mínima quando presente.
+  CORA_WEBHOOK_SECRET: z.string().min(16, 'CORA_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
 });
 
 export const publicEnv = publicSchema.parse({

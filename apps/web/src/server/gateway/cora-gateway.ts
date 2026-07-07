@@ -138,6 +138,10 @@ export class CoraGateway implements BoletoGatewayPort {
   private baseUrl: string;
   private clientId: string;
 
+  // Achado M-5: cache de token OAuth2 em memória — evita chamada a /token a cada operação.
+  private cachedToken: string | null = null;
+  private tokenExpiresAt = 0;
+
   constructor() {
     const env = getServerEnv();
     if (!env.CORA_CERT_BASE64 || !env.CORA_KEY_BASE64) {
@@ -157,8 +161,22 @@ export class CoraGateway implements BoletoGatewayPort {
     this.clientId = env.CORA_CLIENT_ID;
   }
 
-  /** Obtém token OAuth2 via client_credentials com mTLS (documentação Cora). */
+  /** Invalida o token cacheado (chamado quando uma request recebe 401 da Cora). */
+  private invalidarToken(): void {
+    this.cachedToken = null;
+    this.tokenExpiresAt = 0;
+  }
+
+  /**
+   * Obtém token OAuth2 via client_credentials com mTLS (documentação Cora).
+   * Achado M-5: cacheia o token por (expires_in - 60s) para evitar chamadas redundantes.
+   */
   private async obterToken(): Promise<string> {
+    // Retorna cache se ainda válido (margem de 60s antes da expiração real).
+    if (this.cachedToken && Date.now() < this.tokenExpiresAt) {
+      return this.cachedToken;
+    }
+
     const tokenUrl = `${this.baseUrl}/token`;
     const body = new URLSearchParams({
       grant_type: 'client_credentials',
@@ -181,6 +199,12 @@ export class CoraGateway implements BoletoGatewayPort {
     }
 
     const json = (await resp.json()) as CoraTokenResponse;
+
+    // Cachear com margem de segurança: expira 60s antes do real para evitar uso de token expirado.
+    const ttlMs = Math.max((json.expires_in - 60) * 1000, 0);
+    this.cachedToken = json.access_token;
+    this.tokenExpiresAt = Date.now() + ttlMs;
+
     return json.access_token;
   }
 

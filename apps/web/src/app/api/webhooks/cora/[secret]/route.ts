@@ -12,6 +12,7 @@ import {
   registrarBaixa,
   buscarBoletoPorIdExterno,
 } from '@/server/repositories/boleto-repository';
+import { logAuthFailure, logSecurityError, logWebhookReceived } from '@/lib/security-logger';
 import type { StatusBoleto } from '@cobranca/shared';
 
 /** Comparação em tempo constante de dois segredos (evita timing attack). */
@@ -56,6 +57,7 @@ export async function POST(req: Request, { params }: { params: { secret: string 
   const env = getServerEnv();
   // 1. Secret do path (constant-time). Sem secret configurado ou divergente → 401.
   if (!env.CORA_WEBHOOK_SECRET || !segredosBatem(params.secret, env.CORA_WEBHOOK_SECRET)) {
+    logAuthFailure(req, 'Secret do webhook Cora inválido ou ausente');
     return new Response('Unauthorized', { status: 401 });
   }
 
@@ -78,6 +80,10 @@ export async function POST(req: Request, { params }: { params: { secret: string 
       eventoTipo,
       payload: body,
     });
+    
+    // Achado I-2: Log estruturado
+    logWebhookReceived('cora', eventoTipo, !novo);
+    
     if (!novo) return Response.json({ ok: true, deduped: true });
 
     // Evento sem id externo — nada a conciliar (fica logado para investigação).
@@ -102,7 +108,8 @@ export async function POST(req: Request, { params }: { params: { secret: string 
     return Response.json({ ok: true });
   } catch (e) {
     // 4. Erro interno: loga mas responde 200 (o Cora não deve reenviar em loop).
-    console.error(JSON.stringify({ webhook: 'cora', error: e instanceof Error ? e.message : String(e) }));
+    logSecurityError('WEBHOOK_CORA_ERRO', e, { webhook: 'cora' });
     return Response.json({ ok: true });
   }
 }
+

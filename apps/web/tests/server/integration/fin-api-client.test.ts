@@ -8,7 +8,7 @@ import { ApiError } from '../../../src/lib/api-error';
 function ligarModoHttp() {
   process.env.FIN_API_SOURCE = 'http';
   process.env.API_FINANCEIRO_URL = 'https://sistema-web.example.com';
-  process.env.API_FINANCEIRO_KEY = 'chave-de-teste';
+  process.env.API_FINANCEIRO_KEY = 'chave-de-teste-segura-20-caracteres';
 }
 
 function resetEnv() {
@@ -147,7 +147,7 @@ describe('endpoints http — URLs, header e parâmetros do contrato', () => {
 
     const [urlArg, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
     expect(urlArg.toString()).toContain('/api/fin-clientes');
-    expect((init.headers as Record<string, string>)['x-api-key']).toBe('chave-de-teste');
+    expect((init.headers as Record<string, string>)['x-api-key']).toBe('chave-de-teste-segura-20-caracteres');
   });
 
   it('listarProducoes: envia clienteId na query', async () => {

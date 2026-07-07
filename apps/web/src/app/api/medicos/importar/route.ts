@@ -5,6 +5,7 @@ import { requireRole } from '@/server/auth/require-role';
 import { criarMedico } from '@/server/repositories/medico-repository';
 import { novoMedicoSchema } from '@/server/validation/medico-schema';
 import { parseCsv, rowToInput } from '@/server/csv/medicos-import';
+import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 import type { ImportarResultado } from '@/services/medicos';
 
 // Limites anti-DoS: o arquivo é lido inteiro na memória, então travamos tamanho e nº de linhas.
@@ -12,8 +13,12 @@ import type { ImportarResultado } from '@/services/medicos';
 const MAX_CSV_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_CSV_ROWS = 5000;
 
+// Achado I-1: rate limit — máximo 5 imports por minuto por usuário.
+const importLimiter = createRateLimiter('medicos-importar', { limit: 5, windowMs: 60_000 });
+
 export const POST = withErrorHandler(async (req) => {
-  await requireRole(['admin']);
+  const sessao = await requireRole(['admin']);
+  assertRateLimit(importLimiter, sessao.userId, 'importação de CSV');
 
   const formData = await req.formData();
   const file = formData.get('arquivo');

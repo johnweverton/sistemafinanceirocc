@@ -17,7 +17,11 @@ import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-r
 import { buscarMedico } from '@/server/repositories/medico-repository';
 import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
+
+// Achado I-1: rate limit — máximo 10 emissões por minuto por usuário.
+const emitirLimiter = createRateLimiter('boletos-emitir', { limit: 10, windowMs: 60_000 });
 
 /** Lista os campos obrigatórios de cobrança ainda vazios (para mensagem do 422). */
 function camposFaltantesCobranca(cobranca: NonNullable<Awaited<ReturnType<typeof buscarMedico>>>['cobranca']): string[] {
@@ -46,6 +50,7 @@ const bodySchema = z.object({
 export const POST = withErrorHandler(async (req) => {
   // 1. Auth: somente admin ou financeiro.
   const sessao = await requireRole(['admin', 'financeiro']);
+  assertRateLimit(emitirLimiter, sessao.userId, 'emissão de boleto');
 
   // 2. Feature flag: bloqueia se desligada.
   const env = getServerEnv();

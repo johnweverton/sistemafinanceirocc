@@ -1,23 +1,33 @@
 // GET /api/recebiveis — lista Contas a Receber (admin/financeiro), com filtros por querystring.
-import { withErrorHandler } from '@/lib/api-error';
+import { z } from 'zod';
+import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarRecebiveis } from '@/server/repositories/recebiveis-repository';
-import type { FiltroRecebiveis, StatusRecebivel } from '@cobranca/shared';
+import type { FiltroRecebiveis } from '@cobranca/shared';
 
-const STATUS_VALIDOS: StatusRecebivel[] = ['pago', 'cancelado', 'vencido', 'em_aberto'];
+// Achado B-3: validar query params com Zod (whitelist de status válidos).
+const recebiveisQuerySchema = z.object({
+  competencia: z.string().regex(/^\d{4}-\d{2}$/, 'Formato esperado: YYYY-MM').optional(),
+  medico: z.string().uuid('medico deve ser UUID').optional(),
+  status: z.enum(['pago', 'cancelado', 'vencido', 'em_aberto']).optional(),
+});
 
 export const GET = withErrorHandler(async (req) => {
   await requireRole(['admin', 'financeiro']);
   const url = new URL(req.url);
-
-  const statusParam = url.searchParams.get('status');
-  const filtros: FiltroRecebiveis = {
+  const query = recebiveisQuerySchema.safeParse({
     competencia: url.searchParams.get('competencia') ?? undefined,
-    medicoId: url.searchParams.get('medico') ?? undefined,
-    statusDerivado:
-      statusParam && STATUS_VALIDOS.includes(statusParam as StatusRecebivel)
-        ? (statusParam as StatusRecebivel)
-        : undefined,
+    medico: url.searchParams.get('medico') ?? undefined,
+    status: url.searchParams.get('status') ?? undefined,
+  });
+  if (!query.success) {
+    throw new ApiError(400, 'Parâmetros de consulta inválidos', 'VALIDATION', { issues: query.error.issues });
+  }
+
+  const filtros: FiltroRecebiveis = {
+    competencia: query.data.competencia,
+    medicoId: query.data.medico,
+    statusDerivado: query.data.status,
   };
 
   const recebiveis = await listarRecebiveis(filtros);

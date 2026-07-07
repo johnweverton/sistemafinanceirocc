@@ -4,6 +4,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { dispararPrimeiroLote } from '@/server/orchestrator/execucao-orchestrator';
 import { getServerEnv } from '@/lib/env';
+import { logAuthFailure } from '@/lib/security-logger';
 
 /** Compara dois segredos em tempo constante (evita timing attack na descoberta do segredo). */
 function segredosBatem(recebido: string | null, esperado: string): boolean {
@@ -23,6 +24,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const env = getServerEnv();
   const secret = req.headers.get('x-internal-secret');
   if (!env.INTERNAL_SECRET || !segredosBatem(secret, env.INTERNAL_SECRET)) {
+    logAuthFailure(req, 'Segredo interno de lote inválido ou ausente');
     return new Response('Unauthorized', { status: 401 });
   }
 

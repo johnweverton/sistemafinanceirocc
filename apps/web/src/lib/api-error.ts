@@ -1,6 +1,12 @@
 // Erro de sistema padronizado para as rotas internas (architecture: Error Handling).
 // Alertas de NEGÓCIO não usam isto — são valores retornados (ExecucaoResultado.alertas).
 // Só falhas de infraestrutura/validação viram ApiError.
+import {
+  logAuthFailure,
+  logForbidden,
+  logRateLimited,
+  logSecurityError,
+} from './security-logger';
 
 export class ApiError extends Error {
   constructor(
@@ -36,10 +42,24 @@ export function withErrorHandler<P = Record<string, never>>(
       return await handler(req, ctx);
     } catch (e) {
       const requestId = crypto.randomUUID();
-      const status = e instanceof ApiError ? e.status : 500;
-      const code = e instanceof ApiError ? e.code : 'INTERNAL';
+      const status = e instanceof ApiError ? e.status : ((e as any).status ?? 500);
+      const code = e instanceof ApiError ? e.code : ((e as any).code ?? 'INTERNAL');
       const message = e instanceof Error ? e.message : 'Erro interno';
-      console.error(JSON.stringify({ requestId, status, code, error: String(e) }));
+      
+      // Achado I-2: Logging estruturado de segurança
+      const isApiErr = e instanceof ApiError;
+      if (status === 401) {
+        logAuthFailure(req, message);
+      } else if (status === 403) {
+        logForbidden(req, 'Desconhecido', code);
+      } else if (status === 429) {
+        logRateLimited(req, null, (e as any).limiter ?? 'API');
+      } else if (status === 500) {
+        logSecurityError('API_ERROR', e, { path: new URL(req.url).pathname, requestId });
+      } else {
+        // Log info para outros erros (400, 422, etc)
+        console.info(JSON.stringify({ sec: true, event: 'API_CLIENT_ERROR', status, code, requestId, path: new URL(req.url).pathname }));
+      }
       const body: ApiErrorBody = {
         error: {
           code,
