@@ -19,6 +19,9 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'Cobrança por Guias | Carmem Cavalcante',
   description: 'Sistema de cobrança por guias hospitalares',
+  icons: {
+    icon: '/logo.svg',
+  },
 };
 
 // Aplica o tema salvo ANTES da primeira pintura, evitando flash de tema errado.
