@@ -12,6 +12,8 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { getServerEnv } from '@/lib/env';
 import { requireRole } from '@/server/auth/require-role';
 import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
+import { ZappyGateway } from '@/server/gateway/zappy-gateway';
+import { EmailGateway } from '@/server/gateway/email-gateway';
 import { calcularVencimento } from '@/server/gateway/vencimento';
 import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
@@ -168,6 +170,36 @@ export const POST = withErrorHandler(async (req) => {
     payloadResposta: emissao.payloadResposta,
     vencimento: calcularVencimento(condicoes.diasVencimento),
   });
+
+  if (boleto.status === 'emitido') {
+    // A API do Cora retorna o link do boleto em payment_options.bank_slip.url
+    const payload = emissao.payloadResposta as any;
+    const pdfUrl = payload?.payment_options?.bank_slip?.url;
+
+    if (pdfUrl) {
+      // Disparamos o envio aguardando a conclusão para garantir que a function não morra na Vercel
+      await Promise.allSettled([
+        (async () => {
+          if (cobranca.whatsapp) {
+            const zappy = new ZappyGateway();
+            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl);
+          }
+        })(),
+        (async () => {
+          if (cobranca.email) {
+            const emailGtw = new EmailGateway();
+            await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl);
+          }
+        })(),
+      ]).then((results) => {
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            console.error(`[Disparo Boleto] Erro na task ${i === 0 ? 'Zappy' : 'Email'}:`, r.reason);
+          }
+        });
+      });
+    }
+  }
 
   const httpStatus = boleto.status === 'emitido' ? 201 : 502;
   return NextResponse.json({ boleto }, { status: httpStatus });

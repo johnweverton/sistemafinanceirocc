@@ -48,6 +48,16 @@ const serverSchema = z.object({
   // Segredo do path do webhook do Cora (Épico 4). Comparado em tempo constante.
   // Achado M-1: entropia mínima quando presente.
   CORA_WEBHOOK_SECRET: z.string().min(16, 'CORA_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
+  
+  // ---------------------------------------------------------------------------
+  // DISPARO DE MENSAGENS — WhatsApp (Zappy) e E-mail (SMTP UOL)
+  // ---------------------------------------------------------------------------
+  ZAPPY_API_URL: z.string().url().optional(),
+  ZAPPY_API_TOKEN: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().regex(/^\d+$/).transform(Number).optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
 });
 
 export const publicEnv = publicSchema.parse({
@@ -74,5 +84,11 @@ export function getServerEnv() {
     CORA_API_URL: process.env.CORA_API_URL,
     CORA_CLIENT_ID: process.env.CORA_CLIENT_ID,
     CORA_WEBHOOK_SECRET: process.env.CORA_WEBHOOK_SECRET,
+    ZAPPY_API_URL: process.env.ZAPPY_API_URL,
+    ZAPPY_API_TOKEN: process.env.ZAPPY_API_TOKEN,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_USER: process.env.SMTP_USER,
+    SMTP_PASS: process.env.SMTP_PASS,
   });
 }

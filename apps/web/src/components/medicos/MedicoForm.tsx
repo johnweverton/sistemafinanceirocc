@@ -24,6 +24,7 @@ const COBRANCA_VAZIA: DadosCobranca = {
   bairro: '',
   cidade: '',
   uf: '',
+  whatsapp: '',
 };
 
 const VAZIO: FormState = {
@@ -288,6 +289,10 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
 
             <Field label="E-mail">
               <input type="email" value={cobranca.email} onChange={(e) => setCob('email', e.target.value)} className="input" placeholder="pagador@exemplo.com" />
+            </Field>
+
+            <Field label="WhatsApp / ID do Grupo" optional>
+              <input value={cobranca.whatsapp ?? ''} onChange={(e) => setCob('whatsapp', e.target.value || null)} className="input" placeholder="5511999999999 ou ID do grupo" />
             </Field>
 
             <Field label="CEP">

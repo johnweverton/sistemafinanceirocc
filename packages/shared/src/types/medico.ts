@@ -24,6 +24,7 @@ export interface DadosCobranca {
   bairro: string;
   cidade: string;
   uf: string; // sigla de 2 letras
+  whatsapp?: string | null; // número ou ID do grupo para disparo
 }
 
 /**
