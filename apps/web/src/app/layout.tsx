@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   title: 'Cobrança por Guias | Carmem Cavalcante',
   description: 'Sistema de cobrança por guias hospitalares',
   icons: {
-    icon: '/logo.svg',
+    icon: '/logo.svg?v=2',
   },
 };
 
