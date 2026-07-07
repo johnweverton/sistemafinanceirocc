@@ -54,7 +54,7 @@ export function NovaExecucao() {
     const ano = split[0] || '';
     const mes = split[1] || '';
     const mesIndex = compValida ? parseInt(mes, 10) - 1 : -1;
-    const mesNome = mesIndex >= 0 ? mesesNfd[mesIndex] : '';
+    const mesNome = mesIndex >= 0 ? (mesesNfd[mesIndex] || '') : '';
 
     for (const med of validMedicos) {
       const producoesDoMedico = producoes.filter(p => p.clienteId === med.externalId);
