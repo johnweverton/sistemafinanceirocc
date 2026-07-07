@@ -67,6 +67,8 @@ export interface CandidataVinculo {
   medicoId: string;
   nome: string;
   score: number;
+  /** true = veio de CPF idêntico (cliente.cpf === medico.cpf), sinal mais forte que nome. */
+  viaCpf: boolean;
 }
 
 export interface PendenciaSugestao {
@@ -108,7 +110,8 @@ function depsPadrao(): SyncDeps {
  * Classifica cada cliente da origem (arquitetura §3.6):
  *   - vinculado (external_id)  → atualiza nome/statusHapvida se mudou (com histórico)
  *   - production_type desconhecido → naoSincronizavel (vinculado mantém status atual)
- *   - com candidata(s) por nome    → comSugestao (usuário confirma via /vincular)
+ *   - com candidata(s) por CPF e/ou nome → comSugestao (usuário confirma via /vincular;
+ *     CPF idêntico é sinal mais forte que nome — aparece primeiro, mesmo com nome muito diferente)
  *   - sem candidata                → semPar (usuário cria via /criar-externo)
  */
 export async function sincronizar(
@@ -166,10 +169,25 @@ export async function sincronizar(
       continue;
     }
 
-    const candidatas: CandidataVinculo[] = semVinculo
-      .map((m) => ({ medicoId: m.id, nome: m.nome, score: similaridadeNomes(m.nome, cliente.nome) }))
-      .filter((c) => c.score >= SCORE_MINIMO_SUGESTAO)
-      .sort((a, b) => b.score - a.score)
+    const porMedicoId = new Map<string, CandidataVinculo>();
+    for (const m of semVinculo) {
+      const score = similaridadeNomes(m.nome, cliente.nome);
+      if (score >= SCORE_MINIMO_SUGESTAO) {
+        porMedicoId.set(m.id, { medicoId: m.id, nome: m.nome, score, viaCpf: false });
+      }
+    }
+    // CPF idêntico é identidade, não similaridade — inclui mesmo que o nome não tenha
+    // batido acima do score mínimo, e sobrescreve a entrada por nome (score 1, viaCpf).
+    if (cliente.cpf) {
+      for (const m of semVinculo) {
+        if (m.cpf && m.cpf === cliente.cpf) {
+          porMedicoId.set(m.id, { medicoId: m.id, nome: m.nome, score: 1, viaCpf: true });
+        }
+      }
+    }
+
+    const candidatas: CandidataVinculo[] = [...porMedicoId.values()]
+      .sort((a, b) => (a.viaCpf !== b.viaCpf ? (a.viaCpf ? -1 : 1) : b.score - a.score))
       .slice(0, MAX_CANDIDATAS);
 
     if (candidatas.length > 0) {

@@ -1,6 +1,6 @@
 // Fin API Client — único ponto que fala com a API REAL do Sistema Web (Épico 5, arquitetura §5.1).
 // Contrato: docs/integracao/api-financeiro-sistema-web.md
-//   GET /api/fin-clientes                → médicos da origem (sem CPF/especialidade)
+//   GET /api/fin-clientes                → médicos da origem (sem especialidade)
 //   GET /api/fin-producoes?clienteId=    → produções nomeadas de um médico
 //   GET /api/fin-itens?producaoId=       → itens de uma produção
 // Dois modos via FIN_API_SOURCE (espelha o desenho do procedimentos-client):
@@ -39,6 +39,7 @@ export function toClienteExterno(obj: Record<string, unknown>): ClienteExterno {
   return {
     id: s(obj.id),
     nome: s(obj.name),
+    cpf: sn(obj.cpf),
     productionType: s(obj.production_type),
   };
 }
@@ -54,9 +55,9 @@ export function toItemProducao(obj: Record<string, unknown>): ItemProducao {
   return {
     data: s(obj.date).slice(0, 10), // YYYY-MM-DD
     pacienteNome: s(obj.patient_name),
-    // Campo pedido ao programador (senha OU nº de atendimento) — aceita qualquer um dos
-    // nomes quando a origem entregar; null até lá (arquitetura §3.2/§10.3).
-    atendimentoExternoId: sn(obj.senha ?? obj.numero_atendimento),
+    // Senha da guia/autorização — campo `password` no contrato real; mantém fallback para
+    // os nomes alternativos discutidos antes da entrega (arquitetura §3.2/§10.3).
+    atendimentoExternoId: sn(obj.password ?? obj.senha ?? obj.numero_atendimento),
     codigoProcedimento: s(obj.proc_code),
     descricaoProcedimento: sn(obj.proc_name),
     statusOrigem: s(obj.status), // informativo — NUNCA filtra contagem (decisão 5)

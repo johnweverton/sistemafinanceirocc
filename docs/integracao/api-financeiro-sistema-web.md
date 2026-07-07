@@ -53,11 +53,13 @@ x-api-key: <chave>
   {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "name": "Dr. João Silva",
+    "cpf": "12345678900",
     "production_type": "Produção Credenciada"
   },
   {
     "id": "550e8400-e29b-41d4-a716-446655440001",
     "name": "Dra. Maria Souza",
+    "cpf": "98765432100",
     "production_type": "Produção VH"
   }
 ]
@@ -69,6 +71,7 @@ x-api-key: <chave>
 |---|---|---|
 | `id` | string (UUID) | Identificador único do médico |
 | `name` | string | Nome completo do médico |
+| `cpf` | string \| null | CPF do médico, somente dígitos (sem pontuação) — útil como parâmetro de conferência |
 | `production_type` | string | `"Produção Credenciada"` ou `"Produção VH"` |
 
 ---
@@ -130,6 +133,7 @@ GET /api/fin-itens?producaoId=<id>
   {
     "date": "2026-01-15",
     "patient_name": "Ana Paula Ferreira",
+    "password": "AB123456",
     "proc_code": "30721033",
     "proc_name": "Consulta em consultório (no horário normal ou preestabelecido)",
     "status": "Devidamente Pago",
@@ -141,6 +145,7 @@ GET /api/fin-itens?producaoId=<id>
   {
     "date": "2026-01-18",
     "patient_name": "Carlos Eduardo Lima",
+    "password": "CD654321",
     "proc_code": "30715040",
     "proc_name": "Visita hospitalar",
     "status": "Glosado",
@@ -158,6 +163,7 @@ GET /api/fin-itens?producaoId=<id>
 |---|---|---|
 | `date` | string (YYYY-MM-DD) | Data do atendimento |
 | `patient_name` | string | Nome do paciente |
+| `password` | string \| null | Senha da guia/autorização — identificador único do procedimento no atendimento |
 | `proc_code` | string | Código TUSS do procedimento |
 | `proc_name` | string | Descrição do procedimento |
 | `status` | string | Situação do item (ver tabela abaixo) |

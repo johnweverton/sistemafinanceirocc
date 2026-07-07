@@ -25,6 +25,7 @@ async function client() {
 const clienteBruto = {
   id: '550e8400-e29b-41d4-a716-446655440000',
   name: 'Dr. João Silva',
+  cpf: '12345678900',
   production_type: 'Produção Credenciada',
 };
 
@@ -36,6 +37,7 @@ const producaoBruta = {
 const itemBruto = {
   date: '2026-01-15',
   patient_name: 'Ana Paula Ferreira',
+  password: 'AB123456',
   proc_code: '30721033',
   proc_name: 'Consulta em consultório',
   status: 'Devidamente Pago',
@@ -61,7 +63,7 @@ describe('normalização defensiva — contrato real → tipos do domínio', () 
     expect(toItemProducao(itemBruto)).toEqual({
       data: '2026-01-15',
       pacienteNome: 'Ana Paula Ferreira',
-      atendimentoExternoId: null, // origem ainda não entrega o campo
+      atendimentoExternoId: 'AB123456',
       codigoProcedimento: '30721033',
       descricaoProcedimento: 'Consulta em consultório',
       statusOrigem: 'Devidamente Pago',
@@ -94,13 +96,16 @@ describe('normalização defensiva — contrato real → tipos do domínio', () 
     expect(p.valorPagoOrigem).toBeNull();
   });
 
-  it('atendimentoExternoId: aceita senha OU numero_atendimento quando a origem entregar', async () => {
+  it('atendimentoExternoId: usa password (contrato real); aceita senha/numero_atendimento como fallback', async () => {
     const { toItemProducao } = await client();
-    expect(toItemProducao({ ...itemBruto, senha: 'S-123' }).atendimentoExternoId).toBe('S-123');
+    const semPassword = { ...itemBruto } as Record<string, unknown>;
+    delete semPassword.password;
+    expect(toItemProducao({ ...semPassword, senha: 'S-123' }).atendimentoExternoId).toBe('S-123');
     expect(
-      toItemProducao({ ...itemBruto, numero_atendimento: 'AT-9' }).atendimentoExternoId,
+      toItemProducao({ ...semPassword, numero_atendimento: 'AT-9' }).atendimentoExternoId,
     ).toBe('AT-9');
-    expect(toItemProducao({ ...itemBruto, senha: '  ' }).atendimentoExternoId).toBeNull();
+    expect(toItemProducao({ ...semPassword, senha: '  ' }).atendimentoExternoId).toBeNull();
+    expect(toItemProducao({ ...itemBruto, password: '  ' }).atendimentoExternoId).toBeNull();
   });
 
   it('statusOrigem transporta cru — Glosado/Recurso NÃO são filtrados aqui (decisão 5)', async () => {
@@ -114,6 +119,7 @@ describe('normalização defensiva — contrato real → tipos do domínio', () 
     expect(toClienteExterno(clienteBruto)).toEqual({
       id: '550e8400-e29b-41d4-a716-446655440000',
       nome: 'Dr. João Silva',
+      cpf: '12345678900',
       productionType: 'Produção Credenciada',
     });
     expect(toProducaoExterna(producaoBruta)).toEqual({
@@ -241,7 +247,7 @@ describe('modo local (FIN_API_SOURCE=local) — fixtures', () => {
     expect(await buscarItens('p1')).toEqual([]);
 
     fixtures.registrarFixtureClientes([
-      { id: 'c1', nome: 'Dra. Maria Souza', productionType: 'Produção VH' },
+      { id: 'c1', nome: 'Dra. Maria Souza', cpf: null, productionType: 'Produção VH' },
     ]);
     fixtures.registrarFixtureProducoes('c1', [{ id: 'p1', nome: 'Fevereiro 2026' }]);
     fixtures.registrarFixtureItens('p1', [toItemProducao(itemBruto)]);

@@ -126,7 +126,11 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
                         <div key={cand.medicoId} className="flex items-center justify-between rounded bg-cc-surface-2 p-2">
                           <div>
                             <p className="font-medium text-cc-ink">{cand.nome}</p>
-                            <p className="text-xs text-cc-muted">Score de similaridade: {(cand.score * 100).toFixed(0)}%</p>
+                            {cand.viaCpf ? (
+                              <p className="text-xs font-semibold text-cc-success">CPF idêntico — mesma pessoa</p>
+                            ) : (
+                              <p className="text-xs text-cc-muted">Score de similaridade: {(cand.score * 100).toFixed(0)}%</p>
+                            )}
                           </div>
                           <button
                             onClick={() => {

@@ -11,6 +11,7 @@ export interface SyncCandidata {
   medicoId: string;
   nome: string;
   score: number;
+  viaCpf: boolean;
 }
 export interface SyncPendenciaSugestao {
   cliente: ClienteExterno;

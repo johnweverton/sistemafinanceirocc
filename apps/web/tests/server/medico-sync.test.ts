@@ -41,12 +41,12 @@ describe('Medico Sync', () => {
 
   describe('sincronizar()', () => {
     const clientesOrigem: ClienteExterno[] = [
-      { id: 'ext-1', nome: 'João Silva', productionType: 'Produção Credenciada' }, // Vinculado, sem mudança
-      { id: 'ext-2', nome: 'Maria Nova', productionType: 'Produção VH' }, // Vinculado, nome mudou
-      { id: 'ext-3', nome: 'Dra. Ana', productionType: 'Produção Credenciada' }, // Não vinculado, com par
-      { id: 'ext-4', nome: 'Pedro', productionType: 'Produção Credenciada' }, // Não vinculado, sem par
-      { id: 'ext-5', nome: 'Clinica X', productionType: 'Desconhecido' }, // Não sincronizável
-      { id: 'ext-6', nome: 'Zebra', productionType: 'Desconhecido' }, // Vinculado, mas origem mudou p/ desconhecido
+      { id: 'ext-1', nome: 'João Silva', cpf: null, productionType: 'Produção Credenciada' }, // Vinculado, sem mudança
+      { id: 'ext-2', nome: 'Maria Nova', cpf: null, productionType: 'Produção VH' }, // Vinculado, nome mudou
+      { id: 'ext-3', nome: 'Dra. Ana', cpf: null, productionType: 'Produção Credenciada' }, // Não vinculado, com par
+      { id: 'ext-4', nome: 'Pedro', cpf: null, productionType: 'Produção Credenciada' }, // Não vinculado, sem par
+      { id: 'ext-5', nome: 'Clinica X', cpf: null, productionType: 'Desconhecido' }, // Não sincronizável
+      { id: 'ext-6', nome: 'Zebra', cpf: null, productionType: 'Desconhecido' }, // Vinculado, mas origem mudou p/ desconhecido
     ];
 
     const medicosCadastrados = [
@@ -92,6 +92,74 @@ describe('Medico Sync', () => {
       // Sem par (Pedro)
       expect(relatorio.semPar).toHaveLength(1);
       expect(relatorio.semPar[0]?.id).toBe('ext-4');
+    });
+  });
+
+  describe('sincronizar() — matching por CPF', () => {
+    it('CPF idêntico vira candidata mesmo com nome muito diferente, marcada viaCpf', async () => {
+      const clientes: ClienteExterno[] = [
+        { id: 'ext-10', nome: 'Zé da Silva', cpf: '11122233344', productionType: 'Produção Credenciada' },
+      ];
+      const medicos = [
+        {
+          id: 'med-10',
+          externalId: null,
+          nome: 'Doutor Completamente Diferente',
+          cpf: '11122233344',
+          statusHapvida: 'credenciado',
+        },
+      ] as Medico[];
+
+      const relatorio = await sincronizar('admin-id', {
+        listarClientes: async () => clientes,
+        listarMedicos: async () => medicos,
+        atualizarMedico: vi.fn(),
+      });
+
+      expect(relatorio.semPar).toHaveLength(0);
+      expect(relatorio.comSugestao).toHaveLength(1);
+      expect(relatorio.comSugestao[0]?.candidatas).toEqual([
+        { medicoId: 'med-10', nome: 'Doutor Completamente Diferente', score: 1, viaCpf: true },
+      ]);
+    });
+
+    it('candidata por CPF aparece antes de candidatas apenas por nome', async () => {
+      const clientes: ClienteExterno[] = [
+        { id: 'ext-11', nome: 'Carlos Souza', cpf: '99988877766', productionType: 'Produção Credenciada' },
+      ];
+      const medicos = [
+        { id: 'med-11a', externalId: null, nome: 'Carlos Souza Junior', cpf: null, statusHapvida: 'credenciado' },
+        { id: 'med-11b', externalId: null, nome: 'Outro Nome Qualquer', cpf: '99988877766', statusHapvida: 'credenciado' },
+      ] as Medico[];
+
+      const relatorio = await sincronizar('admin-id', {
+        listarClientes: async () => clientes,
+        listarMedicos: async () => medicos,
+        atualizarMedico: vi.fn(),
+      });
+
+      const candidatas = relatorio.comSugestao[0]?.candidatas ?? [];
+      expect(candidatas[0]).toMatchObject({ medicoId: 'med-11b', viaCpf: true });
+      expect(candidatas[1]).toMatchObject({ medicoId: 'med-11a', viaCpf: false });
+    });
+
+    it('CPF e nome apontando pro mesmo médico geram uma única candidata (viaCpf vence)', async () => {
+      const clientes: ClienteExterno[] = [
+        { id: 'ext-12', nome: 'Fernanda Lima', cpf: '55566677788', productionType: 'Produção Credenciada' },
+      ];
+      const medicos = [
+        { id: 'med-12', externalId: null, nome: 'Fernanda Lima', cpf: '55566677788', statusHapvida: 'credenciado' },
+      ] as Medico[];
+
+      const relatorio = await sincronizar('admin-id', {
+        listarClientes: async () => clientes,
+        listarMedicos: async () => medicos,
+        atualizarMedico: vi.fn(),
+      });
+
+      expect(relatorio.comSugestao[0]?.candidatas).toEqual([
+        { medicoId: 'med-12', nome: 'Fernanda Lima', score: 1, viaCpf: true },
+      ]);
     });
   });
 });

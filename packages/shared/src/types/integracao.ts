@@ -2,10 +2,11 @@
 // Espelham docs/integracao/api-financeiro-sistema-web.md — NÃO persistidos, vivem só em
 // memória durante sincronização/execução (mesmo papel que Procedimento tinha no contrato antigo).
 
-/** Médico na origem (GET /api/fin-clientes). A origem NÃO expõe CPF nem especialidade. */
+/** Médico na origem (GET /api/fin-clientes). A origem NÃO expõe especialidade. */
 export interface ClienteExterno {
   id: string; // UUID na origem — vira medicos.external_id no vínculo
   nome: string; // name
+  cpf: string | null; // cpf: só dígitos — dado cadastral/conferência, não usado para criação automática
   productionType: string; // production_type: "Produção Credenciada" | "Produção VH" (cru)
 }
 
@@ -24,9 +25,8 @@ export interface ItemProducao {
   data: string; // YYYY-MM-DD (date)
   pacienteNome: string; // patient_name
   /**
-   * Senha OU nº de atendimento — campo PEDIDO ao programador da origem (2026-07-06);
-   * null até a origem entregar. Chave de agrupamento com fallback (paciente, data) —
-   * arquitetura §3.3/§10.3.
+   * Senha da guia/autorização (campo `password` na origem, entregue em 2026-07-07).
+   * Chave de agrupamento com fallback (paciente, data) — arquitetura §3.3/§10.3.
    */
   atendimentoExternoId: string | null;
   codigoProcedimento: string; // proc_code (TUSS)
