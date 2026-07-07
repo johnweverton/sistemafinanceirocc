@@ -66,12 +66,7 @@ export default function LoginPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-cc-bg p-4">
-      {/* Halo de luz atrás do card — reforça a imersão tecnológica */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/3 h-[38rem] w-[38rem] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-70 blur-3xl"
-        style={{ background: 'radial-gradient(circle, var(--glow), transparent 65%)' }}
-      />
+
 
       <div className="absolute right-4 top-4">
         <ThemeToggle />
@@ -85,10 +80,18 @@ export default function LoginPage() {
             xmlns="http://www.w3.org/2000/svg"
             aria-label="Carmem Cavalcante"
             role="img"
-            className="logo-3d mx-auto h-20 w-20 text-cc-accent drop-glow"
+            className="logo-3d mx-auto h-20 w-20"
             style={{ fillRule: 'evenodd', clipRule: 'evenodd' }}
           >
-            <g ref={markRef} style={{ opacity: 0 }} fill="currentColor">
+            <defs>
+              <linearGradient id="silver-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#F9F9F9" />
+                <stop offset="40%" stopColor="#D4D4D8" />
+                <stop offset="60%" stopColor="#71717A" />
+                <stop offset="100%" stopColor="#E4E4E7" />
+              </linearGradient>
+            </defs>
+            <g ref={markRef} style={{ opacity: 0 }} fill="url(#silver-grad)">
               <path
                 d="M543.776,835.303c-20.332,2.882 -55.873,13.928 -55.873,17.29c0,0.64 5.123,1.921 11.527,3.042c52.511,9.125 99.259,43.866 123.914,92.375c6.564,12.808 6.564,12.808 65.479,13.288c36.502,0.16 59.556,-0.16 60.516,-1.121c2.241,-2.241 -10.887,-28.977 -21.613,-44.507c-17.29,-24.975 -49.79,-52.191 -76.846,-64.359c-33.3,-14.889 -73.804,-20.973 -107.104,-16.01Z"
                 fillRule="nonzero"
