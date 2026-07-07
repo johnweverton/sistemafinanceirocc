@@ -50,7 +50,9 @@ export function NovaExecucao() {
 
     const mesesNfd = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
     const compValida = /^\d{4}-\d{2}$/.test(competencia);
-    const [ano, mes] = compValida ? competencia.split('-') : ['', ''];
+    const split = compValida ? competencia.split('-') : ['', ''];
+    const ano = split[0] || '';
+    const mes = split[1] || '';
     const mesIndex = compValida ? parseInt(mes, 10) - 1 : -1;
     const mesNome = mesIndex >= 0 ? mesesNfd[mesIndex] : '';
 
