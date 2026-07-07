@@ -1,6 +1,8 @@
 // Parsing de CSV de importação de médicos (Story 3.4). Extraído do route handler porque
 // route files do Next não podem exportar funções além dos métodos HTTP.
 
+import ExcelJS from 'exceljs';
+
 export function parseCsv(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2 || !lines[0]) return [];
@@ -12,6 +14,36 @@ export function parseCsv(text: string): Record<string, string>[] {
       const values = line.split(',').map((v) => v.trim());
       return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
     });
+}
+
+export async function parseExcel(buffer: Buffer): Promise<Record<string, string>[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+
+  const rows: Record<string, string>[] = [];
+  let headers: string[] = [];
+
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) {
+      row.eachCell((cell, colNumber) => {
+        headers[colNumber] = cell.text ? cell.text.toString().trim() : '';
+      });
+    } else {
+      const rowData: Record<string, string> = {};
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header) {
+          rowData[header] = cell.text ? cell.text.toString().trim() : '';
+        }
+      });
+      rows.push(rowData);
+    }
+  });
+
+  return rows;
 }
 
 export function rowToInput(row: Record<string, string>) {
@@ -39,6 +71,7 @@ export function rowToInput(row: Record<string, string>) {
       pagadorTipo: row.pagador_tipo,
       pagadorDocumento: (row.pagador_documento || '').replace(/\D/g, ''),
       pagadorNome: row.pagador_nome || '',
+      whatsapp: (row.whatsapp || '').replace(/\D/g, ''),
       email: row.email || '',
       cep: (row.cep || '').replace(/\D/g, ''),
       logradouro: row.logradouro || '',

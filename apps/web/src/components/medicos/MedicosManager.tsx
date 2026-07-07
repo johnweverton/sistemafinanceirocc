@@ -338,18 +338,18 @@ export function MedicosManager() {
             {sincronizar.isPending ? 'Sincronizando...' : 'Sincronizar com sistema web'}
           </button>
           <a
-            href="/templates/medicos-modelo.csv"
+            href="/templates/medicos-modelo.xlsx"
             download
-            className="btn btn-secondary btn-sm"
+            className="btn-secondary btn flex-1 justify-center whitespace-nowrap sm:flex-none"
           >
-            Baixar modelo CSV
+            Baixar modelo Excel
           </a>
           <label className={`btn btn-secondary btn-sm cursor-pointer ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}>
-            {importar.isPending ? 'Importando...' : 'Importar CSV'}
+            {importar.isPending ? 'Importando...' : 'Importar Planilha'}
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv"
+              accept=".xlsx,.xls,.csv"
               className="hidden"
               disabled={importar.isPending}
               onChange={(e) => {
@@ -501,7 +501,7 @@ export function MedicosManager() {
           description={
             medicosFiltrados.length === 0 && (busca || filtroStatus !== 'todos')
               ? 'Ajuste a busca ou o filtro para ver outros resultados.'
-              : 'Cadastre manualmente ou importe uma planilha CSV para começar.'
+              : 'Cadastre manualmente ou importe uma planilha para começar.'
           }
           action={
             <button onClick={() => setModo({ tipo: 'novo' })} className="btn-primary btn-sm btn">

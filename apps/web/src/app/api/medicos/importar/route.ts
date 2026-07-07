@@ -4,7 +4,7 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { criarMedico } from '@/server/repositories/medico-repository';
 import { novoMedicoSchema } from '@/server/validation/medico-schema';
-import { parseCsv, rowToInput } from '@/server/csv/medicos-import';
+import { parseCsv, parseExcel, rowToInput } from '@/server/csv/medicos-import';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 import type { ImportarResultado } from '@/services/medicos';
 
@@ -25,8 +25,12 @@ export const POST = withErrorHandler(async (req) => {
   if (!file || !(file instanceof File)) {
     throw new ApiError(422, 'Arquivo CSV não enviado (campo: arquivo)', 'ARQUIVO_INVALIDO');
   }
-  if (!file.name.toLowerCase().endsWith('.csv')) {
-    throw new ApiError(422, 'Somente arquivos .csv são aceitos', 'FORMATO_INVALIDO');
+  const nomeLower = file.name.toLowerCase();
+  const isCsv = nomeLower.endsWith('.csv');
+  const isExcel = nomeLower.endsWith('.xlsx') || nomeLower.endsWith('.xls');
+
+  if (!isCsv && !isExcel) {
+    throw new ApiError(422, 'Somente arquivos .csv ou .xlsx são aceitos', 'FORMATO_INVALIDO');
   }
   if (file.size > MAX_CSV_BYTES) {
     throw new ApiError(
@@ -36,8 +40,14 @@ export const POST = withErrorHandler(async (req) => {
     );
   }
 
-  const text = await file.text();
-  const rows = parseCsv(text);
+  let rows: Record<string, string>[] = [];
+  if (isCsv) {
+    const text = await file.text();
+    rows = parseCsv(text);
+  } else {
+    const arrayBuffer = await file.arrayBuffer();
+    rows = await parseExcel(Buffer.from(arrayBuffer));
+  }
   if (rows.length === 0) {
     throw new ApiError(422, 'Arquivo vazio ou sem linhas de dados após o cabeçalho', 'ARQUIVO_VAZIO');
   }
