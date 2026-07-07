@@ -4,6 +4,8 @@ import type {
   MedicoHistorico,
   Execucao,
   ExecucaoResultado,
+  ExecucaoResumoMedico,
+  ExecucaoHistoricoMedicoItem,
   Subtotal,
   Boleto,
   BoletoEvento,
@@ -261,6 +263,10 @@ export interface ExecucaoResultadoRow {
   total_valor: number | null;
   status: ExecucaoResultado['status'];
   alertas: string[] | null;
+  status_original: ExecucaoResultado['status'] | null;
+  revisado_por: string | null;
+  revisado_em: string | null;
+  motivo_revisao: string | null;
 }
 
 export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultado {
@@ -278,6 +284,56 @@ export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultad
     totalValor: row.total_valor,
     status: row.status,
     alertas: row.alertas ?? [],
+    statusOriginal: row.status_original ?? null,
+    revisadoPor: row.revisado_por ?? null,
+    revisadoEm: row.revisado_em ?? null,
+    motivoRevisao: row.motivo_revisao ?? null,
+  };
+}
+
+export interface ExecucaoResumoMedicoRow {
+  medico_id: string | null;
+  cpf: string;
+  nome: string;
+  ultima_competencia: string;
+  ultima_execucao_id: string;
+  ultima_execucao_status: Execucao['status'];
+  ultimo_status_resultado: ExecucaoResultado['status'];
+  ultimo_valor: number | null;
+  qtd_execucoes: number;
+}
+
+export function toExecucaoResumoMedico(row: ExecucaoResumoMedicoRow): ExecucaoResumoMedico {
+  return {
+    medicoId: row.medico_id,
+    cpf: row.cpf,
+    nome: row.nome,
+    ultimaCompetencia: row.ultima_competencia,
+    ultimaExecucaoId: row.ultima_execucao_id,
+    ultimaExecucaoStatus: row.ultima_execucao_status,
+    ultimoStatusResultado: row.ultimo_status_resultado,
+    ultimoValor: row.ultimo_valor,
+    qtdExecucoes: row.qtd_execucoes,
+  };
+}
+
+export interface ExecucaoHistoricoMedicoItemRow {
+  execucao_id: string;
+  status: ExecucaoResultado['status'];
+  total_valor: number | null;
+  execucoes: { competencia: string; status: Execucao['status']; iniciado_em: string };
+}
+
+export function toExecucaoHistoricoMedicoItem(
+  row: ExecucaoHistoricoMedicoItemRow,
+): ExecucaoHistoricoMedicoItem {
+  return {
+    execucaoId: row.execucao_id,
+    competencia: row.execucoes.competencia,
+    execucaoStatus: row.execucoes.status,
+    statusResultado: row.status,
+    totalValor: row.total_valor,
+    iniciadoEm: row.execucoes.iniciado_em,
   };
 }
 

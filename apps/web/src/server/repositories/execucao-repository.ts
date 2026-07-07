@@ -2,16 +2,27 @@
 // Segue o mesmo padrão do medico-repository. Toda escrita é via service role (bypassa RLS):
 // as policies só permitem leitura/insert de execução a clientes; progresso/resultados são
 // gravados pelo servidor (architecture: Database Schema, seção RLS).
-import type { Execucao, ExecucaoResultado, ResultadoMedico } from '@cobranca/shared';
+import type {
+  Execucao,
+  ExecucaoResultado,
+  ExecucaoResumoMedico,
+  ExecucaoHistoricoMedicoItem,
+  ResultadoMedico,
+} from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
+import { resolverEmailPorId, resolverEmailsPorIds } from '@/server/auth/resolver-email';
 import {
   toExecucao,
   toExecucaoResultado,
   toExecucaoSelecao,
+  toExecucaoResumoMedico,
+  toExecucaoHistoricoMedicoItem,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
   type ExecucaoSelecaoRow,
+  type ExecucaoResumoMedicoRow,
+  type ExecucaoHistoricoMedicoItemRow,
 } from './mappers';
 
 export async function criarExecucao(
@@ -61,7 +72,12 @@ export async function buscarExecucao(id: string): Promise<Execucao | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.from('execucoes').select('*').eq('id', id).maybeSingle();
   if (error) throw new ApiError(500, 'Falha ao buscar execução', 'DB_ERROR', { error: error.message });
-  return data ? toExecucao(data as ExecucaoRow) : null;
+  if (!data) return null;
+  const execucao = toExecucao(data as ExecucaoRow);
+  // Pula a resolução enquanto "processando": esta função é re-chamada a cada 3s pelo polling de
+  // fallback do frontend (useExecucaoRealtime), e o e-mail do autor não muda no meio do processamento.
+  if (execucao.status === 'processando') return execucao;
+  return { ...execucao, iniciadoPorEmail: await resolverEmailPorId(execucao.iniciadoPor) };
 }
 
 export async function listarSelecoes(execucaoId: string) {
@@ -85,7 +101,10 @@ export async function listarExecucoes(): Promise<Execucao[]> {
     .select('*')
     .order('iniciado_em', { ascending: false });
   if (error) throw new ApiError(500, 'Falha ao listar execuções', 'DB_ERROR', { error: error.message });
-  return (data as ExecucaoRow[]).map(toExecucao);
+  const execucoes = (data as ExecucaoRow[]).map(toExecucao);
+  // Uma chamada para todos os autores da lista, não uma por linha (evita N+1 na Admin Auth API).
+  const emails = await resolverEmailsPorIds([...new Set(execucoes.map((e) => e.iniciadoPor))]);
+  return execucoes.map((e) => ({ ...e, iniciadoPorEmail: emails.get(e.iniciadoPor) ?? null }));
 }
 
 export async function listarResultados(execucaoId: string): Promise<ExecucaoResultado[]> {
@@ -132,6 +151,51 @@ export async function gravarResultado(
     alertas: r.alertas,
   });
   if (error) throw new ApiError(500, 'Falha ao gravar resultado', 'DB_ERROR', { error: error.message });
+}
+
+/**
+ * Revisa e libera um resultado em 'alerta' para 'ok' — única forma de sair desse estado hoje
+ * (não existe outro UPDATE em execucao_resultados). Preserva o status original e registra quem/
+ * quando/por quê (migration 0014), para que a emissão de boleto (que só aceita status 'ok')
+ * funcione sem nenhuma alteração na rota de emissão.
+ */
+export async function revisarResultado(
+  resultadoId: string,
+  revisorId: string,
+  motivo: string,
+): Promise<ExecucaoResultado> {
+  const db = getSupabaseAdmin();
+  const { data: atual, error: errBusca } = await db
+    .from('execucao_resultados')
+    .select('*')
+    .eq('id', resultadoId)
+    .maybeSingle();
+  if (errBusca) throw new ApiError(500, 'Falha ao buscar resultado', 'DB_ERROR', { error: errBusca.message });
+  if (!atual) throw new ApiError(404, 'Resultado de execução não encontrado', 'RESULTADO_NAO_ENCONTRADO');
+
+  const atualRow = atual as ExecucaoResultadoRow;
+  if (atualRow.status !== 'alerta') {
+    throw new ApiError(
+      400,
+      `Só é possível revisar resultados com status 'alerta' (atual: '${atualRow.status}').`,
+      'STATUS_INVALIDO',
+    );
+  }
+
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .update({
+      status: 'ok',
+      status_original: atualRow.status,
+      revisado_por: revisorId,
+      revisado_em: new Date().toISOString(),
+      motivo_revisao: motivo,
+    })
+    .eq('id', resultadoId)
+    .select('*')
+    .single();
+  if (error) throw new ApiError(500, 'Falha ao revisar resultado', 'DB_ERROR', { error: error.message });
+  return toExecucaoResultado(data as ExecucaoResultadoRow);
 }
 
 export async function atualizarProgresso(execucaoId: string, progresso: number): Promise<void> {
@@ -201,4 +265,37 @@ export async function guiasExecucaoAnterior(
   }
   const guias = (data as { guias: number | null } | null)?.guias;
   return guias ?? null;
+}
+
+/**
+ * Um médico por linha, com a ocorrência mais recente e a contagem total (visão "Por médico",
+ * migration 0013 — lê a view vw_execucoes_resumo_medico).
+ */
+export async function listarResumoPorMedico(): Promise<ExecucaoResumoMedico[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('vw_execucoes_resumo_medico')
+    .select('*')
+    .order('nome', { ascending: true });
+  if (error) throw new ApiError(500, 'Falha ao listar resumo por médico', 'DB_ERROR', { error: error.message });
+  return (data as ExecucaoResumoMedicoRow[]).map(toExecucaoResumoMedico);
+}
+
+/**
+ * Todas as ocorrências de um médico específico ao longo das competências (drill-down lazy da
+ * visão "Por médico"). Diferente de guiasExecucaoAnterior, o erro aqui PROPAGA — a tela inteira
+ * depende deste dado, não é um cálculo auxiliar que pode degradar silenciosamente.
+ */
+export async function historicoResultadosPorMedico(
+  filtro: { medicoId: string } | { cpf: string },
+): Promise<ExecucaoHistoricoMedicoItem[]> {
+  const db = getSupabaseAdmin();
+  let query = db
+    .from('execucao_resultados')
+    .select('execucao_id, status, total_valor, execucoes!inner(competencia, status, iniciado_em)')
+    .order('execucoes(competencia)', { ascending: false });
+  query = 'medicoId' in filtro ? query.eq('medico_id', filtro.medicoId) : query.eq('cpf', filtro.cpf).is('medico_id', null);
+  const { data, error } = await query;
+  if (error) throw new ApiError(500, 'Falha ao buscar histórico do médico', 'DB_ERROR', { error: error.message });
+  return (data as unknown as ExecucaoHistoricoMedicoItemRow[]).map(toExecucaoHistoricoMedicoItem);
 }

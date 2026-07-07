@@ -21,6 +21,8 @@ export interface Execucao {
   id: string;
   competencia: string; // AAAA-MM
   iniciadoPor: string;
+  /** E-mail resolvido via Admin Auth API — undefined/null se não foi possível resolver (não-fatal). */
+  iniciadoPorEmail?: string | null;
   iniciadoEm: string;
   finalizadoEm: string | null;
   status: StatusExecucao;
@@ -46,6 +48,12 @@ export interface ExecucaoResultado {
   totalValor: number | null;
   status: StatusResultado;
   alertas: string[];
+  /** Status computado originalmente pelo engine — presente só quando o resultado foi revisado
+   * manualmente (ex.: 'alerta' preservado enquanto `status` atual já é 'ok'). */
+  statusOriginal?: StatusResultado | null;
+  revisadoPor?: string | null;
+  revisadoEm?: string | null;
+  motivoRevisao?: string | null;
 }
 
 export interface ExecucaoSelecao {
@@ -53,4 +61,27 @@ export interface ExecucaoSelecao {
   medicoId: string;
   producaoExternaId: string;
   producaoNome: string;
+}
+
+/** Um médico por linha: ocorrência mais recente em qualquer execução (visão "Por médico"). */
+export interface ExecucaoResumoMedico {
+  medicoId: string | null; // null quando o médico não estava vinculado ao cadastro na execução
+  cpf: string;
+  nome: string;
+  ultimaCompetencia: string;
+  ultimaExecucaoId: string;
+  ultimaExecucaoStatus: StatusExecucao;
+  ultimoStatusResultado: StatusResultado;
+  ultimoValor: number | null;
+  qtdExecucoes: number;
+}
+
+/** Uma ocorrência no histórico de um médico ao longo das competências (drill-down). */
+export interface ExecucaoHistoricoMedicoItem {
+  execucaoId: string;
+  competencia: string;
+  execucaoStatus: StatusExecucao;
+  statusResultado: StatusResultado;
+  totalValor: number | null;
+  iniciadoEm: string;
 }

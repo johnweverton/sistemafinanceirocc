@@ -1,6 +1,10 @@
 'use client';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
 
+function formatarDataHora(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
 export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
   const { execucao } = useExecucaoRealtime(execucaoId);
 
@@ -8,54 +12,60 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
     return <p className="text-sm text-cc-muted">Aguardando dados...</p>;
   }
 
-  if (execucao.status === 'processando') {
-    return (
-      <div role="status" aria-live="polite" className="card p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="flex items-center gap-2 text-sm font-medium text-cc-ink">
-            <span className="live-dot inline-block h-2 w-2 rounded-full bg-cc-accent" />
-            Processando médicos
+  return (
+    <div className="space-y-2">
+      {execucao.status === 'processando' && (
+        <div role="status" aria-live="polite" className="card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="flex items-center gap-2 text-sm font-medium text-cc-ink">
+              <span className="live-dot inline-block h-2 w-2 rounded-full bg-cc-accent" />
+              Processando médicos
+            </p>
+            <span className="tabular text-sm font-semibold text-cc-accent">{execucao.progresso}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-cc-surface-2">
+            <div
+              className="progress-fill relative h-full overflow-hidden rounded-full transition-all duration-500"
+              style={{ width: `${Math.max(execucao.progresso, 4)}%` }}
+            >
+              <span className="progress-stripes absolute inset-0" />
+            </div>
+          </div>
+          <p className="font-mono text-2xs uppercase tracking-wider text-cc-muted">
+            Isso pode levar alguns minutos…
           </p>
-          <span className="tabular text-sm font-semibold text-cc-accent">{execucao.progresso}%</span>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-cc-surface-2">
-          <div
-            className="progress-fill relative h-full overflow-hidden rounded-full transition-all duration-500"
-            style={{ width: `${Math.max(execucao.progresso, 4)}%` }}
-          >
-            <span className="progress-stripes absolute inset-0" />
+      )}
+
+      {execucao.status === 'erro' && (
+        <p role="alert" className="alert-error">
+          A execução encontrou um erro. Tente reprocessar a competência.
+        </p>
+      )}
+
+      {execucao.status === 'concluido' && (
+        <div role="status" aria-live="polite" className="card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cc-success-soft">
+              <svg className="h-3 w-3 text-cc-success" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            </span>
+            <span className="text-sm font-semibold text-cc-ink">Processamento concluído</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <Stat label="Ok" value={execucao.totalOk ?? 0} className="text-cc-success" />
+            <Stat label="Em revisao" value={execucao.totalAlerta ?? 0} className="text-cc-warning" />
+            <Stat label="Sem dados" value={execucao.totalSemDados ?? 0} className="text-cc-muted" />
           </div>
         </div>
+      )}
+
+      {execucao.iniciadoPorEmail && (
         <p className="font-mono text-2xs uppercase tracking-wider text-cc-muted">
-          Isso pode levar alguns minutos…
+          Disparado por {execucao.iniciadoPorEmail} em {formatarDataHora(execucao.iniciadoEm)}
         </p>
-      </div>
-    );
-  }
-
-  if (execucao.status === 'erro') {
-    return (
-      <p role="alert" className="alert-error">
-        A execução encontrou um erro. Tente reprocessar a competência.
-      </p>
-    );
-  }
-
-  return (
-    <div role="status" aria-live="polite" className="card p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cc-success-soft">
-          <svg className="h-3 w-3 text-cc-success" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-        </span>
-        <span className="text-sm font-semibold text-cc-ink">Processamento concluído</span>
-      </div>
-      <div className="grid grid-cols-3 gap-4 text-center">
-        <Stat label="Ok" value={execucao.totalOk ?? 0} className="text-cc-success" />
-        <Stat label="Em revisao" value={execucao.totalAlerta ?? 0} className="text-cc-warning" />
-        <Stat label="Sem dados" value={execucao.totalSemDados ?? 0} className="text-cc-muted" />
-      </div>
+      )}
     </div>
   );
 }

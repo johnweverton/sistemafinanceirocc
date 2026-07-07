@@ -51,12 +51,32 @@ describe('toExecucaoResultado', () => {
       total_valor: 263.59,
       status: 'alerta',
       alertas: null,
+      status_original: null,
+      revisado_por: null,
+      revisado_em: null,
+      motivo_revisao: null,
     };
     const r = toExecucaoResultado(row);
     expect(r.execucaoId).toBe('e1');
     expect(r.guiasConsolidado).toBe(6);
     expect(r.alertas).toEqual([]); // null vira []
     expect(r.subtotais?.[0]?.classe).toBe('HAPVIDA_CRED');
+    expect(r.statusOriginal).toBeNull();
+  });
+
+  it('mapeia os campos de revisão manual quando presentes', () => {
+    const row: ExecucaoResultadoRow = {
+      id: 'r2', execucao_id: 'e1', medico_id: 'm1', cpf: '00000000001', nome: 'Dra. A',
+      procedimentos: 17, cirurgias: 4, guias: 17, guias_consolidado: 6, subtotais: null,
+      total_valor: 263.59, status: 'ok', alertas: ['VARIAÇÃO ALTA...'],
+      status_original: 'alerta', revisado_por: 'u1', revisado_em: '2026-07-08T10:00:00Z',
+      motivo_revisao: 'Confirmado com o médico, aumento real de produção.',
+    };
+    const r = toExecucaoResultado(row);
+    expect(r.status).toBe('ok');
+    expect(r.statusOriginal).toBe('alerta');
+    expect(r.revisadoPor).toBe('u1');
+    expect(r.motivoRevisao).toBe('Confirmado com o médico, aumento real de produção.');
   });
 });
 
