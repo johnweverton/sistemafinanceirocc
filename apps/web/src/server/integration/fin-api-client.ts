@@ -34,12 +34,21 @@ const num = (v: unknown): number | null => {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
+// CPF: a doc do contrato promete "somente dígitos", mas a origem já entregou formatado
+// (ex.: "010.508.863-30") — normaliza sempre, nunca confia no formato cru (isso quebrava
+// a validação de 11 dígitos no formulário de médico).
+const cpfDigitos = (v: unknown): string | null => {
+  const str = sn(v);
+  if (str == null) return null;
+  const digitos = str.replace(/\D/g, '');
+  return digitos === '' ? null : digitos;
+};
 
 export function toClienteExterno(obj: Record<string, unknown>): ClienteExterno {
   return {
     id: s(obj.id),
     nome: s(obj.name),
-    cpf: sn(obj.cpf),
+    cpf: cpfDigitos(obj.cpf),
     productionType: s(obj.production_type),
   };
 }

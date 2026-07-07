@@ -127,6 +127,13 @@ describe('normalização defensiva — contrato real → tipos do domínio', () 
       nome: 'Janeiro 2026',
     });
   });
+
+  it('cpf: normaliza mesmo quando a origem entrega formatado (ex.: "010.508.863-30")', async () => {
+    const { toClienteExterno } = await client();
+    expect(toClienteExterno({ ...clienteBruto, cpf: '010.508.863-30' }).cpf).toBe('01050886330');
+    expect(toClienteExterno({ ...clienteBruto, cpf: null }).cpf).toBeNull();
+    expect(toClienteExterno({ ...clienteBruto, cpf: '' }).cpf).toBeNull();
+  });
 });
 
 describe('endpoints http — URLs, header e parâmetros do contrato', () => {
