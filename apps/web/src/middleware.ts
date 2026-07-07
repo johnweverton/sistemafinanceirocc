@@ -24,6 +24,10 @@ export async function middleware(req: NextRequest) {
     "img-src 'self' data: blob:",
     "font-src 'self'",
     `connect-src 'self'${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseWss}` : ''} https://viacep.com.br`,
+    // PWA: registro do service worker (public/sw.js) cai em worker-src, que sem
+    // esta diretiva herdaria de script-src — e 'strict-dynamic' ali ignora 'self'.
+    "worker-src 'self'",
+    "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -81,6 +85,11 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // Protege tudo exceto assets estáticos, o endpoint de saúde e os webhooks públicos.
   // Webhooks NÃO usam sessão — a segurança é o secret no path + reconsulta na API Cora (Épico 4).
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/health|api/webhooks).*)'],
+  // manifest/sw.js/icons/logo precisam ficar fora do gate de auth: o navegador os busca
+  // mesmo deslogado (tela de login, instalação do PWA), e um redirect para /login quebraria
+  // o parse do manifest e o registro do service worker (SecurityError em fetch redirecionado).
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icons/|logo.svg|api/health|api/webhooks).*)',
+  ],
 };
 

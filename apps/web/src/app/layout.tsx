@@ -1,8 +1,9 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { Outfit, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { PwaRegister } from '@/components/layout/PwaRegister';
 
 const outfit = Outfit({
   subsets: ['latin'],
@@ -19,9 +20,23 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'Cobrança por Guias | Carmem Cavalcante',
   description: 'Sistema de cobrança por guias hospitalares',
+  applicationName: 'CCC',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: '/logo.svg?v=2',
+    apple: '/icons/apple-touch-icon.png',
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'CCC',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0A0A0A',
+  width: 'device-width',
+  initialScale: 1,
 };
 
 // Aplica o tema salvo ANTES da primeira pintura, evitando flash de tema errado.
@@ -51,6 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Providers>{children}</Providers>
+        <PwaRegister />
       </body>
     </html>
   );
