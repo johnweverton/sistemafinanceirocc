@@ -3,6 +3,7 @@
 // atualização de médicos JÁ vinculados (nome/statusHapvida, com histórico). Vincular e
 // criar exigem confirmação humana via rotas próprias (decisão 9: matching assistido).
 import type { ClienteExterno, Medico } from '@cobranca/shared';
+import { ApiError } from '@/lib/api-error';
 import { listarClientes } from '@/server/integration/fin-api-client';
 import {
   listarMedicos,
@@ -149,14 +150,24 @@ export async function sincronizar(
       const mudancas: Partial<NovoMedico> = {};
       if (cliente.nome && cliente.nome !== vinculado.nome) mudancas.nome = cliente.nome;
       if (status !== vinculado.statusHapvida) mudancas.statusHapvida = status;
+      // Backfill: médicos vinculados antes de a origem entregar cpf ficaram com cpf null —
+      // preenche assim que a origem tiver (nunca sobrescreve um cpf já cadastrado).
+      if (!vinculado.cpf && cliente.cpf) mudancas.cpf = cliente.cpf;
       if (Object.keys(mudancas).length > 0) {
-        await deps.atualizarMedico(
-          vinculado.id,
-          mudancas,
-          autorId,
-          'Sincronização com o sistema web',
-        );
-        relatorio.atualizados += 1;
+        try {
+          await deps.atualizarMedico(
+            vinculado.id,
+            mudancas,
+            autorId,
+            'Sincronização com o sistema web',
+          );
+          relatorio.atualizados += 1;
+        } catch (e) {
+          // cpf é UNIQUE — conflito (ex.: cadastro manual anterior com cpf trocado) não pode
+          // abortar a sincronização dos demais médicos do lote.
+          const motivo = e instanceof ApiError ? e.message : 'Falha ao atualizar médico vinculado';
+          relatorio.naoSincronizaveis.push({ cliente, motivo });
+        }
       }
       continue;
     }

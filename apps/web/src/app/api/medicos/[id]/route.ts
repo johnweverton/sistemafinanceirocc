@@ -1,7 +1,8 @@
 // GET /api/medicos/[id] — detalhe. PATCH — atualiza (admin), exige motivo, gera histórico.
+// DELETE — exclui permanentemente (admin); bloqueado se houver execuções vinculadas.
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
-import { buscarMedico, atualizarMedico } from '@/server/repositories/medico-repository';
+import { buscarMedico, atualizarMedico, excluirMedico } from '@/server/repositories/medico-repository';
 import { atualizarMedicoSchema } from '@/server/validation/medico-schema';
 
 export const GET = withErrorHandler<{ id: string }>(async (_req, { params }) => {
@@ -20,4 +21,10 @@ export const PATCH = withErrorHandler<{ id: string }>(async (req, { params }) =>
   const { motivo, ...dados } = parsed.data;
   const medico = await atualizarMedico(params.id, dados, sessao.userId, motivo);
   return Response.json(medico);
+});
+
+export const DELETE = withErrorHandler<{ id: string }>(async (_req, { params }) => {
+  await requireRole(['admin']);
+  await excluirMedico(params.id);
+  return new Response(null, { status: 204 });
 });

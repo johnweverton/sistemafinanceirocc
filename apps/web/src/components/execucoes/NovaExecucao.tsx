@@ -12,19 +12,26 @@ function normalizeName(name: string) {
   return name
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .trim();
 }
+
+type Modo = 'competencia' | 'medico';
 
 export function NovaExecucao() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [modo, setModo] = useState<Modo>('competencia');
   const [competencia, setCompetencia] = useState('');
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  
-  // Custom manual selections
+
+  // Custom manual selections (modo "Por competência")
   const [manualSelections, setManualSelections] = useState<Record<string, string>>({});
+
+  // Seleção do modo "Por médico"
+  const [medicoId, setMedicoId] = useState('');
+  const [producaoId, setProducaoId] = useState('');
 
   const { data: apoio, isLoading: isApoioLoading } = useQuery({
     queryKey: execucaoQueryKeys.apoio(),
@@ -33,17 +40,27 @@ export function NovaExecucao() {
 
   const { medicos, producoes } = useMemo(() => {
     if (!apoio) return { medicos: [], producoes: [] };
-    const prods = apoio.clientesOrigem.flatMap(c => 
+    const prods = apoio.clientesOrigem.flatMap(c =>
       c.producoes.map(p => ({ ...p, clienteId: c.id, clienteNome: c.nome }))
     );
     return { medicos: apoio.medicos, producoes: prods };
   }, [apoio]);
 
-  // Derived selections
-  const selecoesInfo = useMemo(() => {
-    const validMedicos = medicos.filter(m => m.ativo && !m.necessitaConfiguracao && m.externalId);
-    const invalidMedicos = medicos.filter(m => !m.ativo || m.necessitaConfiguracao || !m.externalId);
+  const { validMedicos, invalidMedicos } = useMemo(() => {
+    return {
+      validMedicos: medicos.filter(m => m.ativo && !m.necessitaConfiguracao && m.externalId),
+      invalidMedicos: medicos.filter(m => !m.ativo || m.necessitaConfiguracao || !m.externalId),
+    };
+  }, [medicos]);
 
+  const producoesDoMedicoSelecionado = useMemo(() => {
+    const medico = validMedicos.find(m => m.id === medicoId);
+    if (!medico) return [];
+    return producoes.filter(p => p.clienteId === medico.externalId);
+  }, [medicoId, validMedicos, producoes]);
+
+  // Derived selections (modo "Por competência")
+  const selecoesInfo = useMemo(() => {
     const matched: Array<{ medico: any; producao: any }> = [];
     const unmatched: Array<{ medico: any; producoesDisponiveis: any[] }> = [];
     const finalPayload: ExecucaoSelecaoPayload[] = [];
@@ -59,14 +76,14 @@ export function NovaExecucao() {
     for (const med of validMedicos) {
       const producoesDoMedico = producoes.filter(p => p.clienteId === med.externalId);
       const manualProdId = manualSelections[med.id];
-      
+
       if (manualProdId === 'IGNORE') {
         unmatched.push({ medico: med, producoesDisponiveis: producoesDoMedico });
         continue;
       }
 
       let match = producoesDoMedico.find(p => p.id === manualProdId);
-      
+
       // Auto-match
       if (!match && compValida) {
         match = producoesDoMedico.find(p => {
@@ -89,11 +106,12 @@ export function NovaExecucao() {
       }
     }
 
-    return { matched, unmatched, invalidMedicos, finalPayload };
-  }, [medicos, producoes, manualSelections, competencia]);
+    return { matched, unmatched, finalPayload };
+  }, [validMedicos, producoes, manualSelections, competencia]);
 
   const disparar = useMutation({
-    mutationFn: (c: string) => execucoesService.disparar(c, selecoesInfo.finalPayload),
+    mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[] }) =>
+      execucoesService.disparar(vars.competencia, vars.selecoes),
     onSuccess: ({ execucaoId }) => {
       setExecucaoId(execucaoId);
       setErro(null);
@@ -112,7 +130,10 @@ export function NovaExecucao() {
   }
 
   const competenciaValida = /^\d{4}-\d{2}$/.test(competencia);
-  const canDisparar = competenciaValida && selecoesInfo.finalPayload.length > 0 && !disparar.isPending;
+  const canDispararCompetencia = competenciaValida && selecoesInfo.finalPayload.length > 0 && !disparar.isPending;
+
+  const producaoSelecionada = producoesDoMedicoSelecionado.find(p => p.id === producaoId);
+  const canDispararMedico = Boolean(medicoId && producaoSelecionada && competenciaValida) && !disparar.isPending;
 
   return (
     <section className="space-y-6">
@@ -120,23 +141,81 @@ export function NovaExecucao() {
         <h1 className="page-title">Nova execução</h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 space-y-6">
-          <div className="card p-6">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (canDisparar) disparar.mutate(competencia);
-              }}
-              className="space-y-4"
-            >
+      <div className="inline-flex rounded-lg border border-cc-hairline bg-cc-surface-2 p-1">
+        <button
+          onClick={() => setModo('competencia')}
+          className={`btn btn-sm ${modo === 'competencia' ? 'btn-primary' : 'btn-ghost'}`}
+        >
+          Por competência
+        </button>
+        <button
+          onClick={() => setModo('medico')}
+          className={`btn btn-sm ${modo === 'medico' ? 'btn-primary' : 'btn-ghost'}`}
+        >
+          Por médico
+        </button>
+      </div>
+
+      {modo === 'medico' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <div className="card p-6 space-y-4">
               <div>
-                <label htmlFor="competencia" className="field-label mb-1.5">
+                <label htmlFor="medico-select" className="field-label mb-1.5">
+                  Médico
+                </label>
+                <select
+                  id="medico-select"
+                  className="input"
+                  value={medicoId}
+                  onChange={(e) => {
+                    setMedicoId(e.target.value);
+                    setProducaoId('');
+                  }}
+                  disabled={isApoioLoading}
+                >
+                  <option value="">-- Selecione um médico --</option>
+                  {validMedicos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="producao-select" className="field-label mb-1.5">
+                  Produção
+                </label>
+                <select
+                  id="producao-select"
+                  className="input"
+                  value={producaoId}
+                  onChange={(e) => setProducaoId(e.target.value)}
+                  disabled={!medicoId}
+                >
+                  <option value="">
+                    {medicoId ? '-- Selecione a produção --' : 'Selecione um médico primeiro'}
+                  </option>
+                  {producoesDoMedicoSelecionado.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+                {medicoId && producoesDoMedicoSelecionado.length === 0 && (
+                  <p className="mt-1.5 text-xs text-cc-muted">
+                    Este médico não tem produções disponíveis na origem.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="competencia-medico" className="field-label mb-1.5">
                   Competência
                 </label>
                 <input
-                  id="competencia"
-                  name="competencia"
+                  id="competencia-medico"
                   value={competencia}
                   onChange={(e) => setCompetencia(e.target.value)}
                   placeholder="2026-06"
@@ -149,110 +228,164 @@ export function NovaExecucao() {
               {erro && <p role="alert" className="alert-error">{erro}</p>}
 
               <button
-                type="submit"
-                disabled={!canDisparar}
+                onClick={() => {
+                  if (!producaoSelecionada) return;
+                  disparar.mutate({
+                    competencia,
+                    selecoes: [
+                      {
+                        medicoId,
+                        producaoExternaId: producaoSelecionada.id,
+                        producaoNome: producaoSelecionada.nome,
+                      },
+                    ],
+                  });
+                }}
+                disabled={!canDispararMedico}
                 className="btn-primary w-full py-2.5"
               >
-                {disparar.isPending ? 'Disparando...' : `Processar ${selecoesInfo.finalPayload.length} médicos`}
+                {disparar.isPending ? 'Disparando...' : 'Processar médico'}
               </button>
-            </form>
-          </div>
-          
-          {!isApoioLoading && selecoesInfo.invalidMedicos.length > 0 && (
-            <div className="card p-4 border-amber-200 bg-amber-50/50">
-              <h3 className="font-medium text-amber-800 text-sm mb-2">
-                Fora da Execução ({selecoesInfo.invalidMedicos.length})
-              </h3>
-              <p className="text-xs text-amber-700 mb-3">
-                Completar cadastro ou vínculo destes médicos para poder executá-los.
-              </p>
-              <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                {selecoesInfo.invalidMedicos.map(m => (
-                  <div key={m.id} className="text-xs text-amber-900 bg-amber-100/50 p-1.5 rounded flex justify-between items-center">
-                    <span className="truncate mr-2">{m.nome}</span>
-                    <span className="shrink-0 opacity-75">
-                      {!m.ativo ? 'Inativo' : m.necessitaConfiguracao ? 'Pend. Config' : 'Sem Vínculo'}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
-          )}
+          </div>
         </div>
-
-        <div className="lg:col-span-2 space-y-6">
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold mb-4">Seleção de Médicos</h2>
-            {isApoioLoading ? (
-              <p className="text-cc-muted">Carregando dados de apoio...</p>
-            ) : (
-              <div className="space-y-6">
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 space-y-6">
+            <div className="card p-6">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (canDispararCompetencia) {
+                    disparar.mutate({ competencia, selecoes: selecoesInfo.finalPayload });
+                  }
+                }}
+                className="space-y-4"
+              >
                 <div>
-                  <h3 className="font-medium text-cc-ink mb-2">
-                    ✅ Prontos para processar ({selecoesInfo.matched.length})
-                  </h3>
-                  {selecoesInfo.matched.length === 0 ? (
-                    <p className="text-sm text-cc-muted italic">Nenhum médico pareado para esta competência.</p>
-                  ) : (
-                    <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-                      {selecoesInfo.matched.map(({ medico, producao }) => (
-                        <div key={medico.id} className="flex justify-between items-center text-sm p-2 bg-cc-surface rounded border border-cc-border">
-                          <span className="font-medium">{medico.nome}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-cc-muted text-xs bg-cc-border/30 px-2 py-0.5 rounded truncate max-w-[200px]">
-                              {producao.nome}
-                            </span>
-                            <button 
-                              onClick={() => setManualSelections(prev => ({ ...prev, [medico.id]: 'IGNORE' }))}
-                              className="text-red-500 hover:text-red-700 p-1"
-                              title="Remover desta execução"
-                            >
-                              &times;
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <label htmlFor="competencia" className="field-label mb-1.5">
+                    Competência
+                  </label>
+                  <input
+                    id="competencia"
+                    name="competencia"
+                    value={competencia}
+                    onChange={(e) => setCompetencia(e.target.value)}
+                    placeholder="2026-06"
+                    className="input font-mono"
+                    maxLength={7}
+                  />
+                  <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM (Ex: 2026-05)</p>
                 </div>
 
-                {selecoesInfo.unmatched.length > 0 && (
-                  <div className="pt-4 border-t border-cc-border">
-                    <h3 className="font-medium text-amber-600 mb-2">
-                      ⚠️ Vínculo manual pendente ({selecoesInfo.unmatched.length})
-                    </h3>
-                    <p className="text-xs text-cc-muted mb-3">Estes médicos possuem vínculo com a origem, mas nenhuma produção correspondente foi auto-identificada.</p>
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                      {selecoesInfo.unmatched.map(({ medico, producoesDisponiveis }) => (
-                        <div key={medico.id} className="flex flex-col gap-2 p-2 bg-amber-50 rounded border border-amber-200">
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium text-sm text-amber-900">{medico.nome}</span>
-                          </div>
-                          <select
-                            className="input text-xs py-1 h-auto"
-                            value={manualSelections[medico.id] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setManualSelections(prev => ({ ...prev, [medico.id]: val }));
-                            }}
-                          >
-                            <option value="">-- Vincular manualmente --</option>
-                            {producoesDisponiveis.map(p => (
-                              <option key={p.id} value={p.id}>
-                                {p.nome}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
+                {erro && <p role="alert" className="alert-error">{erro}</p>}
+
+                <button
+                  type="submit"
+                  disabled={!canDispararCompetencia}
+                  className="btn-primary w-full py-2.5"
+                >
+                  {disparar.isPending ? 'Disparando...' : `Processar ${selecoesInfo.finalPayload.length} médicos`}
+                </button>
+              </form>
+            </div>
+
+            {!isApoioLoading && invalidMedicos.length > 0 && (
+              <div className="card p-4 border-amber-200 bg-amber-50/50">
+                <h3 className="font-medium text-amber-800 text-sm mb-2">
+                  Fora da Execução ({invalidMedicos.length})
+                </h3>
+                <p className="text-xs text-amber-700 mb-3">
+                  Completar cadastro ou vínculo destes médicos para poder executá-los.
+                </p>
+                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                  {invalidMedicos.map(m => (
+                    <div key={m.id} className="text-xs text-amber-900 bg-amber-100/50 p-1.5 rounded flex justify-between items-center">
+                      <span className="truncate mr-2">{m.nome}</span>
+                      <span className="shrink-0 opacity-75">
+                        {!m.ativo ? 'Inativo' : m.necessitaConfiguracao ? 'Pend. Config' : 'Sem Vínculo'}
+                      </span>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             )}
           </div>
+
+          <div className="lg:col-span-2 space-y-6">
+            <div className="card p-6">
+              <h2 className="text-lg font-semibold mb-4">Seleção de Médicos</h2>
+              {isApoioLoading ? (
+                <p className="text-cc-muted">Carregando dados de apoio...</p>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-medium text-cc-ink mb-2">
+                      ✅ Prontos para processar ({selecoesInfo.matched.length})
+                    </h3>
+                    {selecoesInfo.matched.length === 0 ? (
+                      <p className="text-sm text-cc-muted italic">Nenhum médico pareado para esta competência.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                        {selecoesInfo.matched.map(({ medico, producao }) => (
+                          <div key={medico.id} className="flex justify-between items-center text-sm p-2 bg-cc-surface rounded border border-cc-border">
+                            <span className="font-medium">{medico.nome}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-cc-muted text-xs bg-cc-border/30 px-2 py-0.5 rounded truncate max-w-[200px]">
+                                {producao.nome}
+                              </span>
+                              <button
+                                onClick={() => setManualSelections(prev => ({ ...prev, [medico.id]: 'IGNORE' }))}
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title="Remover desta execução"
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {selecoesInfo.unmatched.length > 0 && (
+                    <div className="pt-4 border-t border-cc-border">
+                      <h3 className="font-medium text-amber-600 mb-2">
+                        ⚠️ Vínculo manual pendente ({selecoesInfo.unmatched.length})
+                      </h3>
+                      <p className="text-xs text-cc-muted mb-3">Estes médicos possuem vínculo com a origem, mas nenhuma produção correspondente foi auto-identificada.</p>
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                        {selecoesInfo.unmatched.map(({ medico, producoesDisponiveis }) => (
+                          <div key={medico.id} className="flex flex-col gap-2 p-2 bg-amber-50 rounded border border-amber-200">
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-sm text-amber-900">{medico.nome}</span>
+                            </div>
+                            <select
+                              className="input text-xs py-1 h-auto"
+                              value={manualSelections[medico.id] || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setManualSelections(prev => ({ ...prev, [medico.id]: val }));
+                              }}
+                            >
+                              <option value="">-- Vincular manualmente --</option>
+                              {producoesDisponiveis.map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.nome}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

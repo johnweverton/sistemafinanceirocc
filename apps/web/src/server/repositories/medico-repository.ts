@@ -354,6 +354,72 @@ export async function criarMedicoExterno(
   return medico;
 }
 
+// ---------------------------------------------------------------------------
+// Exclusão (irreversível) — página Médicos
+// ---------------------------------------------------------------------------
+
+/**
+ * Exclui um médico permanentemente. Bloqueado se houver qualquer `execucao_resultados`
+ * vinculado (histórico financeiro real) — nesse caso o caminho correto é inativar (campo
+ * `ativo`), não excluir. `medicos_historico` é só auditoria de configuração do próprio
+ * médico e é removido junto — sem valor fora do contexto de um médico que deixou de existir.
+ */
+export async function excluirMedico(id: string): Promise<void> {
+  const db = getSupabaseAdmin();
+  const atual = await buscarMedico(id);
+  if (!atual) throw new ApiError(404, 'Médico não encontrado', 'NOT_FOUND');
+
+  const { count, error: countErr } = await db
+    .from('execucao_resultados')
+    .select('id', { count: 'exact', head: true })
+    .eq('medico_id', id);
+  if (countErr) {
+    throw new ApiError(500, 'Falha ao verificar execuções vinculadas', 'DB_ERROR', { error: countErr.message });
+  }
+  if ((count ?? 0) > 0) {
+    throw new ApiError(
+      409,
+      'Médico possui execuções/resultados financeiros — não pode ser excluído. Inative-o em vez disso.',
+      'POSSUI_EXECUCOES',
+    );
+  }
+
+  const { error: histErr } = await db.from('medicos_historico').delete().eq('medico_id', id);
+  if (histErr) {
+    throw new ApiError(500, 'Falha ao remover histórico do médico', 'DB_ERROR', { error: histErr.message });
+  }
+
+  const { error: delErr } = await db.from('medicos').delete().eq('id', id);
+  if (delErr) {
+    throw new ApiError(500, 'Falha ao excluir médico', 'DB_ERROR', { error: delErr.message });
+  }
+}
+
+export interface ExclusaoLoteResultado {
+  excluidos: number;
+  bloqueados: { id: string; nome: string; motivo: string }[];
+}
+
+/** Exclui vários médicos; falha individual (ex.: possui execuções) não aborta o lote. */
+export async function excluirMedicos(ids: string[]): Promise<ExclusaoLoteResultado> {
+  const resultado: ExclusaoLoteResultado = { excluidos: 0, bloqueados: [] };
+  for (const id of ids) {
+    const medico = await buscarMedico(id);
+    if (!medico) {
+      resultado.bloqueados.push({ id, nome: '—', motivo: 'Médico não encontrado' });
+      continue;
+    }
+    try {
+      await excluirMedico(id);
+      resultado.excluidos += 1;
+    } catch (e) {
+      const motivo = e instanceof ApiError ? e.message : 'Falha ao excluir médico';
+      resultado.bloqueados.push({ id, nome: medico.nome, motivo });
+    }
+  }
+  return resultado;
+}
+
 export async function historicoDoMedico(id: string): Promise<MedicoHistorico[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db

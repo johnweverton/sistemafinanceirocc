@@ -21,6 +21,10 @@ export interface CriarTodosResultado {
   criados: number;
   ignorados: { externalId: string; nome: string | null; motivo: string }[];
 }
+export interface ExclusaoLoteResultado {
+  excluidos: number;
+  bloqueados: { id: string; nome: string; motivo: string }[];
+}
 export interface SyncRelatorio {
   totalOrigem: number;
   jaVinculados: number;
@@ -76,6 +80,9 @@ export const medicosService = {
     apiFetch<Medico>('/sync/medicos/criar', { method: 'POST', body: JSON.stringify(payload) }),
   criarTodosExternos: (payload: { externalIds: string[] }) =>
     apiFetch<CriarTodosResultado>('/sync/medicos/criar-todos', { method: 'POST', body: JSON.stringify(payload) }),
+  excluir: (id: string) => apiFetch<void>(`/medicos/${id}`, { method: 'DELETE' }),
+  excluirLote: (ids: string[]) =>
+    apiFetch<ExclusaoLoteResultado>('/medicos/excluir-lote', { method: 'POST', body: JSON.stringify({ ids }) }),
 };
 
 export const queryKeys = {

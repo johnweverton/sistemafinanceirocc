@@ -6,6 +6,7 @@ import {
   derivarStatusHapvida,
   type SyncDeps,
 } from '../../src/server/medico-sync';
+import { ApiError } from '../../src/lib/api-error';
 import type { ClienteExterno, Medico } from '@cobranca/shared';
 
 describe('Medico Sync', () => {
@@ -160,6 +161,81 @@ describe('Medico Sync', () => {
       expect(relatorio.comSugestao[0]?.candidatas).toEqual([
         { medicoId: 'med-12', nome: 'Fernanda Lima', score: 1, viaCpf: true },
       ]);
+    });
+  });
+
+  describe('sincronizar() — backfill de CPF em médicos já vinculados', () => {
+    it('preenche cpf de um vinculado que ficou sem CPF (criado antes da origem entregar)', async () => {
+      const clientes: ClienteExterno[] = [
+        { id: 'ext-20', nome: 'Roberto Alves', cpf: '12312312300', productionType: 'Produção Credenciada' },
+      ];
+      const medicos = [
+        { id: 'med-20', externalId: 'ext-20', nome: 'Roberto Alves', cpf: null, statusHapvida: 'credenciado' },
+      ] as Medico[];
+      const atualizarMedicoMock = vi.fn().mockResolvedValue({});
+
+      const relatorio = await sincronizar('admin-id', {
+        listarClientes: async () => clientes,
+        listarMedicos: async () => medicos,
+        atualizarMedico: atualizarMedicoMock,
+      });
+
+      expect(atualizarMedicoMock).toHaveBeenCalledWith(
+        'med-20',
+        { cpf: '12312312300' },
+        'admin-id',
+        expect.any(String),
+      );
+      expect(relatorio.atualizados).toBe(1);
+    });
+
+    it('não sobrescreve cpf já cadastrado no médico vinculado', async () => {
+      const clientes: ClienteExterno[] = [
+        { id: 'ext-21', nome: 'Marcos Dias', cpf: '99999999900', productionType: 'Produção Credenciada' },
+      ];
+      const medicos = [
+        { id: 'med-21', externalId: 'ext-21', nome: 'Marcos Dias', cpf: '11111111100', statusHapvida: 'credenciado' },
+      ] as Medico[];
+      const atualizarMedicoMock = vi.fn().mockResolvedValue({});
+
+      const relatorio = await sincronizar('admin-id', {
+        listarClientes: async () => clientes,
+        listarMedicos: async () => medicos,
+        atualizarMedico: atualizarMedicoMock,
+      });
+
+      expect(atualizarMedicoMock).not.toHaveBeenCalled();
+      expect(relatorio.atualizados).toBe(0);
+    });
+
+    it('conflito ao atualizar (ex.: cpf duplicado) vira naoSincronizavel e não aborta o restante do lote', async () => {
+      const clientes: ClienteExterno[] = [
+        { id: 'ext-22', nome: 'Conflito CPF', cpf: '55555555500', productionType: 'Produção Credenciada' },
+        { id: 'ext-23', nome: 'Segue Normal', cpf: '66666666600', productionType: 'Produção Credenciada' },
+      ];
+      const medicos = [
+        { id: 'med-22', externalId: 'ext-22', nome: 'Conflito CPF', cpf: null, statusHapvida: 'credenciado' },
+        { id: 'med-23', externalId: 'ext-23', nome: 'Segue Normal', cpf: null, statusHapvida: 'credenciado' },
+      ] as Medico[];
+
+      const atualizarMedicoMock = vi.fn(async (id: string) => {
+        if (id === 'med-22') {
+          throw new ApiError(500, 'Falha ao atualizar médico', 'DB_ERROR');
+        }
+        return {} as Medico;
+      });
+
+      const relatorio = await sincronizar('admin-id', {
+        listarClientes: async () => clientes,
+        listarMedicos: async () => medicos,
+        atualizarMedico: atualizarMedicoMock,
+      });
+
+      expect(atualizarMedicoMock).toHaveBeenCalledTimes(2);
+      expect(relatorio.atualizados).toBe(1); // só med-23 completou
+      expect(relatorio.naoSincronizaveis).toHaveLength(1);
+      expect(relatorio.naoSincronizaveis[0]?.cliente.id).toBe('ext-22');
+      expect(relatorio.naoSincronizaveis[0]?.motivo).toBe('Falha ao atualizar médico');
     });
   });
 });

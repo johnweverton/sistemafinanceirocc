@@ -107,5 +107,11 @@ export const criarMedicosExternosSchema = z
   })
   .strict();
 
+export const excluirMedicosSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1, 'Informe pelo menos um médico'),
+  })
+  .strict();
+
 export type NovoMedicoInput = z.infer<typeof novoMedicoSchema>;
 export type AtualizarMedicoInput = z.infer<typeof atualizarMedicoSchema>;
