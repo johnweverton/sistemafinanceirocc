@@ -1,10 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import type { FiltroRecebiveis, StatusRecebivel } from '@cobranca/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FiltroRecebiveis, Recebivel, StatusRecebivel } from '@cobranca/shared';
 import { recebiveisService, recebiveisQueryKeys } from '@/services/recebiveis';
+import { boletosService } from '@/services/boletos';
+import { ApiClientError } from '@/lib/api-client';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useToast } from '@/components/ui/Toast';
 
 function brl(v: number | null): string {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -25,9 +28,78 @@ const STATUS_OPCOES: { valor: StatusRecebivel | ''; label: string }[] = [
   { valor: 'cancelado', label: 'Cancelado' },
 ];
 
+const MOTIVO_MIN = 5;
+
+/**
+ * Diálogo de cancelamento com motivo obrigatório (Story 6.1). Não reusa ConfirmDialog porque
+ * o cancelamento exige entrada de texto (trilha de auditoria), não só confirmação.
+ */
+function CancelarBoletoDialog({
+  recebivel,
+  confirmando,
+  onConfirm,
+  onCancel,
+}: {
+  recebivel: Recebivel;
+  confirmando: boolean;
+  onConfirm: (motivo: string) => void;
+  onCancel: () => void;
+}) {
+  const [motivo, setMotivo] = useState('');
+  const motivoValido = motivo.trim().length >= MOTIVO_MIN;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-cc-surface card w-full max-w-md shadow-2xl">
+        <div className="border-b border-cc-hairline px-6 py-4">
+          <h2 className="text-lg font-bold text-cc-ink">Cancelar boleto</h2>
+        </div>
+        <div className="space-y-3 px-6 py-4">
+          <p className="text-sm text-cc-ink-2">
+            Cancelar o boleto de <strong>{recebivel.nome}</strong> ({recebivel.competencia}) no
+            valor de <strong>{brl(recebivel.valor)}</strong>? Após o cancelamento, um novo boleto
+            poderá ser emitido para este resultado.
+          </p>
+          <label className="block text-xs font-medium text-cc-ink-2" htmlFor="motivo-cancelamento">
+            Motivo do cancelamento (obrigatório)
+          </label>
+          <textarea
+            id="motivo-cancelamento"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Ex.: valor incorreto — será reemitido com o valor certo"
+            className="input min-h-20 w-full"
+            maxLength={500}
+            disabled={confirmando}
+          />
+          <p className="text-xs font-semibold text-cc-danger">
+            O boleto será cancelado na Cora. Esta ação NÃO PODE ser desfeita.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
+          <button onClick={onCancel} disabled={confirmando} className="btn-ghost btn btn-sm">
+            Voltar
+          </button>
+          <button
+            onClick={() => onConfirm(motivo.trim())}
+            disabled={confirmando || !motivoValido}
+            className="btn-danger btn btn-sm"
+            title={motivoValido ? undefined : `Informe o motivo (mínimo ${MOTIVO_MIN} caracteres)`}
+          >
+            {confirmando ? 'Cancelando...' : 'Cancelar boleto'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function RecebiveisManager() {
   const [competencia, setCompetencia] = useState('');
   const [status, setStatus] = useState<StatusRecebivel | ''>('');
+  const [cancelando, setCancelando] = useState<Recebivel | null>(null);
+  const qc = useQueryClient();
+  const { toast } = useToast();
 
   const filtros: FiltroRecebiveis = {
     competencia: competencia || undefined,
@@ -37,6 +109,36 @@ export function RecebiveisManager() {
   const { data, isLoading } = useQuery({
     queryKey: recebiveisQueryKeys.recebiveis(filtros),
     queryFn: () => recebiveisService.listar(filtros),
+  });
+
+  const cancelar = useMutation({
+    mutationFn: ({ boletoId, motivo }: { boletoId: string; motivo: string }) =>
+      boletosService.cancelar(boletoId, motivo),
+    onSuccess: () => {
+      toast('Boleto cancelado — um novo pode ser emitido para o resultado', 'success');
+      setCancelando(null);
+      void qc.invalidateQueries({ queryKey: ['recebiveis'] });
+    },
+    onError: (e) => {
+      if (e instanceof ApiClientError) {
+        if (e.code === 'BOLETO_PAGO') {
+          // Pagamento chegou entre a tela e o clique — a rota já sincronizou a baixa.
+          toast('Este boleto foi pago na Cora — baixa sincronizada, não é possível cancelar.', 'info');
+          setCancelando(null);
+          void qc.invalidateQueries({ queryKey: ['recebiveis'] });
+          return;
+        }
+        if (e.code === 'BOLETO_JA_CANCELADO') {
+          toast('Este boleto já estava cancelado.', 'info');
+          setCancelando(null);
+          void qc.invalidateQueries({ queryKey: ['recebiveis'] });
+          return;
+        }
+        toast(e.message, 'error');
+        return;
+      }
+      toast('Erro ao cancelar boleto', 'error');
+    },
   });
 
   const recebiveis = data ?? [];
@@ -62,7 +164,7 @@ export function RecebiveisManager() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={6} />
+        <TableSkeleton rows={6} cols={7} />
       ) : recebiveis.length === 0 ? (
         <EmptyState
           icon={
@@ -85,6 +187,7 @@ export function RecebiveisManager() {
                 <th>Vencimento</th>
                 <th>Status</th>
                 <th className="text-right">Valor pago</th>
+                <th className="text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -98,11 +201,34 @@ export function RecebiveisManager() {
                   <td className="text-right tabular text-cc-muted">
                     {r.pagoEm ? brl(r.valorPago) : '—'}
                   </td>
+                  <td className="text-right">
+                    {/* Cancelável só em aberto/vencido (boleto 'emitido'); pago/cancelado não têm ação. */}
+                    {(r.statusDerivado === 'em_aberto' || r.statusDerivado === 'vencido') ? (
+                      <button
+                        onClick={() => setCancelando(r)}
+                        className="btn-ghost btn btn-sm text-cc-danger"
+                        disabled={cancelar.isPending}
+                      >
+                        Cancelar
+                      </button>
+                    ) : (
+                      <span className="text-xs text-cc-muted">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {cancelando && (
+        <CancelarBoletoDialog
+          recebivel={cancelando}
+          confirmando={cancelar.isPending}
+          onConfirm={(motivo) => cancelar.mutate({ boletoId: cancelando.boletoId, motivo })}
+          onCancel={() => setCancelando(null)}
+        />
       )}
     </section>
   );

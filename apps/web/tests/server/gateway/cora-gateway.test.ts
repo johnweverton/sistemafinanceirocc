@@ -286,6 +286,70 @@ describe('CoraGateway', () => {
   });
 });
 
+describe('CoraGateway.cancelar (Story 6.1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('DELETE com 200 → sucesso=true', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(200, { id: 'inv_1', status: 'CANCELLED' }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().cancelar('inv_1');
+    expect(r.sucesso).toBe(true);
+  });
+
+  it('corpo vazio no 200 → sucesso=true (payload null, sem lançar)', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(200, ''));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().cancelar('inv_1');
+    expect(r.sucesso).toBe(true);
+    expect(r.payloadResposta).toBeNull();
+  });
+
+  it('erro 400 da Cora (ex.: boleto pago) → sucesso=false com payload de auditoria', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(400, { error: 'invoice_already_paid' }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().cancelar('inv_pago');
+    expect(r.sucesso).toBe(false);
+    expect(r.payloadResposta).toEqual(
+      expect.objectContaining({ httpStatus: 400 }),
+    );
+  });
+
+  it('erro de rede → sucesso=false (nunca lança)', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce((_options: unknown, _cb: unknown) => ({
+        on: (event: string, handler: (err: Error) => void) => {
+          if (event === 'error') handler(new Error('ECONNRESET'));
+        },
+        setTimeout: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn(),
+        destroy: vi.fn(),
+      }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().cancelar('inv_x');
+    expect(r.sucesso).toBe(false);
+    expect(r.payloadResposta).toEqual(
+      expect.objectContaining({ error: expect.stringContaining('ECONNRESET') }),
+    );
+  });
+});
+
 describe('CoraGateway.consultarInvoice (Story 4.2)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

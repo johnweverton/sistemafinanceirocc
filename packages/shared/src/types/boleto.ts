@@ -20,6 +20,11 @@ export interface Boleto {
   vencimento: string | null; // data de vencimento (AAAA-MM-DD) enviada ao Cora
   pagoEm: string | null; // timestamp da baixa
   valorPago: number | null; // valor efetivamente pago
+  // Cancelamento ativo (Story 6.1) — nullable; preenchidos só quando cancelado PELO sistema
+  // (baixa 'cancelado' via webhook não preenche — origem externa).
+  canceladoEm: string | null;
+  canceladoPor: string | null; // profiles.id de quem cancelou
+  motivoCancelamento: string | null;
 }
 
 /** Evento de webhook do Cora — auditoria + idempotência (Épico 4). */
@@ -97,6 +102,15 @@ export interface StatusInvoice {
 }
 
 /**
+ * Resultado do cancelamento de uma invoice no gateway (Story 6.1). `sucesso=false` carrega o
+ * payload cru do erro para auditoria — o gateway NUNCA lança exceção não tratada.
+ */
+export interface ResultadoCancelamento {
+  sucesso: boolean;
+  payloadResposta: unknown;
+}
+
+/**
  * Porta/adapter — qualquer gateway de boleto implementa esta interface.
  * Trocar de provedor (Cora → outro) não exige redesenho: basta criar
  * uma nova implementação e registrar na factory.
@@ -105,4 +119,6 @@ export interface BoletoGatewayPort {
   emitir(dados: DadosEmissaoBoleto): Promise<EmissaoBoleto>;
   /** Consulta o status real da invoice no gateway (usado na conciliação do webhook). */
   consultarInvoice(idExterno: string): Promise<StatusInvoice>;
+  /** Cancela uma invoice em aberto no gateway (Story 6.1 — cancelamento ativo). */
+  cancelar(idExterno: string): Promise<ResultadoCancelamento>;
 }

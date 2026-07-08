@@ -5,6 +5,7 @@ import type {
   DadosEmissaoBoleto,
   EmissaoBoleto,
   StatusInvoice,
+  ResultadoCancelamento,
 } from '@cobranca/shared';
 
 export class MockGateway implements BoletoGatewayPort {
@@ -32,5 +33,13 @@ export class MockGateway implements BoletoGatewayPort {
 
   async consultarInvoice(_idExterno: string): Promise<StatusInvoice> {
     return this.statusInvoice;
+  }
+
+  /** Cancelamento sempre bem-sucedido (Story 6.1) — payload mock para auditoria. */
+  async cancelar(idExterno: string): Promise<ResultadoCancelamento> {
+    return {
+      sucesso: true,
+      payloadResposta: { mock: true, idExterno, canceladoEm: new Date().toISOString() },
+    };
   }
 }

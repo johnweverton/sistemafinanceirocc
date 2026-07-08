@@ -66,4 +66,12 @@ describe('MockGateway', () => {
     const cancelado = new MockGateway({ status: 'canceled', valorPago: null, pagoEm: null });
     expect((await cancelado.consultarInvoice('x')).status).toBe('canceled');
   });
+
+  it('cancelar retorna sucesso com payload de auditoria (Story 6.1)', async () => {
+    const r = await new MockGateway().cancelar('MOCK-123');
+    expect(r.sucesso).toBe(true);
+    const payload = r.payloadResposta as Record<string, unknown>;
+    expect(payload.mock).toBe(true);
+    expect(payload.idExterno).toBe('MOCK-123');
+  });
 });

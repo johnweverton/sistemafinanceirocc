@@ -141,3 +141,37 @@ integração e revisar a regra de contagem, que hoje filtra por `numeroAtendimen
 - CPF no endpoint `fin-clientes` (dependência externa; quando chegar, vira melhoria do matching).
 - Ligar emissão/webhook em produção (gates dos Épicos 3–4).
 - Qualquer escrita na API do sistema web (contrato é read-only).
+
+---
+
+# Épico 6 — Melhorias operacionais (feedback da coordenação)
+
+**Fonte:** reunião de apresentação do sistema à coordenação (2026-07-08).
+**Objetivo:** cobrir duas lacunas operacionais do fluxo de cobrança: correção de boleto
+emitido com erro (cancelar + reemitir dentro do sistema) e a regra real de cobrança dos
+médicos auxiliares (percentual da produção mensal em vez de faixas por guias).
+
+## Decisões fechadas
+- Cancelamento é sempre **cancelar + reemitir** (nunca edição de boleto); boleto pago não
+  se cancela; reconsulta na Cora antes de cancelar (fonte da verdade).
+- Percentual de produção é **configurável por médico**; modo default de todos os médicos
+  segue `faixa_guias`.
+- **GATE da 6.2 respondido pelo dono (2026-07-08):** base do percentual = valor **cobrado**
+  (`charged_val` — valor de produção, não o efetivamente pago); **glosados entram** na base;
+  5% é **especificidade dos médicos auxiliares atuais**, não padrão do sistema (campo por
+  médico, sem valor default).
+
+## Stories
+
+| # | Story | Depende de | Foco |
+|---|-------|-----------|------|
+| 6.1 | Cancelamento e reemissão de boleto | Épico 4 (baixa) | porta `cancelar` + rota + reemissão liberada + UI |
+| 6.2 | Modo de cobrança percentual da produção | Épico 5 (itens com valores) + GATE | cadastro do médico + ramo no engine + UI |
+
+6.1 e 6.2 são independentes e paralelizáveis. Cada uma tem sua migration
+(numeração definida na implementação, após a 0016).
+
+## Fora de escopo
+- Conciliação bancária / plano de contas / DRE (candidata a épico próprio — em discovery
+  com a coordenação, sem spec).
+- Cancelamento em lote e estorno de boleto pago.

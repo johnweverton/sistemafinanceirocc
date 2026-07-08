@@ -153,17 +153,52 @@ export async function registrarBaixa(
   return { atualizado: true, boleto: toBoleto(rows[0]!) };
 }
 
-/** Verifica se já existe boleto emitido com sucesso para um resultado (idempotência). */
+/**
+ * Verifica se já existe boleto ATIVO para um resultado (idempotência da emissão).
+ * Story 6.1 (AC 3): bloqueiam reemissão os status 'emitido' E 'pago' — antes só 'emitido'
+ * era checado, permitindo reemitir sobre resultado já pago (bug latente). 'cancelado' e
+ * 'falha' NÃO bloqueiam — são exatamente os casos em que reemitir é legítimo.
+ */
 export async function buscarBoletoEmitido(execucaoResultadoId: string): Promise<Boleto | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from('boletos')
     .select('*')
     .eq('execucao_resultado_id', execucaoResultadoId)
-    .eq('status', 'emitido')
+    .in('status', ['emitido', 'pago'])
+    .order('emitido_em', { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw new ApiError(500, 'Falha ao buscar boleto', 'DB_ERROR', { error: error.message });
   return data ? toBoleto(data as BoletoRow) : null;
+}
+
+export interface CancelarBoletoParams {
+  canceladoPor: string; // profiles.id de quem confirmou
+  motivo: string;
+}
+
+/**
+ * Marca um boleto como cancelado ATIVAMENTE (Story 6.1) com trilha completa de auditoria
+ * (quem/quando/por quê). O payload da resposta do gateway vai para boleto_eventos (não
+ * sobrescreve payload_resposta da emissão). Chamar SOMENTE após o gateway confirmar.
+ */
+export async function cancelarBoleto(id: string, params: CancelarBoletoParams): Promise<Boleto> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos')
+    .update({
+      status: 'cancelado',
+      cancelado_em: new Date().toISOString(),
+      cancelado_por: params.canceladoPor,
+      motivo_cancelamento: params.motivo,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new ApiError(500, 'Falha ao cancelar boleto', 'DB_ERROR', { error: error.message });
+  return toBoleto(data as BoletoRow);
 }
 
 /** Lista todos os boletos de um resultado (incluindo falhas, para auditoria). */

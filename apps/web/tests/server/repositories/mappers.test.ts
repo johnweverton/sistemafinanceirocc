@@ -95,12 +95,41 @@ describe('toBoleto (Épico 4 — campos de baixa)', () => {
       pago_em: '2026-06-15T12:00:00Z',
       valor_pago: 1500.5,
       atualizado_em: '2026-06-15T12:00:00Z',
+      cancelado_em: null,
+      cancelado_por: null,
+      motivo_cancelamento: null,
     };
     const b = toBoleto(row);
     expect(b.status).toBe('pago');
     expect(b.vencimento).toBe('2026-07-01');
     expect(b.pagoEm).toBe('2026-06-15T12:00:00Z');
     expect(b.valorPago).toBe(1500.5);
+    expect(b.canceladoEm).toBeNull();
+  });
+
+  it('mapeia colunas de cancelamento ativo (Story 6.1)', () => {
+    const row: BoletoRow = {
+      id: 'b3',
+      execucao_resultado_id: 'r3',
+      gateway: 'cora',
+      id_externo: 'inv_3',
+      status: 'cancelado',
+      emitido_por: 'u1',
+      emitido_em: '2026-07-01T00:00:00Z',
+      payload_resposta: {},
+      vencimento: '2026-08-01',
+      pago_em: null,
+      valor_pago: null,
+      atualizado_em: '2026-07-08T10:00:00Z',
+      cancelado_em: '2026-07-08T10:00:00Z',
+      cancelado_por: 'u2',
+      motivo_cancelamento: 'Valor incorreto — reemissão',
+    };
+    const b = toBoleto(row);
+    expect(b.status).toBe('cancelado');
+    expect(b.canceladoEm).toBe('2026-07-08T10:00:00Z');
+    expect(b.canceladoPor).toBe('u2');
+    expect(b.motivoCancelamento).toBe('Valor incorreto — reemissão');
   });
 
   it('normaliza campos de baixa ausentes para null', () => {

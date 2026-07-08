@@ -13,6 +13,7 @@ import type {
   EmissaoBoleto,
   CondicoesEmissao,
   StatusInvoice,
+  ResultadoCancelamento,
 } from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
 import { calcularVencimento } from './vencimento';
@@ -283,6 +284,42 @@ export class CoraGateway implements BoletoGatewayPort {
         payloadResposta: {
           error: error instanceof Error ? error.message : String(error),
         },
+      };
+    }
+  }
+
+  /**
+   * Cancela uma invoice em aberto (Story 6.1). Contrato confirmado na documentação oficial
+   * (developers.cora.com.br, 2026-07-08): DELETE /v2/invoices/{id} com Bearer + mTLS → 200 em
+   * sucesso; só boletos NÃO pagos podem ser cancelados (pago → erro da Cora → sucesso=false).
+   * Mesma convenção de path do consultarInvoice (baseUrl + /invoices/{id}).
+   * Erro nunca vira exceção solta — sucesso=false com payload cru para auditoria.
+   */
+  async cancelar(idExterno: string): Promise<ResultadoCancelamento> {
+    try {
+      const token = await this.obterToken();
+      const url = `${this.baseUrl}/invoices/${encodeURIComponent(idExterno)}`;
+      const resp = await fetchMtls(
+        url,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+        this.agent,
+      );
+      // Corpo pode ser vazio (200/204) — lê como texto e tenta JSON.
+      const texto = await resp.text();
+      let body: unknown = null;
+      try {
+        body = texto ? JSON.parse(texto) : null;
+      } catch {
+        body = texto;
+      }
+      if (resp.ok) {
+        return { sucesso: true, payloadResposta: body };
+      }
+      return { sucesso: false, payloadResposta: { httpStatus: resp.status, body } };
+    } catch (error) {
+      return {
+        sucesso: false,
+        payloadResposta: { error: error instanceof Error ? error.message : String(error) },
       };
     }
   }

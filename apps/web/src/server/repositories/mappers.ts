@@ -355,6 +355,10 @@ export interface BoletoRow {
   pago_em: string | null;
   valor_pago: number | null;
   atualizado_em: string | null;
+  // Cancelamento ativo (Story 6.1)
+  cancelado_em: string | null;
+  cancelado_por: string | null;
+  motivo_cancelamento: string | null;
 }
 
 export function toBoleto(row: BoletoRow): Boleto {
@@ -370,6 +374,9 @@ export function toBoleto(row: BoletoRow): Boleto {
     vencimento: row.vencimento ?? null,
     pagoEm: row.pago_em ?? null,
     valorPago: row.valor_pago ?? null,
+    canceladoEm: row.cancelado_em ?? null,
+    canceladoPor: row.cancelado_por ?? null,
+    motivoCancelamento: row.motivo_cancelamento ?? null,
   };
 }
 
