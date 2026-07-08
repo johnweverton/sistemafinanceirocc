@@ -38,6 +38,10 @@ const serverSchema = z.object({
   GATEWAY_EMISSAO_HABILITADA: z.enum(['true', 'false']).default('false'),
   // Qual gateway usar: 'cora' (real, mTLS) ou 'mock' (testes/dev).
   BOLETO_GATEWAY: z.enum(['cora', 'mock']).default('mock'),
+  // Status devolvido pela reconsulta (consultarInvoice) do MockGateway em dev (débito M-1 da
+  // Story 6.1): 'paid' (default) testa webhook/baixa; 'open' permite testar o CANCELAMENTO
+  // (com 'paid', todo cancelamento em mock cai no ramo de corrida e grava baixa falsa).
+  MOCK_INVOICE_STATUS: z.enum(['paid', 'open', 'overdue', 'canceled', 'unknown']).default('paid'),
   // Certificado e chave privada mTLS da Cora, em base64.
   CORA_CERT_BASE64: z.string().optional(),
   CORA_KEY_BASE64: z.string().optional(),
@@ -79,6 +83,7 @@ export function getServerEnv() {
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
     GATEWAY_EMISSAO_HABILITADA: process.env.GATEWAY_EMISSAO_HABILITADA,
     BOLETO_GATEWAY: process.env.BOLETO_GATEWAY,
+    MOCK_INVOICE_STATUS: process.env.MOCK_INVOICE_STATUS,
     CORA_CERT_BASE64: process.env.CORA_CERT_BASE64,
     CORA_KEY_BASE64: process.env.CORA_KEY_BASE64,
     CORA_API_URL: process.env.CORA_API_URL,

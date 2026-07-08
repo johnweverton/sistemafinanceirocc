@@ -11,9 +11,14 @@ import { CoraGateway } from './cora-gateway';
  * Também retorna o nome do gateway para persistir na tabela de auditoria.
  */
 export function criarBoletoGateway(): { gateway: BoletoGatewayPort; nome: GatewayBoleto } {
-  const { BOLETO_GATEWAY } = getServerEnv();
+  const { BOLETO_GATEWAY, MOCK_INVOICE_STATUS } = getServerEnv();
   if (BOLETO_GATEWAY === 'cora') {
     return { gateway: new CoraGateway(), nome: 'cora' };
   }
-  return { gateway: new MockGateway(), nome: 'mock' };
+  // Débito M-1 (Story 6.1): status da reconsulta configurável — 'paid' (default) testa o fluxo
+  // do webhook; MOCK_INVOICE_STATUS=open permite testar cancelamento em dev sem baixa falsa.
+  return {
+    gateway: new MockGateway({ status: MOCK_INVOICE_STATUS, valorPago: null, pagoEm: null }),
+    nome: 'mock',
+  };
 }
