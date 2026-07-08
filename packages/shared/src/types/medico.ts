@@ -4,6 +4,14 @@
 export type StatusHapvida = 'credenciado' | 'nao_credenciado' | 'nenhum';
 export type ModoMudancaData = 'sim' | 'nao';
 
+/**
+ * Modo de cálculo da cobrança (Story 6.2, Épico 6):
+ *   - 'faixa_guias' (padrão): tabela de faixas por classe (PRD §5.1) — comportamento original.
+ *   - 'percentual_producao': percentual × valor COBRADO da produção do mês (médicos auxiliares;
+ *     GATE do dono 2026-07-08: base = charged_val, glosados entram, percentual por médico).
+ */
+export type ModoCobranca = 'faixa_guias' | 'percentual_producao';
+
 /** Tipo de pessoa do pagador do boleto — independente do CPF-chave do médico. */
 export type PagadorTipo = 'PF' | 'PJ';
 
@@ -53,6 +61,10 @@ export interface Medico {
   fazOutrosHospitais: boolean;
   fazImobilizacoes: boolean;
   modoMudancaData: ModoMudancaData; // trava de conferência, NÃO entra no cálculo (PRD §5.3)
+  /** Modo de cálculo da cobrança (Story 6.2). Default 'faixa_guias' — comportamento original. */
+  modoCobranca: ModoCobranca;
+  /** Percentual sobre o valor cobrado da produção (ex.: 5 = 5%). Obrigatório no modo percentual. */
+  percentualProducao: number | null;
   colaboradorResponsavel: string | null;
   ativo: boolean;
   /** true = médico auto-descoberto, parâmetros de faturamento ainda não configurados. */

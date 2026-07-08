@@ -19,7 +19,10 @@ export interface ProducaoExterna {
 /**
  * Item (procedimento) de uma produção (GET /api/fin-itens?producaoId=).
  * `statusOrigem` é informativo — NUNCA filtra contagem (Épico 5, decisão 5).
- * `valorCobradoOrigem`/`valorPagoOrigem` são informativos — preço segue interno (decisão 8).
+ * `valorCobradoOrigem`/`valorPagoOrigem`: informativos no modo faixas (decisão 8 do Épico 5).
+ * REVISÃO ESCOPADA (Story 6.2): no modo `percentual_producao`, `valorCobradoOrigem` é a BASE
+ * de cálculo (percentual × Σ valor cobrado, glosados incluídos — GATE do dono 2026-07-08).
+ * No modo faixas, nada muda.
  */
 export interface ItemProducao {
   data: string; // YYYY-MM-DD (date)

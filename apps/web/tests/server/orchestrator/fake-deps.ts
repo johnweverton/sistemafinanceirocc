@@ -36,6 +36,8 @@ export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; no
     fazOutrosHospitais: false,
     fazImobilizacoes: false,
     modoMudancaData: 'nao',
+    modoCobranca: 'faixa_guias',
+    percentualProducao: null,
     colaboradorResponsavel: null,
     ativo: true,
     necessitaConfiguracao: false,

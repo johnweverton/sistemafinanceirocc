@@ -50,15 +50,53 @@ export function processarMedico(
 
   const subtotais: Subtotal[] = [];
   let totalValor = 0;
-  for (const classe of classesDoMedico(medico)) {
-    const { valor, faixa } = valorDaFaixa(tabela[classe], guias);
-    subtotais.push({ classe, guias, valor: valor ?? 0, faixa });
-    totalValor += valor ?? 0;
-    // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.
-    if (valor == null) {
+
+  if (medico.modoCobranca === 'percentual_producao') {
+    // Story 6.2 — percentual × valor COBRADO da produção (GATE do dono 2026-07-08):
+    // base = Σ valorCobradoOrigem dos itens VÁLIDOS (glosados ENTRAM — status nunca filtra,
+    // decisão 5 do Épico 5). Contagem e trava de conferência acima seguem rodando: são
+    // diagnóstico, não preço. O sistema NUNCA chuta (PRD §2) — base incompleta vira alerta.
+    const percentual = medico.percentualProducao ?? 0;
+    let base = 0;
+    let itensSemValor = 0;
+    for (const item of validos) {
+      if (item.valorCobradoOrigem != null) base += item.valorCobradoOrigem;
+      else itensSemValor++;
+    }
+
+    if (percentual <= 0) {
       alertas.push(
-        `Classe ${classe} com ${guias} guias está FORA DA TABELA — faixa não definida, verificar.`,
+        'Modo percentual sem percentual configurado — valor zerado, corrigir cadastro do médico.',
       );
+    }
+    if (itensSemValor > 0) {
+      alertas.push(
+        `${itensSemValor} item(ns) sem valor cobrado na origem — base do percentual SUBCONTADA, verificar.`,
+      );
+    }
+    if (base <= 0) {
+      alertas.push('Base de produção zerada — nenhum valor cobrado na origem, verificar.');
+    }
+
+    // Arredonda para centavos: base × (percentual/100) com 2 casas.
+    totalValor = Math.round(base * percentual) / 100;
+    subtotais.push({
+      classe: 'PERCENTUAL_PRODUCAO',
+      guias,
+      valor: totalValor,
+      faixa: `${percentual}% × R$${base.toFixed(2)} (produção cobrada)`,
+    });
+  } else {
+    for (const classe of classesDoMedico(medico)) {
+      const { valor, faixa } = valorDaFaixa(tabela[classe], guias);
+      subtotais.push({ classe, guias, valor: valor ?? 0, faixa });
+      totalValor += valor ?? 0;
+      // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.
+      if (valor == null) {
+        alertas.push(
+          `Classe ${classe} com ${guias} guias está FORA DA TABELA — faixa não definida, verificar.`,
+        );
+      }
     }
   }
 

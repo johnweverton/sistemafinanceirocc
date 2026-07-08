@@ -35,6 +35,8 @@ const VAZIO: FormState = {
   fazOutrosHospitais: false,
   fazImobilizacoes: false,
   modoMudancaData: 'nao',
+  modoCobranca: 'faixa_guias',
+  percentualProducao: null,
   colaboradorResponsavel: null,
   ativo: true,
 };
@@ -65,6 +67,8 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           fazOutrosHospitais: inicial.fazOutrosHospitais,
           fazImobilizacoes: inicial.fazImobilizacoes,
           modoMudancaData: inicial.modoMudancaData,
+          modoCobranca: inicial.modoCobranca,
+          percentualProducao: inicial.percentualProducao,
           colaboradorResponsavel: inicial.colaboradorResponsavel,
           ativo: inicial.ativo,
         }
@@ -79,7 +83,12 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const motivoOk = !exigeMotivo || motivo.trim().length > 0;
   // CPF opcional: se tem tamanho, tem que ser 11, se não, é válido.
   const cpfOk = form.cpf.length === 0 || form.cpf.length === 11;
-  const podeSalvar = combinacaoValida && motivoOk && cpfOk && form.nome.trim().length > 0;
+  // Modo percentual exige percentual > 0 (Story 6.2 — espelho da CHECK 0018).
+  const percentualOk =
+    form.modoCobranca !== 'percentual_producao' ||
+    (form.percentualProducao != null && form.percentualProducao > 0);
+  const podeSalvar =
+    combinacaoValida && motivoOk && cpfOk && percentualOk && form.nome.trim().length > 0;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -205,6 +214,42 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
               <option value="nao">Não muda data</option>
               <option value="sim">Muda data</option>
             </select>
+          </Field>
+        )}
+
+        <Field label="Modo de cobrança">
+          <select
+            name="modoCobranca"
+            value={form.modoCobranca}
+            onChange={(e) => set('modoCobranca', e.target.value as FormState['modoCobranca'])}
+            className="input"
+          >
+            <option value="faixa_guias">Tabela de faixas (padrão)</option>
+            <option value="percentual_producao">Percentual da produção (auxiliar)</option>
+          </select>
+        </Field>
+
+        {form.modoCobranca === 'percentual_producao' && (
+          <Field label="Percentual da produção (%)">
+            <input
+              name="percentualProducao"
+              type="number"
+              min={0.01}
+              max={100}
+              step={0.01}
+              value={form.percentualProducao ?? ''}
+              onChange={(e) =>
+                set('percentualProducao', e.target.value === '' ? null : Number(e.target.value))
+              }
+              className="input tabular"
+              placeholder="5.00"
+              aria-invalid={!percentualOk}
+            />
+            {!percentualOk && (
+              <p className="mt-1 text-xs text-cc-danger" role="alert">
+                Informe um percentual maior que zero.
+              </p>
+            )}
           </Field>
         )}
       </div>

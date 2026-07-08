@@ -224,8 +224,14 @@ function Grupo({
                   <tbody>
                     {r.subtotais.map((s, i) => (
                       <tr key={i} className="border-t border-cc-hairline">
-                        <td className="py-1.5 text-cc-ink-2">{s.classe}</td>
-                        <td className="py-1.5 tabular text-cc-ink-2">{s.guias} guias</td>
+                        {/* Subtotal sintético do modo percentual (Story 6.2): label amigável;
+                            a memória de cálculo (percentual × base) vem em `faixa`. */}
+                        <td className="py-1.5 text-cc-ink-2">
+                          {s.classe === 'PERCENTUAL_PRODUCAO' ? '% da produção' : s.classe}
+                        </td>
+                        <td className="py-1.5 tabular text-cc-ink-2">
+                          {s.classe === 'PERCENTUAL_PRODUCAO' ? '—' : `${s.guias} guias`}
+                        </td>
                         <td className="py-1.5 text-cc-muted">{s.faixa}</td>
                         <td className="py-1.5 text-right tabular text-cc-ink">{brl(s.valor)}</td>
                       </tr>

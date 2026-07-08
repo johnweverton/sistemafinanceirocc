@@ -11,7 +11,12 @@ export type Classe =
   | 'IMOBILIZACOES';
 
 export interface Subtotal {
-  classe: Classe;
+  /**
+   * Classe de preço, ou o marcador sintético 'PERCENTUAL_PRODUCAO' (Story 6.2) quando o
+   * médico é cobrado por percentual da produção — nesse modo há UM subtotal com a memória
+   * de cálculo (percentual × base) em `faixa`. Não entra em `TabelaPreco`.
+   */
+  classe: Classe | 'PERCENTUAL_PRODUCAO';
   guias: number;
   valor: number;
   faixa: string;

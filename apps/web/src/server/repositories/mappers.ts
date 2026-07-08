@@ -25,6 +25,9 @@ export interface MedicoRow {
   faz_outros_hospitais: boolean;
   faz_imobilizacoes: boolean;
   modo_mudanca_data: Medico['modoMudancaData'];
+  /** Modo de cobrança (migration 0018) — opcional em bancos sem a migration aplicada. */
+  modo_cobranca?: Medico['modoCobranca'] | null;
+  percentual_producao?: number | null;
   colaborador_responsavel: string | null;
   ativo: boolean;
   necessita_configuracao: boolean;
@@ -98,6 +101,8 @@ export function toMedico(row: MedicoRow): Medico {
     fazOutrosHospitais: row.faz_outros_hospitais,
     fazImobilizacoes: row.faz_imobilizacoes,
     modoMudancaData: row.modo_mudanca_data,
+    modoCobranca: row.modo_cobranca ?? 'faixa_guias', // default seguro pré-migration 0018
+    percentualProducao: row.percentual_producao ?? null,
     colaboradorResponsavel: row.colaborador_responsavel,
     ativo: row.ativo,
     necessitaConfiguracao: row.necessita_configuracao ?? false,
@@ -143,6 +148,8 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     fazOutrosHospitais: 'faz_outros_hospitais',
     fazImobilizacoes: 'faz_imobilizacoes',
     modoMudancaData: 'modo_mudanca_data',
+    modoCobranca: 'modo_cobranca',
+    percentualProducao: 'percentual_producao',
     colaboradorResponsavel: 'colaborador_responsavel',
     ativo: 'ativo',
     necessitaConfiguracao: 'necessita_configuracao',

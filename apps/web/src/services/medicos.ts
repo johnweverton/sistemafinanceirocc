@@ -42,6 +42,9 @@ export interface NovoMedicoPayload {
   fazOutrosHospitais: boolean;
   fazImobilizacoes: boolean;
   modoMudancaData: Medico['modoMudancaData'];
+  // Modo de cobrança (Story 6.2) — percentual obrigatório quando modo = percentual_producao.
+  modoCobranca: Medico['modoCobranca'];
+  percentualProducao: number | null;
   colaboradorResponsavel: string | null;
   ativo: boolean;
   // Cobrança (Fase 3) — opcional; médico pode ser salvo e completado depois.
