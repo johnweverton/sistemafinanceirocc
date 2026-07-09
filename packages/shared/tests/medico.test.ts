@@ -1,6 +1,6 @@
 // Testes da derivação de TIPO e validação de combinação (PRD §5.1, §8.2).
 import { describe, it, expect } from 'vitest';
-import { tipoDoMedico, combinacaoClasseValida, cobrancaCompleta } from '../src/types/medico';
+import { tipoDoMedico, combinacaoClasseValida, cobrancaCompleta, cobrancaMinimaEmissao } from '../src/types/medico';
 import type { DadosCobranca } from '../src/types/medico';
 
 describe('tipoDoMedico (PRD §5.1)', () => {
@@ -33,12 +33,48 @@ describe('combinacaoClasseValida (PRD §8.2)', () => {
   });
 });
 
-describe('cobrancaCompleta (Fase 3)', () => {
+describe('cobrancaMinimaEmissao (Épico 6 — mínimo pra emitir: documento + nome)', () => {
+  const minimaPF: DadosCobranca = {
+    pagadorTipo: 'PF',
+    pagadorDocumento: '12345678901', // 11 dígitos
+    pagadorNome: 'Dr. Fulano',
+    email: '',
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: null,
+    bairro: '',
+    cidade: '',
+    uf: '',
+  };
+  const minimaPJ: DadosCobranca = { ...minimaPF, pagadorTipo: 'PJ', pagadorDocumento: '12345678000199' }; // 14
+
+  it('bloco ausente (null) → não pode emitir', () => {
+    expect(cobrancaMinimaEmissao({ cobranca: null })).toBe(false);
+    expect(cobrancaMinimaEmissao({ cobranca: undefined })).toBe(false);
+  });
+  it('PF só com documento+nome (sem email/endereço) → pode emitir', () => {
+    expect(cobrancaMinimaEmissao({ cobranca: minimaPF })).toBe(true);
+  });
+  it('PJ só com documento+nome (sem email/endereço) → pode emitir', () => {
+    expect(cobrancaMinimaEmissao({ cobranca: minimaPJ })).toBe(true);
+  });
+  it('documento com tamanho errado para o tipo → não pode emitir', () => {
+    expect(cobrancaMinimaEmissao({ cobranca: { ...minimaPF, pagadorDocumento: '123' } })).toBe(false);
+    expect(cobrancaMinimaEmissao({ cobranca: { ...minimaPJ, pagadorDocumento: '12345678901' } })).toBe(false);
+  });
+  it('nome vazio → não pode emitir', () => {
+    expect(cobrancaMinimaEmissao({ cobranca: { ...minimaPF, pagadorNome: '   ' } })).toBe(false);
+  });
+});
+
+describe('cobrancaCompleta (Épico 6 — cadastro completo: mínimo + email + whatsapp)', () => {
   const basePF: DadosCobranca = {
     pagadorTipo: 'PF',
     pagadorDocumento: '12345678901', // 11 dígitos
     pagadorNome: 'Dr. Fulano',
     email: 'fulano@exemplo.com',
+    whatsapp: '5511999999999',
     cep: '60000000',
     logradouro: 'Rua A',
     numero: '100',
@@ -53,21 +89,24 @@ describe('cobrancaCompleta (Fase 3)', () => {
     expect(cobrancaCompleta({ cobranca: null })).toBe(false);
     expect(cobrancaCompleta({ cobranca: undefined })).toBe(false);
   });
-  it('PF completo (11 dígitos) → completo', () => {
+  it('PF completo (11 dígitos, com email e whatsapp) → completo', () => {
     expect(cobrancaCompleta({ cobranca: basePF })).toBe(true);
   });
-  it('PJ completo (14 dígitos) → completo', () => {
+  it('PJ completo (14 dígitos, com email e whatsapp) → completo', () => {
     expect(cobrancaCompleta({ cobranca: basePJ })).toBe(true);
   });
-  it('complemento ausente não invalida', () => {
-    expect(cobrancaCompleta({ cobranca: { ...basePF, complemento: null } })).toBe(true);
+  it('endereço ausente não invalida mais (Épico 6: endereço não é exigido)', () => {
+    expect(cobrancaCompleta({ cobranca: { ...basePF, cep: '', logradouro: '', numero: '', bairro: '', cidade: '', uf: '' } })).toBe(true);
   });
   it('documento com tamanho errado para o tipo → incompleto', () => {
     expect(cobrancaCompleta({ cobranca: { ...basePF, pagadorDocumento: '123' } })).toBe(false);
     expect(cobrancaCompleta({ cobranca: { ...basePJ, pagadorDocumento: '12345678901' } })).toBe(false);
   });
-  it('campo obrigatório vazio → incompleto', () => {
+  it('email vazio → incompleto', () => {
     expect(cobrancaCompleta({ cobranca: { ...basePF, email: '' } })).toBe(false);
-    expect(cobrancaCompleta({ cobranca: { ...basePF, cidade: '   ' } })).toBe(false);
+  });
+  it('whatsapp ausente → incompleto', () => {
+    expect(cobrancaCompleta({ cobranca: { ...basePF, whatsapp: null } })).toBe(false);
+    expect(cobrancaCompleta({ cobranca: { ...basePF, whatsapp: '' } })).toBe(false);
   });
 });

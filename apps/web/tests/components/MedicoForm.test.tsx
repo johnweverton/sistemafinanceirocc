@@ -87,7 +87,7 @@ describe('MedicoForm — seção de cobrança (Story 3.3)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<MedicoForm onSubmit={vi.fn()} />);
-    fireEvent.change(screen.getByRole('textbox', { name: /^CEP$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /^CEP/i }), {
       target: { value: '60000000' },
     });
 
@@ -98,6 +98,6 @@ describe('MedicoForm — seção de cobrança (Story 3.3)', () => {
       expect((screen.getByRole('textbox', { name: /Logradouro/i }) as HTMLInputElement).value).toBe('Rua das Flores');
     });
     expect((screen.getByRole('textbox', { name: /Cidade/i }) as HTMLInputElement).value).toBe('Fortaleza');
-    expect((screen.getByRole('combobox', { name: /^UF$/i }) as HTMLSelectElement).value).toBe('CE');
+    expect((screen.getByRole('combobox', { name: /^UF/i }) as HTMLSelectElement).value).toBe('CE');
   });
 });

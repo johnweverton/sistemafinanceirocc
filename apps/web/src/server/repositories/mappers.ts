@@ -38,6 +38,7 @@ export interface MedicoRow {
   pagador_documento: string | null;
   pagador_nome: string | null;
   email: string | null;
+  whatsapp: string | null;
   cep: string | null;
   logradouro: string | null;
   numero: string | null;
@@ -63,6 +64,7 @@ function toDadosCobranca(row: MedicoRow): Medico['cobranca'] {
     pagadorDocumento: row.pagador_documento ?? '',
     pagadorNome: row.pagador_nome ?? '',
     email: row.email ?? '',
+    whatsapp: row.whatsapp ?? null,
     cep: row.cep ?? '',
     logradouro: row.logradouro ?? '',
     numero: row.numero ?? '',
@@ -170,6 +172,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
       pagador_documento: c.pagadorDocumento,
       pagador_nome: c.pagadorNome,
       email: c.email,
+      whatsapp: c.whatsapp ?? null,
       cep: c.cep,
       logradouro: c.logradouro,
       numero: c.numero,

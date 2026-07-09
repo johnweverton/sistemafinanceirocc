@@ -70,8 +70,10 @@ export interface DadosEmissaoBoleto {
     nome: string;
     documento: string; // CPF (11) ou CNPJ (14), dígitos
     tipo: 'CPF' | 'CNPJ';
-    email: string;
-    endereco: {
+    // E-mail e endereço são opcionais — a Cora não exige pra emitir boleto registrado
+    // (Épico 6). Endereço é tudo-ou-nada: se enviado, precisa vir com todos os subcampos.
+    email?: string | null;
+    endereco?: {
       cep: string;
       logradouro: string;
       numero: string;
@@ -79,7 +81,7 @@ export interface DadosEmissaoBoleto {
       bairro: string;
       cidade: string;
       uf: string;
-    };
+    } | null;
   };
   condicoes: CondicoesEmissao;
 }

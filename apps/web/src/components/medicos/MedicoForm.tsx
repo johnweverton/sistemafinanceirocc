@@ -44,7 +44,7 @@ const VAZIO: FormState = {
 /** True se o usuário digitou algo em qualquer campo de cobrança (define se enviamos o bloco). */
 function temAlgumaCobranca(c: DadosCobranca): boolean {
   return Boolean(
-    c.pagadorDocumento || c.pagadorNome || c.email || c.cep ||
+    c.pagadorDocumento || c.pagadorNome || c.email || c.whatsapp || c.cep ||
     c.logradouro || c.numero || c.bairro || c.cidade || c.uf,
   );
 }
@@ -332,7 +332,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
               <input value={cobranca.pagadorNome} onChange={(e) => setCob('pagadorNome', e.target.value)} className="input" placeholder="Nome do pagador" />
             </Field>
 
-            <Field label="E-mail">
+            <Field label="E-mail" optional>
               <input type="email" value={cobranca.email} onChange={(e) => setCob('email', e.target.value)} className="input" placeholder="pagador@exemplo.com" />
             </Field>
 
@@ -340,7 +340,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
               <input value={cobranca.whatsapp ?? ''} onChange={(e) => setCob('whatsapp', e.target.value || null)} className="input" placeholder="5511999999999 ou ID do grupo" />
             </Field>
 
-            <Field label="CEP">
+            <Field label="CEP" optional>
               <input
                 value={cobranca.cep}
                 onChange={(e) => void onCepChange(e.target.value)}
@@ -351,7 +351,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
               {cepBuscando && <span className="mt-1 block text-2xs text-cc-muted">Buscando endereço…</span>}
             </Field>
 
-            <Field label="UF">
+            <Field label="UF" optional>
               <select value={cobranca.uf} onChange={(e) => setCob('uf', e.target.value)} className="input">
                 <option value="">—</option>
                 {UFS.map((uf) => (
@@ -360,19 +360,19 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
               </select>
             </Field>
 
-            <Field label="Logradouro">
+            <Field label="Logradouro" optional>
               <input value={cobranca.logradouro} onChange={(e) => setCob('logradouro', e.target.value)} className="input" placeholder="Rua, avenida…" />
             </Field>
 
-            <Field label="Número">
+            <Field label="Número" optional>
               <input value={cobranca.numero} onChange={(e) => setCob('numero', e.target.value)} className="input" placeholder="123" />
             </Field>
 
-            <Field label="Bairro">
+            <Field label="Bairro" optional>
               <input value={cobranca.bairro} onChange={(e) => setCob('bairro', e.target.value)} className="input" placeholder="Centro" />
             </Field>
 
-            <Field label="Cidade">
+            <Field label="Cidade" optional>
               <input value={cobranca.cidade} onChange={(e) => setCob('cidade', e.target.value)} className="input" placeholder="Cidade" />
             </Field>
 

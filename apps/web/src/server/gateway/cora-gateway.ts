@@ -216,26 +216,33 @@ export class CoraGateway implements BoletoGatewayPort {
       // Monta o payload conforme o contrato POST /invoices da Cora.
       const { pagador, condicoes } = dados;
 
+      // E-mail e endereço são opcionais (Épico 6) — a Cora não exige pra emitir boleto
+      // registrado. Endereço é tudo-ou-nada: só entra no payload se vier completo
+      // (garantido por enderecoCompletoOuAusente na rota); nunca manda objeto parcial.
+      const customer: Record<string, unknown> = {
+        name: pagador.nome,
+        document: {
+          identity: pagador.documento.replace(/\D/g, ''),
+          type: pagador.tipo, // 'CPF' | 'CNPJ' dinâmico
+        },
+      };
+      if (pagador.email) customer.email = pagador.email;
+      if (pagador.endereco) {
+        customer.address = {
+          street: pagador.endereco.logradouro,
+          number: pagador.endereco.numero,
+          district: pagador.endereco.bairro,
+          city: pagador.endereco.cidade,
+          state: pagador.endereco.uf,
+          complement: pagador.endereco.complemento ?? undefined,
+          zip_code: pagador.endereco.cep,
+        };
+      }
+
       const invoicePayload = {
         amount: Math.round(dados.valor * 100), // Cora usa centavos
         code: dados.execucaoResultadoId.slice(0, 20), // referência interna
-        customer: {
-          name: pagador.nome,
-          email: pagador.email,
-          document: {
-            identity: pagador.documento.replace(/\D/g, ''),
-            type: pagador.tipo, // 'CPF' | 'CNPJ' dinâmico
-          },
-          address: {
-            street: pagador.endereco.logradouro,
-            number: pagador.endereco.numero,
-            district: pagador.endereco.bairro,
-            city: pagador.endereco.cidade,
-            state: pagador.endereco.uf,
-            complement: pagador.endereco.complemento ?? undefined,
-            zip_code: pagador.endereco.cep,
-          },
-        },
+        customer,
         payment_terms: montarPaymentTerms(condicoes),
         services: [
           {

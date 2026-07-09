@@ -240,6 +240,52 @@ describe('CoraGateway', () => {
     expect(terms.discount).toBeUndefined();
   });
 
+  it('omite email e address do customer quando o pagador não tem (Épico 6: opcionais)', async () => {
+    let invoicePayload: Record<string, unknown> = {};
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok123', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(
+        (
+          _options: unknown,
+          callback: (res: { statusCode: number; statusMessage: string; headers: Record<string, string>; on: (event: string, handler: (data?: unknown) => void) => void }) => void,
+        ) => {
+          const bodyStr = JSON.stringify({ id: 'inv_min' });
+          const res = {
+            statusCode: 201,
+            statusMessage: 'Created',
+            headers: { 'content-type': 'application/json' },
+            on: (event: string, handler: (data?: unknown) => void) => {
+              if (event === 'data') handler(Buffer.from(bodyStr));
+              if (event === 'end') handler();
+            },
+          };
+          callback(res);
+          return {
+            on: vi.fn(),
+            setTimeout: vi.fn(),
+            write: vi.fn((data: string) => {
+              invoicePayload = JSON.parse(data);
+            }),
+            end: vi.fn(),
+            destroy: vi.fn(),
+          };
+        },
+      );
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const gateway = new CoraGateway();
+    await gateway.emitir({
+      ...dadosPadrao,
+      pagador: { nome: 'Dr. Teste', documento: '12345678901', tipo: 'CPF' },
+    });
+
+    const customer = invoicePayload.customer as Record<string, any>;
+    expect(customer.name).toBe('Dr. Teste');
+    expect(customer.document).toEqual({ identity: '12345678901', type: 'CPF' });
+    expect('email' in customer).toBe(false);
+    expect('address' in customer).toBe(false);
+  });
+
   it('document.type = CNPJ quando pagador é PJ e inclui multa/juros/desconto', async () => {
     let invoicePayload: Record<string, unknown> = {};
     mockRequest

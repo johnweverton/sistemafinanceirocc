@@ -24,3 +24,5 @@ test-results/
 # Tooling local (framework de agentes / skills) — não é código do produto
 .aiox-core/
 .claude/
+.vercel
+.env*

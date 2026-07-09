@@ -80,29 +80,32 @@ export interface Medico {
 }
 
 /**
- * Regra única de completude de cobrança: retorna true somente quando o bloco existe e todos
- * os campos obrigatórios estão preenchidos (complemento é opcional), com documento coerente
- * ao tipo (CPF=11, CNPJ=14 dígitos). Reutilizado pela UI e pelo guard de emissão.
+ * Regra MÍNIMA para emitir boleto (Épico 6, gate revisado): a Cora só exige documento e
+ * nome/razão social do pagador — e-mail e endereço são opcionais no payload da API.
+ * Usada como guard bloqueante em POST /api/boletos/emitir.
  */
-export function cobrancaCompleta(m: Pick<Medico, 'cobranca'>): boolean {
+export function cobrancaMinimaEmissao(m: Pick<Medico, 'cobranca'>): boolean {
   const c = m.cobranca;
   if (!c) return false;
-  const obrigatorios = [
-    c.pagadorTipo,
-    c.pagadorDocumento,
-    c.pagadorNome,
-    c.email,
-    c.cep,
-    c.logradouro,
-    c.numero,
-    c.bairro,
-    c.cidade,
-    c.uf,
-  ];
+  const obrigatorios = [c.pagadorTipo, c.pagadorDocumento, c.pagadorNome];
   if (obrigatorios.some((v) => !v || String(v).trim() === '')) return false;
   const tamDoc = c.pagadorDocumento.replace(/\D/g, '').length;
   if (c.pagadorTipo === 'PF' && tamDoc !== 11) return false;
   if (c.pagadorTipo === 'PJ' && tamDoc !== 14) return false;
+  return true;
+}
+
+/**
+ * Regra de CADASTRO COMPLETO: mínimo pra emitir + e-mail + WhatsApp (contato necessário
+ * pro disparo automático do boleto). Endereço NÃO entra mais aqui — a Cora não exige pra
+ * emitir boleto registrado. Não bloqueia emissão; só sinaliza cadastro incompleto na UI
+ * (Status 'cobranca_incompleta' em MedicosManager). Reutilizado pela UI e pelo guard de emissão.
+ */
+export function cobrancaCompleta(m: Pick<Medico, 'cobranca'>): boolean {
+  if (!cobrancaMinimaEmissao(m)) return false;
+  const c = m.cobranca!;
+  if (!c.email || String(c.email).trim() === '') return false;
+  if (!c.whatsapp || String(c.whatsapp).trim() === '') return false;
   return true;
 }
 

@@ -258,6 +258,43 @@ describe('Lógica de emissão de boleto', () => {
     );
   });
 
+  it('happy path: emite boleto com cobrança MÍNIMA (só documento+nome, sem email/endereço)', async () => {
+    mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
+    simularResultadoBanco();
+    mockBuscarMedico.mockResolvedValue(medicoFixture({
+      pagadorTipo: 'PF' as const,
+      pagadorDocumento: '12345678901',
+      pagadorNome: 'Dr. Teste',
+      email: '',
+      cep: '',
+      logradouro: '',
+      numero: '',
+      complemento: null,
+      bairro: '',
+      cidade: '',
+      uf: '',
+    }));
+
+    const { POST } = await import('@/app/api/boletos/emitir/route');
+    const req = criarRequest({ execucaoResultadoId: '00000000-0000-0000-0000-000000000001' });
+    const resp = await POST(req, { params: {} });
+
+    expect(resp.status).toBe(201);
+
+    // Payload pro gateway não deve conter email nem endereço parcial.
+    expect(mockGatewayEmitir).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pagador: expect.objectContaining({
+          nome: 'Dr. Teste',
+          documento: '12345678901',
+          tipo: 'CPF',
+          email: undefined,
+          endereco: undefined,
+        }),
+      }),
+    );
+  });
+
   it('retorna 422 COBRANCA_INCOMPLETA quando o médico não tem cobrança completa', async () => {
     mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
     simularResultadoBanco();

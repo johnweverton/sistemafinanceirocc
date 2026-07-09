@@ -7,7 +7,7 @@
 //   5. Idempotente: se já existe boleto emitido, retorna 409.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { cobrancaCompleta } from '@cobranca/shared';
+import { cobrancaMinimaEmissao } from '@cobranca/shared';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { getServerEnv } from '@/lib/env';
 import { requireRole } from '@/server/auth/require-role';
@@ -26,24 +26,29 @@ import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
 // Achado I-1: rate limit — máximo 10 emissões por minuto por usuário.
 const emitirLimiter = createRateLimiter('boletos-emitir', { limit: 10, windowMs: 60_000 });
 
-/** Lista os campos obrigatórios de cobrança ainda vazios (para mensagem do 422). */
+/** Lista os campos MÍNIMOS de cobrança ainda vazios (para mensagem do 422). Endereço e
+ *  e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. */
 function camposFaltantesCobranca(cobranca: NonNullable<Awaited<ReturnType<typeof buscarMedico>>>['cobranca']): string[] {
   if (!cobranca) return ['dados de cobrança'];
   const req: Record<string, unknown> = {
     pagadorTipo: cobranca.pagadorTipo,
     pagadorDocumento: cobranca.pagadorDocumento,
     pagadorNome: cobranca.pagadorNome,
-    email: cobranca.email,
-    cep: cobranca.cep,
-    logradouro: cobranca.logradouro,
-    numero: cobranca.numero,
-    bairro: cobranca.bairro,
-    cidade: cobranca.cidade,
-    uf: cobranca.uf,
   };
   return Object.entries(req)
     .filter(([, v]) => !v || String(v).trim() === '')
     .map(([k]) => k);
+}
+
+/** Endereço só é enviado à Cora se TODOS os subcampos estiverem preenchidos — a API trata
+ *  o endereço como tudo-ou-nada (se enviado, todo subcampo vira obrigatório). */
+function enderecoCompletoOuAusente(cobranca: NonNullable<Awaited<ReturnType<typeof buscarMedico>>>['cobranca']) {
+  if (!cobranca) return undefined;
+  const { cep, logradouro, numero, bairro, cidade, uf, complemento } = cobranca;
+  if (![cep, logradouro, numero, bairro, cidade, uf].every((v) => v && String(v).trim() !== '')) {
+    return undefined;
+  }
+  return { cep, logradouro, numero, complemento, bairro, cidade, uf };
 }
 
 const bodySchema = z.object({
@@ -106,8 +111,8 @@ export const POST = withErrorHandler(async (req) => {
     throw new ApiError(404, 'Médico do resultado não encontrado', 'MEDICO_NAO_ENCONTRADO');
   }
 
-  // 6. Guard: falhar cedo (aqui, não no Cora) se a cobrança estiver incompleta.
-  if (!cobrancaCompleta(medico)) {
+  // 6. Guard: falhar cedo (aqui, não no Cora) se faltar o mínimo pra emitir (documento+nome).
+  if (!cobrancaMinimaEmissao(medico)) {
     throw new ApiError(
       422,
       'Dados de cobrança do médico incompletos — complete antes de emitir o boleto.',
@@ -115,7 +120,7 @@ export const POST = withErrorHandler(async (req) => {
       { faltantes: camposFaltantesCobranca(medico.cobranca) },
     );
   }
-  const cobranca = medico.cobranca!; // garantido por cobrancaCompleta
+  const cobranca = medico.cobranca!; // garantido por cobrancaMinimaEmissao
 
   // 7. Resolver as condições comerciais efetivas (override do médico ?? default global).
   const config = await lerConfig();
@@ -146,16 +151,8 @@ export const POST = withErrorHandler(async (req) => {
       nome: cobranca.pagadorNome,
       documento: cobranca.pagadorDocumento,
       tipo: cobranca.pagadorTipo === 'PF' ? 'CPF' : 'CNPJ',
-      email: cobranca.email,
-      endereco: {
-        cep: cobranca.cep,
-        logradouro: cobranca.logradouro,
-        numero: cobranca.numero,
-        complemento: cobranca.complemento,
-        bairro: cobranca.bairro,
-        cidade: cobranca.cidade,
-        uf: cobranca.uf,
-      },
+      email: cobranca.email || undefined,
+      endereco: enderecoCompletoOuAusente(cobranca),
     },
     condicoes,
   });

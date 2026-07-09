@@ -25,21 +25,24 @@ export const ufSchema = z.enum(UFS);
 
 /**
  * Bloco de cobrança do pagador. Documento validado por tipo (CPF=11, CNPJ=14 dígitos).
- * Complemento é o único campo opcional.
+ * Mínimo pra emitir (Épico 6): pagadorTipo + pagadorDocumento + pagadorNome. E-mail,
+ * WhatsApp, endereço e complemento são opcionais (vazio/ausente é válido) — mas se
+ * preenchidos, seguem validados no formato (e-mail válido, CEP 8 dígitos, UF real).
  */
 export const dadosCobrancaSchema = z
   .object({
     pagadorTipo: pagadorTipoSchema,
     pagadorDocumento: z.string().regex(/^\d+$/, 'Documento deve conter apenas dígitos'),
     pagadorNome: z.string().min(1, 'Nome/razão social é obrigatório'),
-    email: z.string().email('E-mail inválido'),
-    cep: z.string().regex(/^\d{8}$/, 'CEP deve ter 8 dígitos sem pontuação'),
-    logradouro: z.string().min(1, 'Logradouro é obrigatório'),
-    numero: z.string().min(1, 'Número é obrigatório'),
+    email: z.string().email('E-mail inválido').or(z.literal('')).default(''),
+    whatsapp: z.string().nullable().optional().default(null),
+    cep: z.string().regex(/^\d{8}$/, 'CEP deve ter 8 dígitos sem pontuação').or(z.literal('')).default(''),
+    logradouro: z.string().default(''),
+    numero: z.string().default(''),
     complemento: z.string().nullable().default(null),
-    bairro: z.string().min(1, 'Bairro é obrigatório'),
-    cidade: z.string().min(1, 'Cidade é obrigatória'),
-    uf: ufSchema,
+    bairro: z.string().default(''),
+    cidade: z.string().default(''),
+    uf: ufSchema.or(z.literal('')).default(''),
   })
   .refine(
     (c) => (c.pagadorTipo === 'PF' ? c.pagadorDocumento.length === 11 : c.pagadorDocumento.length === 14),

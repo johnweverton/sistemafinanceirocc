@@ -46,6 +46,42 @@ describe('dadosCobrancaSchema', () => {
   });
 });
 
+describe('dadosCobrancaSchema — mínimo pra emitir (Épico 6: só documento+nome obrigatórios)', () => {
+  const minima = {
+    pagadorTipo: 'PF',
+    pagadorDocumento: '12345678901',
+    pagadorNome: 'Dr. Fulano',
+  };
+  it('aceita bloco só com documento+nome (sem email/endereço)', () => {
+    const res = dadosCobrancaSchema.safeParse(minima);
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.email).toBe('');
+      expect(res.data.cep).toBe('');
+      expect(res.data.whatsapp).toBe(null);
+    }
+  });
+  it('e-mail vazio é aceito (não é mais obrigatório)', () => {
+    expect(dadosCobrancaSchema.safeParse({ ...minima, email: '' }).success).toBe(true);
+  });
+  it('e-mail inválido (não vazio) ainda é rejeitado', () => {
+    expect(dadosCobrancaSchema.safeParse({ ...minima, email: 'nao-email' }).success).toBe(false);
+  });
+  it('UF vazia é aceita, mas UF inválida (não vazia) ainda é rejeitada', () => {
+    expect(dadosCobrancaSchema.safeParse({ ...minima, uf: '' }).success).toBe(true);
+    expect(dadosCobrancaSchema.safeParse({ ...minima, uf: 'XX' }).success).toBe(false);
+  });
+  it('whatsapp é validado e preservado', () => {
+    const res = dadosCobrancaSchema.safeParse({ ...minima, whatsapp: '5511999999999' });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.whatsapp).toBe('5511999999999');
+  });
+  it('documento ou nome ausentes ainda são rejeitados', () => {
+    expect(dadosCobrancaSchema.safeParse({ pagadorTipo: 'PF', pagadorNome: 'Dr. Fulano' }).success).toBe(false);
+    expect(dadosCobrancaSchema.safeParse({ pagadorTipo: 'PF', pagadorDocumento: '12345678901' }).success).toBe(false);
+  });
+});
+
 describe('novoMedicoSchema com cobrança', () => {
   const medicoBase = {
     cpf: '98765432100',
