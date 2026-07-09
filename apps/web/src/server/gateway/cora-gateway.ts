@@ -1,10 +1,12 @@
 // Cora Gateway — implementação real de BoletoGatewayPort com mTLS.
-// Usa a API Banking da Cora (POST /invoices) autenticada via certificado mTLS.
+// Usa a API Banking da Cora (POST /v2/invoices) autenticada via certificado mTLS.
 //
 // Fluxo mTLS da Cora (documentação oficial):
 //   1. Certificado e chave privada são carregados de env vars base64.
 //   2. Token OAuth2 obtido via POST /token com client_credentials + mTLS.
-//   3. Invoice criada via POST /invoices com o bearer token + mTLS.
+//   3. Invoice criada via POST /v2/invoices com o bearer token + mTLS e
+//      header Idempotency-Key (UUID) obrigatório — sem ele/no path v1 a Cora
+//      responde 404 "/external/invoices Not Found" (confirmado em produção 2026-07-09).
 //
 // Sem certificado real, este gateway não funciona — o mock-gateway.ts é o fallback.
 import type {
@@ -18,6 +20,7 @@ import type {
 import { getServerEnv } from '@/lib/env';
 import { calcularVencimento } from './vencimento';
 import https from 'node:https';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Normaliza a resposta do `GET /invoices/{id}` da Cora para `StatusInvoice`. Isolada para permitir
@@ -252,7 +255,7 @@ export class CoraGateway implements BoletoGatewayPort {
         ],
       };
 
-      const invoiceUrl = `${this.baseUrl}/invoices`;
+      const invoiceUrl = `${this.baseUrl}/v2/invoices`;
       const resp = await fetchMtls(
         invoiceUrl,
         {
@@ -260,6 +263,8 @@ export class CoraGateway implements BoletoGatewayPort {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
+            // Obrigatório na API v2 — evita emissão duplicada em retry de rede.
+            'Idempotency-Key': randomUUID(),
           },
           body: JSON.stringify(invoicePayload),
         },
@@ -299,13 +304,13 @@ export class CoraGateway implements BoletoGatewayPort {
    * Cancela uma invoice em aberto (Story 6.1). Contrato confirmado na documentação oficial
    * (developers.cora.com.br, 2026-07-08): DELETE /v2/invoices/{id} com Bearer + mTLS → 200 em
    * sucesso; só boletos NÃO pagos podem ser cancelados (pago → erro da Cora → sucesso=false).
-   * Mesma convenção de path do consultarInvoice (baseUrl + /invoices/{id}).
+   * Mesma convenção de path do consultarInvoice (baseUrl + /v2/invoices/{id}).
    * Erro nunca vira exceção solta — sucesso=false com payload cru para auditoria.
    */
   async cancelar(idExterno: string): Promise<ResultadoCancelamento> {
     try {
       const token = await this.obterToken();
-      const url = `${this.baseUrl}/invoices/${encodeURIComponent(idExterno)}`;
+      const url = `${this.baseUrl}/v2/invoices/${encodeURIComponent(idExterno)}`;
       const resp = await fetchMtls(
         url,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
@@ -335,7 +340,7 @@ export class CoraGateway implements BoletoGatewayPort {
   async consultarInvoice(idExterno: string): Promise<StatusInvoice> {
     try {
       const token = await this.obterToken();
-      const url = `${this.baseUrl}/invoices/${encodeURIComponent(idExterno)}`;
+      const url = `${this.baseUrl}/v2/invoices/${encodeURIComponent(idExterno)}`;
       const resp = await fetchMtls(
         url,
         { method: 'GET', headers: { Authorization: `Bearer ${token}` } },

@@ -120,6 +120,27 @@ describe('CoraGateway', () => {
     );
   });
 
+  it('usa POST /v2/invoices com header Idempotency-Key (contrato v2 da Cora)', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok123', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(201, { id: 'inv_abc123' }));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const gateway = new CoraGateway();
+    await gateway.emitir(dadosPadrao);
+
+    // 1ª chamada = token; 2ª = invoice. Path v1 (/invoices) devolve 404 em produção.
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+    const invoiceOptions = mockRequest.mock.calls[1]?.[0] as {
+      path: string;
+      headers: Record<string, string>;
+    };
+    expect(invoiceOptions.path).toBe('/v2/invoices');
+    expect(invoiceOptions.headers['Idempotency-Key']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
   it('emite com sucesso (token + invoice)', async () => {
     mockRequest
       .mockImplementationOnce(simularResposta(200, { access_token: 'tok123', token_type: 'Bearer', expires_in: 3600 }))
