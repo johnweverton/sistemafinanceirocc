@@ -161,7 +161,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     // Blocos aninhados são achatados separadamente abaixo.
     if (campo === 'cobranca' || campo === 'condicoes') continue;
     const col = map[campo];
-    if (col) (row as Record<string, unknown>)[col] = valor;
+    if (col) (row as Record<string, unknown>)[col] = valor === '' ? null : valor;
   }
 
   // Achata o bloco de cobrança (camelCase → snake_case).
@@ -171,15 +171,15 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
       pagador_tipo: c.pagadorTipo,
       pagador_documento: c.pagadorDocumento,
       pagador_nome: c.pagadorNome,
-      email: c.email,
-      whatsapp: c.whatsapp ?? null,
-      cep: c.cep,
-      logradouro: c.logradouro,
-      numero: c.numero,
-      complemento: c.complemento,
-      bairro: c.bairro,
-      cidade: c.cidade,
-      uf: c.uf,
+      email: c.email || null,
+      whatsapp: c.whatsapp || null,
+      cep: c.cep || null,
+      logradouro: c.logradouro || null,
+      numero: c.numero || null,
+      complemento: c.complemento || null,
+      bairro: c.bairro || null,
+      cidade: c.cidade || null,
+      uf: c.uf || null,
     } satisfies Partial<MedicoRow>);
   }
 
