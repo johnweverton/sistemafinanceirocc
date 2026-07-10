@@ -347,9 +347,10 @@ describe('CoraGateway', () => {
     const customer = invoicePayload.customer as Record<string, any>;
     expect(customer.document).toEqual({ identity: '12345678000199', type: 'CNPJ' });
     const terms = invoicePayload.payment_terms as Record<string, any>;
-    expect(terms.fine).toEqual({ amount: 2 });
+    // Percentuais SEMPRE em rate/PERCENT — fine.amount é centavos fixos (bug de produção 2026-07-10).
+    expect(terms.fine).toEqual({ rate: 2 });
     expect(terms.interest).toEqual({ rate: 1 });
-    expect(terms.discount).toEqual({ amount: 5, days: 3 });
+    expect(terms.discount).toEqual({ type: 'PERCENT', value: 5 });
   });
 });
 

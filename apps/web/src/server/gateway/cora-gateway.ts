@@ -47,22 +47,26 @@ function normalizarStatusInvoice(body: unknown): StatusInvoice {
 /**
  * Monta o bloco payment_terms do Cora a partir das condições resolvidas.
  * Multa/juros/desconto só entram quando têm valor (omitidos quando nulos).
+ *
+ * Unidades do contrato v2 (developers.cora.com.br, confirmado 2026-07-10):
+ *   - fine.amount = valor FIXO em CENTAVOS (tem precedência!); fine.rate = percentual 0-100.
+ *     Nossa config é percentual → SEMPRE rate. (Bug em produção: multa 2% virou R$ 0,02.)
+ *   - interest.rate = percentual 0-100 (não existe interest.amount).
+ *   - discount = { type: 'FIXED' | 'PERCENT', value } — percentual usa type PERCENT.
+ *     descontoDias não tem campo equivalente no contrato v2; fica só no domínio.
  */
 function montarPaymentTerms(condicoes: CondicoesEmissao): Record<string, unknown> {
   const terms: Record<string, unknown> = {
     due_date: calcularVencimento(condicoes.diasVencimento),
   };
   if (condicoes.multaPercent != null) {
-    terms.fine = { amount: condicoes.multaPercent };
+    terms.fine = { rate: condicoes.multaPercent };
   }
   if (condicoes.jurosMesPercent != null) {
     terms.interest = { rate: condicoes.jurosMesPercent };
   }
   if (condicoes.descontoPercent != null) {
-    terms.discount = {
-      amount: condicoes.descontoPercent,
-      ...(condicoes.descontoDias != null ? { days: condicoes.descontoDias } : {}),
-    };
+    terms.discount = { type: 'PERCENT', value: condicoes.descontoPercent };
   }
   return terms;
 }

@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
-import type { Medico, DadosCobranca, PagadorTipo } from '@cobranca/shared';
+import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca } from '@cobranca/shared';
 import { tipoDoMedico, combinacaoClasseValida } from '@cobranca/shared';
 import type { NovoMedicoPayload } from '@/services/medicos';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
@@ -49,6 +49,19 @@ function temAlgumaCobranca(c: DadosCobranca): boolean {
   );
 }
 
+const CONDICOES_VAZIAS: CondicoesCobranca = {
+  diasVencimento: null,
+  multaPercent: null,
+  jurosMesPercent: null,
+  descontoPercent: null,
+  descontoDias: null,
+};
+
+/** True se algum override comercial foi preenchido (campo vazio herda o padrão global). */
+function temAlgumaCondicao(c: CondicoesCobranca): boolean {
+  return Object.values(c).some((v) => v != null);
+}
+
 interface Props {
   inicial?: Medico;
   exigeMotivo?: boolean;
@@ -76,6 +89,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   );
   const [motivo, setMotivo] = useState('');
   const [cobranca, setCobranca] = useState<DadosCobranca>(inicial?.cobranca ?? COBRANCA_VAZIA);
+  const [condicoes, setCondicoes] = useState<CondicoesCobranca>(inicial?.condicoes ?? CONDICOES_VAZIAS);
   const [cepBuscando, setCepBuscando] = useState(false);
 
   const combinacaoValida = useMemo(() => combinacaoClasseValida(form), [form]);
@@ -96,6 +110,11 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
 
   function setCob<K extends keyof DadosCobranca>(campo: K, valor: DadosCobranca[K]) {
     setCobranca((c) => ({ ...c, [campo]: valor }));
+  }
+
+  /** Campos numéricos de override: '' vira null (herda o padrão global). */
+  function setCond(campo: keyof CondicoesCobranca, valor: string) {
+    setCondicoes((c) => ({ ...c, [campo]: valor === '' ? null : Number(valor) }));
   }
 
   const maxDoc = cobranca.pagadorTipo === 'PF' ? 11 : 14;
@@ -126,6 +145,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
       ...form,
       modoMudancaData: isPediatra ? form.modoMudancaData : 'nao',
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
+      condicoes: temAlgumaCondicao(condicoes) ? condicoes : null,
     };
     // O servidor sempre exige motivo não-vazio (histórico é requisito não-opcional);
     // quando o campo não é exibido (1ª configuração), manda um motivo padrão em vez de ''.
@@ -383,6 +403,87 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           <p className="text-2xs text-cc-muted">
             Preencha todos os campos obrigatórios para habilitar a emissão de boleto deste médico.
             O endereço é preenchido automaticamente pelo CEP.
+          </p>
+        </div>
+      </details>
+
+      {/* Condições comerciais individuais (override do padrão global de Configurações) */}
+      <details
+        className="rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4"
+        open={!!inicial?.condicoes && temAlgumaCondicao(inicial.condicoes)}
+      >
+        <summary className="cursor-pointer text-sm font-semibold text-cc-ink">
+          Condições do boleto <span className="font-normal text-cc-muted">(override — vazio herda o padrão global)</span>
+        </summary>
+
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Field label="Vencimento (dias)" optional>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={condicoes.diasVencimento ?? ''}
+                onChange={(e) => setCond('diasVencimento', e.target.value)}
+                className="input"
+                placeholder="Padrão global"
+              />
+            </Field>
+
+            <Field label="Multa (%)" optional>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={condicoes.multaPercent ?? ''}
+                onChange={(e) => setCond('multaPercent', e.target.value)}
+                className="input"
+                placeholder="Padrão global"
+              />
+            </Field>
+
+            <Field label="Juros ao mês (%)" optional>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={condicoes.jurosMesPercent ?? ''}
+                onChange={(e) => setCond('jurosMesPercent', e.target.value)}
+                className="input"
+                placeholder="Padrão global"
+              />
+            </Field>
+
+            <Field label="Desconto (%)" optional>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={condicoes.descontoPercent ?? ''}
+                onChange={(e) => setCond('descontoPercent', e.target.value)}
+                className="input"
+                placeholder="Padrão global"
+              />
+            </Field>
+
+            <Field label="Desconto até (dias)" optional>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={condicoes.descontoDias ?? ''}
+                onChange={(e) => setCond('descontoDias', e.target.value)}
+                className="input"
+                placeholder="Padrão global"
+              />
+            </Field>
+          </div>
+          <p className="text-2xs text-cc-muted">
+            Deixe em branco para herdar o padrão de Configurações. Preencha apenas o que este
+            médico tem de diferente — ex.: vencimento em 45 dias em vez do padrão.
           </p>
         </div>
       </details>
