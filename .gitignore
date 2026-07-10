@@ -26,3 +26,6 @@ test-results/
 .claude/
 .vercel
 .env*
+
+# Estado runtime do SDC lean (nao versionar)
+.aiox/

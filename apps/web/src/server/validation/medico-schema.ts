@@ -1,9 +1,12 @@
 // Schemas Zod de validação de input das rotas de médico (architecture: Input Validation).
 import { z } from 'zod';
+import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 
 export const statusHapvidaSchema = z.enum(['credenciado', 'nao_credenciado', 'nenhum']);
 export const modoMudancaDataSchema = z.enum(['sim', 'nao']);
 export const modoCobrancaSchema = z.enum(['faixa_guias', 'percentual_producao']);
+// Conta emissora (Story 7.1, QA-711-2) — espelha a CHECK da migration 0021.
+export const contaEmissoraSchema = z.enum(CONTAS_EMISSORAS_VALIDAS);
 export const pagadorTipoSchema = z.enum(['PF', 'PJ']);
 
 /**
@@ -79,6 +82,9 @@ export const novoMedicoSchema = z
     // Modo de cobrança (Story 6.2) — percentual 0.01–100 com 2 casas (numeric(5,2) no banco).
     modoCobranca: modoCobrancaSchema.default('faixa_guias'),
     percentualProducao: z.number().min(0.01).max(100).nullable().optional().default(null),
+    // Opcional SEM default: ausente → default 'mc' do banco (insert sem a coluna funciona
+    // inclusive pré-migration 0021, mesmo padrão do criarBoleto).
+    contaEmissora: contaEmissoraSchema.optional(),
     colaboradorResponsavel: z.string().nullable().optional().default(null),
     ativo: z.boolean().default(true),
     // Bloco de cobrança é opcional — médico pode ser salvo e completado depois.
@@ -98,6 +104,7 @@ export const atualizarMedicoSchema = z
     modoMudancaData: modoMudancaDataSchema.optional(),
     modoCobranca: modoCobrancaSchema.optional(),
     percentualProducao: z.number().min(0.01).max(100).nullable().optional(),
+    contaEmissora: contaEmissoraSchema.optional(),
     colaboradorResponsavel: z.string().nullable().optional(),
     ativo: z.boolean().optional(),
     necessitaConfiguracao: z.boolean().optional(),

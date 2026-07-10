@@ -6,8 +6,9 @@
 
 export type ContaEmissora = 'mc' | 'cavalcante_viana';
 
-/** Todas as contas válidas — fonte única para CHECKs de UI/Zod (espelha a CHECK do banco). */
-export const CONTAS_EMISSORAS_VALIDAS: readonly ContaEmissora[] = ['mc', 'cavalcante_viana'];
+/** Todas as contas válidas — fonte única para CHECKs de UI/Zod (espelha a CHECK do banco).
+ *  Tupla `as const` para permitir uso direto em z.enum (QA-711-2). */
+export const CONTAS_EMISSORAS_VALIDAS = ['mc', 'cavalcante_viana'] as const satisfies readonly ContaEmissora[];
 
 /** Conta usada no backfill e como fallback seguro pré-migration (comportamento original). */
 export const CONTA_EMISSORA_DEFAULT: ContaEmissora = 'mc';

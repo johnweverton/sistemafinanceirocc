@@ -1,0 +1,42 @@
+# QA Gate — Story 7.1 (Fundação multi-conta) — iteração 1
+storyId: "7.1"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-10"
+verdict: FAIL
+notes: >
+  Anti-self-review: revisão na mesma sessão do @dev (personas distintas, /full-sdc).
+  Suíte 274 verde, lint/typecheck OK — mas a migration quebraria NA APLICAÇÃO (não é
+  coberta por teste automatizado; achado por inspeção da regra do Postgres).
+issues:
+  - id: QA-711-1
+    severity: critical
+    category: code
+    description: >
+      Migration 0021: `create or replace view vw_recebiveis` insere `conta_emissora`
+      ANTES de `status_derivado`. O Postgres só permite adicionar colunas NO FINAL da
+      lista em CREATE OR REPLACE VIEW — a migration falha com "cannot change name of
+      view column" quando o dono rodar no Supabase (AC 1 não cumprido).
+    recommendation: >
+      Mover `b.conta_emissora` para a ÚLTIMA posição do SELECT (após status_derivado).
+      RecebivelRow não depende de ordem (mapeio por nome) — só a view exige.
+  - id: QA-711-2
+    severity: high
+    category: requirements
+    description: >
+      AC 2 exige "Zod schemas atualizados": novoMedicoSchema/atualizarMedicoSchema
+      (medico-schema.ts) não aceitam `contaEmissora` — e atualizarMedicoSchema é
+      .strict(), logo um update com o campo será REJEITADO (400). A 7.3 (UI) consome
+      essa mesma rota; sem o schema, a fundação não entrega o contrato prometido.
+    recommendation: >
+      contaEmissoraSchema = z.enum(CONTAS_EMISSORAS_VALIDAS); default('mc') no novo,
+      .optional() no atualizar. Teste de validação cobrindo aceitação e rejeição de
+      valor inválido.
+  - id: QA-711-3
+    severity: low
+    category: code
+    description: >
+      getCredenciaisConta: var prefixada definida como STRING VAZIA não cai no fallback
+      legado (?? não cobre '') — resulta em erro claro nomeando a var. Comportamento
+      seguro (fail-fast, sem credencial errada), apenas documentado.
+    recommendation: Sem ação. Reavaliar só se aparecer caso real de env vazia na Vercel.

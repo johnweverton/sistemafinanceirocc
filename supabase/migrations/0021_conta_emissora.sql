@@ -49,14 +49,16 @@ select
   b.pago_em                  as pago_em,
   b.valor_pago               as valor_pago,
   b.emitido_em               as emitido_em,
-  b.conta_emissora           as conta_emissora,
   case
     when b.pago_em is not null or b.status = 'pago' then 'pago'
     when b.status = 'cancelado'                     then 'cancelado'
     when b.vencimento is not null
          and b.vencimento < current_date            then 'vencido'
     else 'em_aberto'
-  end                        as status_derivado
+  end                        as status_derivado,
+  -- QA-711-1: coluna nova SEMPRE no FINAL — create or replace view não aceita
+  -- inserção no meio da lista (erro "cannot change name of view column").
+  b.conta_emissora           as conta_emissora
 from boletos b
   join execucao_resultados r on r.id = b.execucao_resultado_id
   join execucoes e           on e.id = r.execucao_id
