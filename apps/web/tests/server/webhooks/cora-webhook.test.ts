@@ -149,6 +149,88 @@ describe('Webhook Cora', () => {
     expect(mockRegistrarEvento).not.toHaveBeenCalled();
   });
 
+  // -------------------------------------------------------------------------
+  // Contrato REAL da notificação (hotfix 2026-07-10): corpo VAZIO + dados nos headers
+  // webhook-event-id / webhook-event-type / webhook-resource-id (doc oficial).
+  // -------------------------------------------------------------------------
+
+  /** Notificação no formato real da Cora: POST sem corpo, evento nos headers. */
+  function reqHeaders(headers: Record<string, string>): Request {
+    return new Request('http://localhost/api/webhooks/cora/sekret', {
+      method: 'POST',
+      headers,
+    });
+  }
+
+  it('notificação real (corpo vazio + headers) → extrai dos headers, reconsulta e dá baixa', async () => {
+    const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');
+    const resp = await POST(
+      reqHeaders({
+        'webhook-event-id': 'evt_lEhFeN5OQ90y4mIN1aj399CA',
+        'webhook-event-type': 'invoice.paid',
+        'webhook-resource-id': 'inv_zXmtr2n0RpmIwdjfnNokhA',
+      }),
+      { params: { secret: 'sekret' } },
+    );
+
+    expect(resp.status).toBe(200);
+    // Resposta no formato esperado pela Cora.
+    expect(await resp.json()).toMatchObject({ success: true });
+    // Idempotência ancorada no webhook-event-id NATIVO; auditoria guarda os headers
+    // (payload nunca fica mudo com corpo vazio).
+    expect(mockRegistrarEvento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventoId: 'evt_lEhFeN5OQ90y4mIN1aj399CA',
+        eventoTipo: 'invoice.paid',
+        idExterno: 'inv_zXmtr2n0RpmIwdjfnNokhA',
+        payload: expect.objectContaining({ _corpoVazio: true }),
+      }),
+    );
+    expect(mockConsultar).toHaveBeenCalledWith('inv_zXmtr2n0RpmIwdjfnNokhA');
+    expect(mockRegistrarBaixa).toHaveBeenCalledWith(
+      'inv_zXmtr2n0RpmIwdjfnNokhA',
+      expect.objectContaining({ status: 'pago' }),
+    );
+  });
+
+  it('reentrega da notificação real (mesmo webhook-event-id) → deduplica sem reprocessar', async () => {
+    mockRegistrarEvento.mockResolvedValue({ evento: { id: 'ev1' }, novo: false });
+    const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');
+    const resp = await POST(
+      reqHeaders({
+        'webhook-event-id': 'evt_repetido',
+        'webhook-event-type': 'invoice.paid',
+        'webhook-resource-id': 'inv_1',
+      }),
+      { params: { secret: 'sekret' } },
+    );
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toMatchObject({ success: true, deduped: true });
+    expect(mockConsultar).not.toHaveBeenCalled();
+    expect(mockRegistrarBaixa).not.toHaveBeenCalled();
+  });
+
+  it('headers têm precedência sobre o corpo quando ambos vêm', async () => {
+    const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');
+    await POST(
+      new Request('http://localhost/api/webhooks/cora/sekret', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'webhook-event-id': 'evt_header',
+          'webhook-event-type': 'invoice.paid',
+          'webhook-resource-id': 'inv_header',
+        },
+        body: JSON.stringify({ resource: { id: 'inv_corpo' }, event: 'invoice.canceled', event_id: 'evt_corpo' }),
+      }),
+      { params: { secret: 'sekret' } },
+    );
+    expect(mockRegistrarEvento).toHaveBeenCalledWith(
+      expect.objectContaining({ eventoId: 'evt_header', idExterno: 'inv_header' }),
+    );
+    expect(mockConsultar).toHaveBeenCalledWith('inv_header');
+  });
+
   it('evento órfão (id externo sem boleto) → 200 sem reconsulta (não há conta para consultar)', async () => {
     mockBuscarPorIdExterno.mockResolvedValue(null);
     const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');

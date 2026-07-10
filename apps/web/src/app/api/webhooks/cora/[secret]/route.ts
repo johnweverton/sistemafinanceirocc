@@ -31,8 +31,27 @@ function segredosBatem(recebido: string | undefined, esperado: string): boolean 
 }
 
 /**
- * Parser TOLERANTE do corpo do evento do Cora (formato real a confirmar). Extrai o id da invoice,
- * o id do evento (idempotência) e o tipo. Isolado para ajuste único quando a API for confirmada.
+ * Extrai o evento dos HEADERS da notificação — contrato REAL confirmado na doc oficial
+ * ("Exemplo de POST da Notificação", pesquisa 2026-07-10): o POST da Cora chega com
+ * `content-length: 0` e os dados em `webhook-event-id` / `webhook-event-type` /
+ * `webhook-resource-id`. Isso explica os webhooks "vazios" recebidos em produção em
+ * 2026-07-10 — a rota só lia o corpo e perdia o idExterno.
+ */
+function extrairEventoDosHeaders(req: Request): {
+  idExterno: string | null;
+  eventoId: string | null;
+  eventoTipo: string | null;
+} {
+  return {
+    idExterno: req.headers.get('webhook-resource-id'),
+    eventoId: req.headers.get('webhook-event-id'),
+    eventoTipo: req.headers.get('webhook-event-type'),
+  };
+}
+
+/**
+ * Parser TOLERANTE do corpo do evento do Cora — FALLBACK quando os headers não vierem
+ * (formatos antigos/alternativos; ver extrairEventoDosHeaders para o contrato primário).
  */
 function extrairEvento(body: unknown): { idExterno: string | null; eventoId: string | null; eventoTipo: string | null } {
   const b = (body ?? {}) as Record<string, any>;
@@ -79,8 +98,8 @@ export async function POST(req: Request, { params }: { params: { secret: string 
   }
 
   // Lê como TEXTO primeiro: se o JSON falhar, o corpo cru fica na auditoria (boleto_eventos.payload)
-  // em vez de um {} mudo — em 2026-07-10 dois webhooks reais chegaram "vazios" e não deu para saber
-  // se a Cora mandou corpo não-JSON ou vazio de fato.
+  // em vez de um {} mudo. (Mistério dos webhooks "vazios" de 2026-07-10 RESOLVIDO: o corpo
+  // vazio é o contrato normal da Cora — os dados vêm nos headers.)
   let body: unknown = {};
   let corpoCru = '';
   try {
@@ -89,7 +108,19 @@ export async function POST(req: Request, { params }: { params: { secret: string 
   } catch {
     body = { _parseError: true, _raw: corpoCru.slice(0, 2000) };
   }
-  const { idExterno, eventoId, eventoTipo } = extrairEvento(body);
+
+  // Headers são a fonte PRIMÁRIA (contrato oficial); corpo é fallback campo a campo.
+  // O webhook-event-id nativo ancora a idempotência — melhor que a chave composta derivada.
+  const dosHeaders = extrairEventoDosHeaders(req);
+  const doCorpo = extrairEvento(body);
+  const idExterno = dosHeaders.idExterno ?? doCorpo.idExterno;
+  const eventoId = dosHeaders.eventoId ?? doCorpo.eventoId;
+  const eventoTipo = dosHeaders.eventoTipo ?? doCorpo.eventoTipo;
+
+  // Auditoria nunca fica muda: sem corpo, grava o snapshot dos headers do evento.
+  const payloadAuditoria = corpoCru
+    ? body
+    : { _corpoVazio: true, headers: dosHeaders };
 
   try {
     const boleto = idExterno ? await buscarBoletoPorIdExterno(idExterno) : null;
@@ -100,20 +131,22 @@ export async function POST(req: Request, { params }: { params: { secret: string 
       idExterno,
       eventoId,
       eventoTipo,
-      payload: body,
+      payload: payloadAuditoria,
     });
-    
+
     // Achado I-2: Log estruturado
     logWebhookReceived('cora', eventoTipo, !novo);
-    
-    if (!novo) return Response.json({ ok: true, deduped: true });
+
+    // `success: true` é o formato de resposta esperado pela Cora (doc oficial);
+    // os campos extras (ok/deduped/...) são nossos, para observabilidade.
+    if (!novo) return Response.json({ success: true, ok: true, deduped: true });
 
     // Evento sem id externo — nada a conciliar (fica logado para investigação).
-    if (!idExterno) return Response.json({ ok: true, semIdExterno: true });
+    if (!idExterno) return Response.json({ success: true, ok: true, semIdExterno: true });
 
     // Evento órfão (id externo sem boleto nosso): sem boleto não há conta emissora para
     // reconsultar (Story 7.2) — registra e encerra, como qualquer evento não conciliável.
-    if (!boleto) return Response.json({ ok: true, semBoleto: true });
+    if (!boleto) return Response.json({ success: true, ok: true, semBoleto: true });
 
     // 3. Reconsulta na Cora (fonte da verdade — não confiar no corpo do webhook), SEMPRE
     //    pela conta que emitiu o boleto — nunca a do secret nem a atual do médico.
@@ -132,11 +165,11 @@ export async function POST(req: Request, { params }: { params: { secret: string 
       });
     }
 
-    return Response.json({ ok: true });
+    return Response.json({ success: true, ok: true });
   } catch (e) {
     // 4. Erro interno: loga mas responde 200 (o Cora não deve reenviar em loop).
     logSecurityError('WEBHOOK_CORA_ERRO', e, { webhook: 'cora' });
-    return Response.json({ ok: true });
+    return Response.json({ success: true, ok: true });
   }
 }
 
