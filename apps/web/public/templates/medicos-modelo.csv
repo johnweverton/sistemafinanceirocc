@@ -1,4 +1,4 @@
-cpf,nome,especialidade,status_hapvida,faz_outros_hospitais,faz_imobilizacoes,modo_mudanca_data,colaborador_responsavel,pagador_tipo,pagador_documento,pagador_nome,email,cep,logradouro,numero,complemento,bairro,cidade,uf
-12345678900,Dr. Fulano de Tal,Cardiologia,credenciado,nao,nao,nao,Maria,PF,12345678900,Dr. Fulano de Tal,fulano@exemplo.com,60000000,Rua das Flores,100,Sala 2,Centro,Fortaleza,CE
-98765432100,Dra. Ciclana,Pediatria,nao_credenciado,nao,nao,nao,Joao,PJ,12345678000199,Clinica Ciclana LTDA,contato@ciclana.com,60110000,Avenida Beira Mar,2000,,Meireles,Fortaleza,CE
-11122233344,Dr. Beltrano,Ortopedia,nenhum,sim,sim,nao,Maria,,,,,,,,,,,
+cpf,nome,especialidade,status_hapvida,faz_outros_hospitais,faz_imobilizacoes,modo_mudanca_data,colaborador_responsavel,pagador_tipo,pagador_documento,pagador_nome,email,cep,logradouro,numero,complemento,bairro,cidade,uf,conta_emissora
+12345678900,Dr. Fulano de Tal,Cardiologia,credenciado,nao,nao,nao,Maria,PF,12345678900,Dr. Fulano de Tal,fulano@exemplo.com,60000000,Rua das Flores,100,Sala 2,Centro,Fortaleza,CE,mc
+98765432100,Dra. Ciclana,Pediatria,nao_credenciado,nao,nao,nao,Joao,PJ,12345678000199,Clinica Ciclana LTDA,contato@ciclana.com,60110000,Avenida Beira Mar,2000,,Meireles,Fortaleza,CE,cavalcante_viana
+11122233344,Dr. Beltrano,Ortopedia,nenhum,sim,sim,nao,Maria,,,,,,,,,,,,

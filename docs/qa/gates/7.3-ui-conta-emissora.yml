@@ -1,0 +1,37 @@
+# QA Gate — Story 7.3 (UI da conta emissora) — iteração 1
+storyId: "7.3"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-10"
+verdict: CONCERNS
+notes: >
+  ACs 1-3/5/6 verificados com testes (294 verdes, typecheck/lint OK). Dois MEDIUM de
+  completude exigem fix antes do close (baratos; apply-qa-fixes acionado). Anti-self-review:
+  mesma sessão do @dev (personas distintas, /full-sdc).
+issues:
+  - id: QA-731-1
+    severity: medium
+    category: requirements
+    description: >
+      AC 4: o parse aceita a coluna conta_emissora, mas os MODELOS baixáveis
+      (public/templates/medicos-modelo.csv e .xlsx, linkados na tela de médicos) não a
+      incluem — a operadora não tem como descobrir a coluna; a via de classificação em
+      massa da virada fica invisível.
+    recommendation: Adicionar a coluna (com exemplos mc/cavalcante_viana/vazio) nos dois modelos.
+  - id: QA-731-2
+    severity: medium
+    category: tests
+    description: >
+      Remediação D-721 (503 CONTA_NAO_CONFIGURADA na emissão) sem teste de rota — o
+      caminho de erro que protege a virada da CV não está coberto.
+    recommendation: >
+      Teste em boleto-emissao.test.ts: factory lança → resposta 503 com código
+      CONTA_NAO_CONFIGURADA e mensagem nomeando as vars.
+  - id: OBS-732
+    severity: low
+    category: code
+    description: >
+      Diálogos (EmitirBoletoDialog e pré-existentes) sem role="dialog"/aria-modal/focus-trap.
+      Padrão consistente do projeto — aceito como débito de acessibilidade GLOBAL, fora do
+      escopo desta story.
+    recommendation: Candidato a story de acessibilidade transversal futura.

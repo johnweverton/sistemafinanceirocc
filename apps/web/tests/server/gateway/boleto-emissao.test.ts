@@ -358,8 +358,37 @@ describe('Lógica de emissão de boleto', () => {
     expect(mockCriarBoleto).toHaveBeenCalled();
   });
 
+  // QA-731-2 (débito D-721 do gate 7.2): conta sem credenciais não pode virar 500 mudo.
+  it('conta emissora sem credenciais → 503 CONTA_NAO_CONFIGURADA com a mensagem original', async () => {
+    mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
+    // userId próprio: o rate limiter (10/min) é estado de módulo e conta por usuário —
+    // reutilizar 'user-123' estoura o limite conforme o arquivo ganha testes.
+    mockRequireRole.mockResolvedValue({ userId: 'user-qa-731', papel: 'admin', colaboradorResponsavel: null });
+    simularResultadoBanco();
+    mockBuscarMedico.mockResolvedValue({ ...medicoFixture(), contaEmissora: 'cavalcante_viana' });
+    mockCriarGateway.mockImplementationOnce(() => {
+      throw new Error(
+        "Credenciais da conta emissora 'cavalcante_viana' não configuradas. Variáveis faltantes: CORA_CV_CERT_BASE64.",
+      );
+    });
+
+    const { POST } = await import('@/app/api/boletos/emitir/route');
+    const req = criarRequest({ execucaoResultadoId: '00000000-0000-0000-0000-000000000001' });
+    const resp = await POST(req, { params: {} });
+
+    expect(resp.status).toBe(503);
+    const body = await resp.json();
+    expect(body.error.code).toBe('CONTA_NAO_CONFIGURADA');
+    expect(body.error.message).toContain('cavalcante_viana');
+    // Nada foi emitido nem persistido — falha segura ANTES do gateway.
+    expect(mockGatewayEmitir).not.toHaveBeenCalled();
+    expect(mockCriarBoleto).not.toHaveBeenCalled();
+  });
+
   it('emite pela conta emissora do médico e grava a conta no boleto (Story 7.2)', async () => {
     mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
+    // userId próprio pelo mesmo motivo do teste acima (rate limiter por usuário).
+    mockRequireRole.mockResolvedValue({ userId: 'user-story-72', papel: 'admin', colaboradorResponsavel: null });
     simularResultadoBanco();
     mockBuscarMedico.mockResolvedValue({ ...medicoFixture(), contaEmissora: 'cavalcante_viana' });
 
