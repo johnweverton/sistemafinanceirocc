@@ -158,8 +158,10 @@ export const POST = withErrorHandler(async (req) => {
     );
   }
 
-  // 9. Emitir via gateway com o pagador completo.
-  const { gateway, nome: nomeGateway } = criarBoletoGateway();
+  // 9. Emitir via gateway com o pagador completo, pela CONTA EMISSORA do médico (Story 7.2):
+  //    o beneficiário do boleto é a empresa com quem o médico tem contrato (MC/Cavalcante Viana).
+  const contaEmissora = medico.contaEmissora;
+  const { gateway, nome: nomeGateway } = criarBoletoGateway(contaEmissora);
   const emissao = await gateway.emitir({
     execucaoResultadoId: body.execucaoResultadoId,
     competencia: resultadoRow.execucoes.competencia,
@@ -184,6 +186,9 @@ export const POST = withErrorHandler(async (req) => {
     emitidoPor: sessao.userId,
     payloadResposta: emissao.payloadResposta,
     vencimento: calcularVencimento(condicoes.diasVencimento),
+    // Desnormalização proposital (arquitetura §3): o boleto grava a conta que o emitiu —
+    // cancelamento/reconsulta futuros usam ESTA, mesmo se o médico trocar de empresa.
+    contaEmissora,
   });
 
   if (boleto.status === 'emitido') {
@@ -210,7 +215,7 @@ export const POST = withErrorHandler(async (req) => {
           if (cobranca.email) {
             try {
               const emailGtw = new EmailGateway();
-              await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl);
+              await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl, contaEmissora);
               await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
             } catch (err: any) {
               await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

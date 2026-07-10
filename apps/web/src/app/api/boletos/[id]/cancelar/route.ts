@@ -71,7 +71,9 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
     throw new ApiError(422, 'Boleto sem id externo do gateway — verificar auditoria.', 'SEM_ID_EXTERNO');
   }
 
-  const { gateway } = criarBoletoGateway();
+  // Conta do BOLETO, nunca a atual do médico (Story 7.2, arquitetura §2-D3): se o médico
+  // trocou de empresa, o boleto antigo continua cancelável pela conta que o emitiu.
+  const { gateway } = criarBoletoGateway(boleto.contaEmissora);
 
   // 5. Reconsulta na Cora (fonte da verdade) — pagamento pode ter ocorrido entre a tela e o clique.
   const invoice = await gateway.consultarInvoice(boleto.idExterno);

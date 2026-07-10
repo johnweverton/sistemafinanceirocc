@@ -6,18 +6,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { DadosEmissaoBoleto } from '@cobranca/shared';
 
-// Mock do env antes de importar o módulo.
-vi.mock('@/lib/env', () => ({
-  getServerEnv: vi.fn(() => ({
-    SUPABASE_SERVICE_ROLE_KEY: 'test-key',
-    CORA_CERT_BASE64: Buffer.from('FAKE-CERT-PEM').toString('base64'),
-    CORA_KEY_BASE64: Buffer.from('FAKE-KEY-PEM').toString('base64'),
-    CORA_API_URL: 'https://api.test.cora.com.br',
-    CORA_CLIENT_ID: 'test-client-id',
-    GATEWAY_EMISSAO_HABILITADA: 'true',
-    BOLETO_GATEWAY: 'cora',
-  })),
-}));
+// Story 7.2: o gateway não lê mais env — credenciais são injetadas no construtor
+// (uma instância = uma conta emissora). Mesmos valores fake de antes.
+const CRED_TESTE = {
+  certBase64: Buffer.from('FAKE-CERT-PEM').toString('base64'),
+  keyBase64: Buffer.from('FAKE-KEY-PEM').toString('base64'),
+  apiUrl: 'https://api.test.cora.com.br',
+  clientId: 'test-client-id',
+  webhookSecret: null,
+};
 
 // Mock do node:https para interceptar requests mTLS sem rede.
 const mockRequest = vi.fn();
@@ -107,7 +104,7 @@ describe('CoraGateway', () => {
       .mockImplementationOnce(simularResposta(201, { id: 'inv_abc123' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     await gateway.emitir(dadosPadrao);
 
     // Verifica que o Agent foi criado com cert/key
@@ -126,7 +123,7 @@ describe('CoraGateway', () => {
       .mockImplementationOnce(simularResposta(201, { id: 'inv_abc123' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     await gateway.emitir(dadosPadrao);
 
     // 1ª chamada = token; 2ª = invoice. Path v1 (/invoices) devolve 404 em produção.
@@ -147,7 +144,7 @@ describe('CoraGateway', () => {
       .mockImplementationOnce(simularResposta(201, { id: 'inv_abc123', status: 'PENDING' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     const resultado = await gateway.emitir(dadosPadrao);
 
     expect(resultado.status).toBe('emitido');
@@ -160,7 +157,7 @@ describe('CoraGateway', () => {
     );
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     const resultado = await gateway.emitir(dadosPadrao);
 
     expect(resultado.status).toBe('falha');
@@ -175,7 +172,7 @@ describe('CoraGateway', () => {
       .mockImplementationOnce(simularResposta(400, { error: 'invalid_amount' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     const resultado = await gateway.emitir(dadosPadrao);
 
     expect(resultado.status).toBe('falha');
@@ -190,7 +187,7 @@ describe('CoraGateway', () => {
       .mockImplementationOnce(simularResposta(500, { error: 'internal_server_error' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     const resultado = await gateway.emitir(dadosPadrao);
 
     expect(resultado.status).toBe('falha');
@@ -232,7 +229,7 @@ describe('CoraGateway', () => {
       );
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     await gateway.emitir({ ...dadosPadrao, valor: 1234.56 });
 
     expect(invoicePayload.amount).toBe(123456); // centavos
@@ -294,7 +291,7 @@ describe('CoraGateway', () => {
       );
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     await gateway.emitir({
       ...dadosPadrao,
       pagador: { nome: 'Dr. Teste', documento: '12345678901', tipo: 'CPF' },
@@ -337,7 +334,7 @@ describe('CoraGateway', () => {
       );
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const gateway = new CoraGateway();
+    const gateway = new CoraGateway(CRED_TESTE);
     await gateway.emitir({
       ...dadosPadrao,
       pagador: { ...dadosPadrao.pagador, tipo: 'CNPJ', documento: '12345678000199' },
@@ -368,7 +365,7 @@ describe('CoraGateway.cancelar (Story 6.1)', () => {
       .mockImplementationOnce(simularResposta(200, { id: 'inv_1', status: 'CANCELLED' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().cancelar('inv_1');
+    const r = await new CoraGateway(CRED_TESTE).cancelar('inv_1');
     expect(r.sucesso).toBe(true);
   });
 
@@ -378,7 +375,7 @@ describe('CoraGateway.cancelar (Story 6.1)', () => {
       .mockImplementationOnce(simularResposta(204, ''));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().cancelar('inv_204');
+    const r = await new CoraGateway(CRED_TESTE).cancelar('inv_204');
     expect(r.sucesso).toBe(true);
     expect(r.payloadResposta).toBeNull();
   });
@@ -389,7 +386,7 @@ describe('CoraGateway.cancelar (Story 6.1)', () => {
       .mockImplementationOnce(simularResposta(200, ''));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().cancelar('inv_1');
+    const r = await new CoraGateway(CRED_TESTE).cancelar('inv_1');
     expect(r.sucesso).toBe(true);
     expect(r.payloadResposta).toBeNull();
   });
@@ -400,7 +397,7 @@ describe('CoraGateway.cancelar (Story 6.1)', () => {
       .mockImplementationOnce(simularResposta(400, { error: 'invoice_already_paid' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().cancelar('inv_pago');
+    const r = await new CoraGateway(CRED_TESTE).cancelar('inv_pago');
     expect(r.sucesso).toBe(false);
     expect(r.payloadResposta).toEqual(
       expect.objectContaining({ httpStatus: 400 }),
@@ -421,7 +418,7 @@ describe('CoraGateway.cancelar (Story 6.1)', () => {
       }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().cancelar('inv_x');
+    const r = await new CoraGateway(CRED_TESTE).cancelar('inv_x');
     expect(r.sucesso).toBe(false);
     expect(r.payloadResposta).toEqual(
       expect.objectContaining({ error: expect.stringContaining('ECONNRESET') }),
@@ -443,7 +440,7 @@ describe('CoraGateway.consultarInvoice (Story 4.2)', () => {
       .mockImplementationOnce(simularResposta(200, { id: 'inv_1', status: 'PAID', total_paid: 150000, paid_at: '2026-06-15T12:00:00Z' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().consultarInvoice('inv_1');
+    const r = await new CoraGateway(CRED_TESTE).consultarInvoice('inv_1');
     expect(r.status).toBe('paid');
     expect(r.valorPago).toBe(1500);
     expect(r.pagoEm).toBe('2026-06-15T12:00:00Z');
@@ -455,7 +452,7 @@ describe('CoraGateway.consultarInvoice (Story 4.2)', () => {
       .mockImplementationOnce(simularResposta(200, { id: 'inv_1', status: 'CANCELLED' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().consultarInvoice('inv_1');
+    const r = await new CoraGateway(CRED_TESTE).consultarInvoice('inv_1');
     expect(r.status).toBe('canceled');
   });
 
@@ -465,7 +462,7 @@ describe('CoraGateway.consultarInvoice (Story 4.2)', () => {
       .mockImplementationOnce(simularResposta(404, { error: 'not_found' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
-    const r = await new CoraGateway().consultarInvoice('inv_x');
+    const r = await new CoraGateway(CRED_TESTE).consultarInvoice('inv_x');
     expect(r.status).toBe('unknown');
     expect(r.valorPago).toBeNull();
   });

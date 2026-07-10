@@ -1,8 +1,14 @@
 // POST /api/webhooks/cora/[secret] — recebe o webhook de pagamento do Cora e dá baixa no boleto.
 // Rota PÚBLICA (sem sessão; excluída do middleware). Segurança em profundidade (Épico 4, §3/§5.2/§7):
-//   1. secret no path comparado em tempo constante (CORA_WEBHOOK_SECRET).
+//   1. secret no path comparado em tempo constante contra o secret de CADA conta emissora
+//      (Story 7.2): MC (CORA_MC_WEBHOOK_SECRET ?? CORA_WEBHOOK_SECRET legado) e CV
+//      (CORA_CV_WEBHOOK_SECRET). Qualquer match autentica; a conta da RECONSULTA não vem
+//      do secret — vem do boleto (ver 3).
 //   2. idempotência via boleto_eventos.evento_id (reentrega do Cora não reprocessa).
 //   3. RECONSULTA na API Cora (consultarInvoice) — fonte da verdade; NUNCA confia no corpo.
+//      A conta usada é a GRAVADA NO BOLETO (boletos.conta_emissora, arquitetura §2-D3);
+//      evento cujo id externo não casa com boleto nenhum não é reconsultado (não há como
+//      saber a conta) — fica logado em boleto_eventos para investigação, como antes.
 //   4. sempre responde 200 (exceto 401 de secret inválido) para não gerar tempestade de retries.
 import { timingSafeEqual } from 'node:crypto';
 import { getServerEnv } from '@/lib/env';
@@ -53,10 +59,21 @@ function extrairEvento(body: unknown): { idExterno: string | null; eventoId: str
   return { idExterno, eventoId, eventoTipo };
 }
 
+// Warn único por instância: secrets iguais entre contas anulam a separação (mitigação
+// de risco da Story 7.2) — não bloqueia, mas fica visível no log da function.
+let avisouSecretsIguais = false;
+
 export async function POST(req: Request, { params }: { params: { secret: string } }) {
   const env = getServerEnv();
-  // 1. Secret do path (constant-time). Sem secret configurado ou divergente → 401.
-  if (!env.CORA_WEBHOOK_SECRET || !segredosBatem(params.secret, env.CORA_WEBHOOK_SECRET)) {
+  // 1. Secret do path (constant-time) contra o secret de cada conta emissora (Story 7.2).
+  const secretMc = env.CORA_MC_WEBHOOK_SECRET ?? env.CORA_WEBHOOK_SECRET ?? null;
+  const secretCv = env.CORA_CV_WEBHOOK_SECRET ?? null;
+  if (secretMc && secretCv && secretMc === secretCv && !avisouSecretsIguais) {
+    avisouSecretsIguais = true;
+    console.warn('[Webhook Cora] Secrets de MC e CV são IGUAIS — configure um secret distinto por conta.');
+  }
+  const secrets = [secretMc, secretCv].filter((s): s is string => s != null);
+  if (secrets.length === 0 || !secrets.some((s) => segredosBatem(params.secret, s))) {
     logAuthFailure(req, 'Secret do webhook Cora inválido ou ausente');
     return new Response('Unauthorized', { status: 401 });
   }
@@ -94,8 +111,13 @@ export async function POST(req: Request, { params }: { params: { secret: string 
     // Evento sem id externo — nada a conciliar (fica logado para investigação).
     if (!idExterno) return Response.json({ ok: true, semIdExterno: true });
 
-    // 3. Reconsulta na Cora (fonte da verdade — não confiar no corpo do webhook).
-    const { gateway } = criarBoletoGateway();
+    // Evento órfão (id externo sem boleto nosso): sem boleto não há conta emissora para
+    // reconsultar (Story 7.2) — registra e encerra, como qualquer evento não conciliável.
+    if (!boleto) return Response.json({ ok: true, semBoleto: true });
+
+    // 3. Reconsulta na Cora (fonte da verdade — não confiar no corpo do webhook), SEMPRE
+    //    pela conta que emitiu o boleto — nunca a do secret nem a atual do médico.
+    const { gateway } = criarBoletoGateway(boleto.contaEmissora);
     const invoice = await gateway.consultarInvoice(idExterno);
 
     let statusBaixa: StatusBoleto | null = null;

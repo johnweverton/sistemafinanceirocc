@@ -30,11 +30,13 @@ vi.mock('@/server/repositories/boleto-repository', () => ({
 }));
 
 const mockGatewayEmitir = vi.fn();
+// Story 7.2: captura a conta emissora passada à factory.
+const mockCriarGateway = vi.fn(() => ({
+  gateway: { emitir: mockGatewayEmitir },
+  nome: 'mock' as const,
+}));
 vi.mock('@/server/gateway/boleto-gateway-factory', () => ({
-  criarBoletoGateway: () => ({
-    gateway: { emitir: mockGatewayEmitir },
-    nome: 'mock' as const,
-  }),
+  criarBoletoGateway: (...args: unknown[]) => mockCriarGateway(...(args as [])),
 }));
 
 const mockSupabaseFrom = vi.fn();
@@ -75,6 +77,7 @@ function medicoFixture(cobranca: unknown = cobrancaCompletaFixture) {
     id: '00000000-0000-0000-0000-000000000010',
     cpf: '12345678901',
     nome: 'Dr. Teste',
+    contaEmissora: 'mc' as const,
     cobranca,
     condicoes: null,
   };
@@ -353,5 +356,23 @@ describe('Lógica de emissão de boleto', () => {
 
     // Auditoria: boleto com falha foi persistido.
     expect(mockCriarBoleto).toHaveBeenCalled();
+  });
+
+  it('emite pela conta emissora do médico e grava a conta no boleto (Story 7.2)', async () => {
+    mockEnv.GATEWAY_EMISSAO_HABILITADA = 'true';
+    simularResultadoBanco();
+    mockBuscarMedico.mockResolvedValue({ ...medicoFixture(), contaEmissora: 'cavalcante_viana' });
+
+    const { POST } = await import('@/app/api/boletos/emitir/route');
+    const req = criarRequest({ execucaoResultadoId: '00000000-0000-0000-0000-000000000001' });
+    const resp = await POST(req, { params: {} });
+
+    expect(resp.status).toBe(201);
+    // Factory recebe a conta do MÉDICO (beneficiário correto do boleto).
+    expect(mockCriarGateway).toHaveBeenCalledWith('cavalcante_viana');
+    // Desnormalização: o boleto persiste a conta que o emitiu (arquitetura §3).
+    expect(mockCriarBoleto).toHaveBeenCalledWith(
+      expect.objectContaining({ contaEmissora: 'cavalcante_viana' }),
+    );
   });
 });

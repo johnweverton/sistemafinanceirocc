@@ -22,14 +22,16 @@ vi.mock('@/server/repositories/boleto-repository', () => ({
 
 const mockConsultarInvoice = vi.fn();
 const mockGatewayCancelar = vi.fn();
+// Story 7.2: captura a conta emissora passada à factory (deve ser a do BOLETO).
+const mockCriarGateway = vi.fn(() => ({
+  gateway: {
+    consultarInvoice: (...args: unknown[]) => mockConsultarInvoice(...args),
+    cancelar: (...args: unknown[]) => mockGatewayCancelar(...args),
+  },
+  nome: 'mock',
+}));
 vi.mock('@/server/gateway/boleto-gateway-factory', () => ({
-  criarBoletoGateway: () => ({
-    gateway: {
-      consultarInvoice: (...args: unknown[]) => mockConsultarInvoice(...args),
-      cancelar: (...args: unknown[]) => mockGatewayCancelar(...args),
-    },
-    nome: 'mock',
-  }),
+  criarBoletoGateway: (...args: unknown[]) => mockCriarGateway(...(args as [])),
 }));
 
 import { POST } from '@/app/api/boletos/[id]/cancelar/route';
@@ -101,6 +103,16 @@ describe('POST /api/boletos/[id]/cancelar', () => {
     const res = await reqCancelar();
     expect(res.status).toBe(422);
     expect(mockGatewayCancelar).not.toHaveBeenCalled();
+  });
+
+  it('usa a conta emissora do BOLETO na factory — mesmo se o médico trocou de empresa (Story 7.2)', async () => {
+    mockBuscarBoleto.mockResolvedValue(boletoBase({ contaEmissora: 'cavalcante_viana' }));
+    mockConsultarInvoice.mockResolvedValue({ status: 'open', valorPago: null, pagoEm: null });
+    mockGatewayCancelar.mockResolvedValue({ sucesso: true, payloadResposta: {} });
+    mockCancelarBoleto.mockResolvedValue(boletoBase({ status: 'cancelado', contaEmissora: 'cavalcante_viana' }));
+    const res = await reqCancelar();
+    expect(res.status).toBe(200);
+    expect(mockCriarGateway).toHaveBeenCalledWith('cavalcante_viana');
   });
 
   it('corrida: reconsulta devolve paid → sincroniza baixa e recusa com 409', async () => {

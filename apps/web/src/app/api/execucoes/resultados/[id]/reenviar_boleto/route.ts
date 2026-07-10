@@ -66,7 +66,9 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
       if (cobranca.email) {
         try {
           const emailGtw = new EmailGateway();
-          await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl);
+          // Conta do BOLETO (Story 7.2): reenvio de boleto existente é assinado pela
+          // empresa que o emitiu, mesmo se o médico trocou de conta depois.
+          await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl, boleto.contaEmissora);
           await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
         } catch (err: any) {
           await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

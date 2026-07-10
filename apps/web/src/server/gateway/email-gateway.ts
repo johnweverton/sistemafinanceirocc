@@ -1,5 +1,7 @@
 import nodemailer from 'nodemailer';
+import type { ContaEmissora } from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
+import { CONTAS_EMISSORAS } from './contas-emissoras';
 
 export class EmailGateway {
   private transporter: nodemailer.Transporter | null = null;
@@ -37,10 +39,14 @@ export class EmailGateway {
 
   /**
    * Envia o boleto com o PDF em anexo e um link de backup.
+   * O remetente/cabeçalho usam o nome da CONTA EMISSORA do boleto (Story 7.2, QA-711 do
+   * Épico 7): o médico da Cavalcante Viana não pode receber e-mail assinado por outra
+   * empresa — coerência entre beneficiário do boleto e quem fala com ele.
    */
-  async enviarBoleto(paraEmail: string, nomeCliente: string, pdfUrl: string) {
+  async enviarBoleto(paraEmail: string, nomeCliente: string, pdfUrl: string, conta: ContaEmissora) {
+    const nomeEmpresa = CONTAS_EMISSORAS[conta].nomeExibicao;
     if (!this.transporter) {
-      console.log(`[Mock Email] Simulando envio de boleto para ${paraEmail} (Anexo URL: ${pdfUrl})`);
+      console.log(`[Mock Email] Simulando envio de boleto (${nomeEmpresa}) para ${paraEmail} (Anexo URL: ${pdfUrl})`);
       return;
     }
 
@@ -51,7 +57,7 @@ export class EmailGateway {
       const html = `
         <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5; max-width: 600px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #171717; padding: 24px; text-align: center;">
-             <h1 style="color: #fff; margin: 0; font-size: 20px;">Carmem Contabilidade</h1>
+             <h1 style="color: #fff; margin: 0; font-size: 20px;">${nomeEmpresa}</h1>
           </div>
           <div style="padding: 32px 24px;">
             <p style="font-size: 16px; margin-top: 0;">Olá, <strong>${nomeCliente}</strong></p>
@@ -73,9 +79,9 @@ export class EmailGateway {
       `;
 
       const info = await this.transporter.sendMail({
-        from: `"Carmem Contabilidade" <${remetente}>`,
+        from: `"${nomeEmpresa}" <${remetente}>`,
         to: paraEmail,
-        subject: 'Seu Boleto - Carmem Contabilidade',
+        subject: `Seu Boleto - ${nomeEmpresa}`,
         html,
         attachments: [
           {

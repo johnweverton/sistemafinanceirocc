@@ -2,7 +2,9 @@
 // Usa a API Banking da Cora (POST /v2/invoices) autenticada via certificado mTLS.
 //
 // Fluxo mTLS da Cora (documentação oficial):
-//   1. Certificado e chave privada são carregados de env vars base64.
+//   1. Certificado e chave privada chegam INJETADOS no construtor (Story 7.2): as
+//      credenciais são POR CONTA EMISSORA (MC / Cavalcante Viana) e resolvidas por
+//      getCredenciaisConta — este módulo não lê env. Uma instância = uma conta.
 //   2. Token OAuth2 obtido via POST /token com client_credentials + mTLS.
 //   3. Invoice criada via POST /v2/invoices com o bearer token + mTLS e
 //      header Idempotency-Key (UUID) obrigatório — sem ele/no path v1 a Cora
@@ -17,7 +19,7 @@ import type {
   StatusInvoice,
   ResultadoCancelamento,
 } from '@cobranca/shared';
-import { getServerEnv } from '@/lib/env';
+import type { CredenciaisConta } from '@/lib/env';
 import { calcularVencimento } from './vencimento';
 import https from 'node:https';
 import { randomUUID } from 'node:crypto';
@@ -161,23 +163,16 @@ export class CoraGateway implements BoletoGatewayPort {
   private cachedToken: string | null = null;
   private tokenExpiresAt = 0;
 
-  constructor() {
-    const env = getServerEnv();
-    if (!env.CORA_CERT_BASE64 || !env.CORA_KEY_BASE64) {
-      throw new Error(
-        'Certificado mTLS da Cora não configurado (CORA_CERT_BASE64 / CORA_KEY_BASE64). ' +
-          'Pendência externa: solicitar à Cora.',
-      );
-    }
-    if (!env.CORA_API_URL) {
-      throw new Error('CORA_API_URL não configurada.');
-    }
-    if (!env.CORA_CLIENT_ID) {
-      throw new Error('CORA_CLIENT_ID não configurado.');
-    }
-    this.agent = criarAgentMtls(env.CORA_CERT_BASE64, env.CORA_KEY_BASE64);
-    this.baseUrl = env.CORA_API_URL.replace(/\/$/, '');
-    this.clientId = env.CORA_CLIENT_ID;
+  /**
+   * Credenciais injetadas por conta emissora (Story 7.2) — presença/erro amigável é
+   * responsabilidade de getCredenciaisConta (nomeia conta e vars faltantes). Agent mTLS
+   * e cache de token são por instância, logo por conta: os tokens da MC e da CV nunca
+   * se misturam.
+   */
+  constructor(credenciais: CredenciaisConta) {
+    this.agent = criarAgentMtls(credenciais.certBase64, credenciais.keyBase64);
+    this.baseUrl = credenciais.apiUrl.replace(/\/$/, '');
+    this.clientId = credenciais.clientId;
   }
 
   /** Invalida o token cacheado (chamado quando uma request recebe 401 da Cora). */
