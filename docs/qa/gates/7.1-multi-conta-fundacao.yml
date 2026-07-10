@@ -1,9 +1,19 @@
-# QA Gate — Story 7.1 (Fundação multi-conta) — iteração 1
+# QA Gate — Story 7.1 (Fundação multi-conta) — iteração 2 (final)
 storyId: "7.1"
 gate: qa-gate
 reviewedBy: Quinn (@qa)
 reviewedAt: "2026-07-10"
-verdict: FAIL
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: FAIL
+    issues: [QA-711-1 (critical), QA-711-2 (high), QA-711-3 (low, documentado)]
+  - n: 2
+    verdict: PASS
+    notes: >
+      QA-711-1 e QA-711-2 verificados corrigidos (view com coluna no final; schemas
+      aceitam contaEmissora com 4 testes). QA-711-3 aceito como WON'T_FIX (fail-fast
+      é o comportamento desejado). 278 testes verdes, typecheck/lint OK.
 notes: >
   Anti-self-review: revisão na mesma sessão do @dev (personas distintas, /full-sdc).
   Suíte 274 verde, lint/typecheck OK — mas a migration quebraria NA APLICAÇÃO (não é
