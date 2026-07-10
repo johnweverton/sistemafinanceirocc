@@ -13,6 +13,17 @@ function brl(v: number | null): string {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** Formata timestamp ISO como data e hora locais compactas (dd/mm/aa hh:mm). */
+function dataHora(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function StatusBadge({ status }: { status: StatusRecebivel }) {
   if (status === 'pago') return <span className="badge-green">Pago</span>;
   if (status === 'vencido') return <span className="badge-amber">Vencido</span>;
@@ -182,7 +193,7 @@ export function RecebiveisManager() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={7} />
+        <TableSkeleton rows={6} cols={8} />
       ) : recebiveis.length === 0 ? (
         <EmptyState
           icon={
@@ -202,6 +213,7 @@ export function RecebiveisManager() {
                 <th>Médico</th>
                 <th>Competência</th>
                 <th className="text-right">Valor</th>
+                <th>Emitido em</th>
                 <th>Vencimento</th>
                 <th>Status</th>
                 <th className="text-right">Valor pago</th>
@@ -214,6 +226,7 @@ export function RecebiveisManager() {
                   <td className="font-medium">{r.nome}</td>
                   <td className="font-mono tabular text-cc-ink-2">{r.competencia}</td>
                   <td className="text-right tabular font-medium">{brl(r.valor)}</td>
+                  <td className="font-mono tabular text-cc-ink-2">{dataHora(r.emitidoEm)}</td>
                   <td className="font-mono tabular text-cc-ink-2">{r.vencimento ?? '—'}</td>
                   <td><StatusBadge status={r.statusDerivado} /></td>
                   <td className="text-right tabular text-cc-muted">
