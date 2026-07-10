@@ -160,8 +160,20 @@ export const POST = withErrorHandler(async (req) => {
 
   // 9. Emitir via gateway com o pagador completo, pela CONTA EMISSORA do médico (Story 7.2):
   //    o beneficiário do boleto é a empresa com quem o médico tem contrato (MC/Cavalcante Viana).
+  //    Débito D-721 (gate 7.2): conta sem credenciais configuradas não pode virar 500 mudo —
+  //    o operador precisa saber O QUE falta (cenário real enquanto a CV não assina o Cora Pro).
   const contaEmissora = medico.contaEmissora;
-  const { gateway, nome: nomeGateway } = criarBoletoGateway(contaEmissora);
+  let gateway, nomeGateway;
+  try {
+    ({ gateway, nome: nomeGateway } = criarBoletoGateway(contaEmissora));
+  } catch (e) {
+    throw new ApiError(
+      503,
+      e instanceof Error ? e.message : 'Conta emissora sem credenciais configuradas.',
+      'CONTA_NAO_CONFIGURADA',
+      { contaEmissora },
+    );
+  }
   const emissao = await gateway.emitir({
     execucaoResultadoId: body.execucaoResultadoId,
     competencia: resultadoRow.execucoes.competencia,
