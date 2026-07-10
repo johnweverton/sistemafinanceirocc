@@ -61,11 +61,16 @@ export async function POST(req: Request, { params }: { params: { secret: string 
     return new Response('Unauthorized', { status: 401 });
   }
 
+  // Lê como TEXTO primeiro: se o JSON falhar, o corpo cru fica na auditoria (boleto_eventos.payload)
+  // em vez de um {} mudo — em 2026-07-10 dois webhooks reais chegaram "vazios" e não deu para saber
+  // se a Cora mandou corpo não-JSON ou vazio de fato.
   let body: unknown = {};
+  let corpoCru = '';
   try {
-    body = await req.json();
+    corpoCru = await req.text();
+    body = corpoCru ? JSON.parse(corpoCru) : {};
   } catch {
-    body = {};
+    body = { _parseError: true, _raw: corpoCru.slice(0, 2000) };
   }
   const { idExterno, eventoId, eventoTipo } = extrairEvento(body);
 

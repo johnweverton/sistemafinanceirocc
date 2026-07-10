@@ -110,20 +110,31 @@ async function fetchMtls(
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
-          const body = Buffer.concat(chunks).toString('utf-8');
-          resolve(
-            new Response(body, {
-              status: res.statusCode ?? 500,
-              statusText: res.statusMessage ?? '',
-              headers: res.headers as Record<string, string>,
-            }),
-          );
+          try {
+            const body = Buffer.concat(chunks).toString('utf-8');
+            const status = res.statusCode ?? 500;
+            // O construtor Response PROÍBE corpo (mesmo '') em status null-body — o DELETE
+            // /v2/invoices da Cora devolve 204 e isso derrubava o processo inteiro na Vercel
+            // (uncaught exception fora da Promise → rota presa → timeout 300s → exit 129).
+            const semCorpo = status === 204 || status === 205 || status === 304;
+            resolve(
+              new Response(semCorpo ? null : body, {
+                status,
+                statusText: res.statusMessage ?? '',
+                headers: res.headers as Record<string, string>,
+              }),
+            );
+          } catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
         });
       },
     );
     req.on('error', reject);
-    // Timeout de 30s.
-    req.setTimeout(30_000, () => {
+    // Timeout de 10s POR CHAMADA: uma operação encadeia até 3 round-trips mTLS (token →
+    // reconsulta → DELETE) e o total precisa caber no maxDuration da function na Vercel;
+    // com 30s cada, a cadeia podia estourar o orçamento e a function morria no meio.
+    req.setTimeout(10_000, () => {
       req.destroy(new Error('Timeout mTLS request'));
     });
     if (postData) req.write(postData);

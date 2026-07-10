@@ -23,6 +23,11 @@ import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
 
+// Emissão encadeia mTLS (token → POST invoice) + download do PDF + disparos WhatsApp/e-mail —
+// não cabe nos 10s default do plano Hobby da Vercel (function morta no meio = boleto emitido
+// na Cora sem resposta ao navegador).
+export const maxDuration = 60;
+
 // Achado I-1: rate limit — máximo 10 emissões por minuto por usuário.
 const emitirLimiter = createRateLimiter('boletos-emitir', { limit: 10, windowMs: 60_000 });
 

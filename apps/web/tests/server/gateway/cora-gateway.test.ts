@@ -371,6 +371,17 @@ describe('CoraGateway.cancelar (Story 6.1)', () => {
     expect(r.sucesso).toBe(true);
   });
 
+  it('DELETE com 204 No Content → sucesso=true (Response proíbe corpo em 204 — crash em produção 2026-07-10)', async () => {
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(simularResposta(204, ''));
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const r = await new CoraGateway().cancelar('inv_204');
+    expect(r.sucesso).toBe(true);
+    expect(r.payloadResposta).toBeNull();
+  });
+
   it('corpo vazio no 200 → sucesso=true (payload null, sem lançar)', async () => {
     mockRequest
       .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
