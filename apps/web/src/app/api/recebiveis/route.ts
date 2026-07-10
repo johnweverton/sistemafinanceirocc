@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarRecebiveis } from '@/server/repositories/recebiveis-repository';
+import { listarDisparosPorBoletos } from '@/server/repositories/boleto-disparo-repository';
 import type { FiltroRecebiveis } from '@cobranca/shared';
 
 // Achado B-3: validar query params com Zod (whitelist de status válidos).
@@ -31,5 +32,17 @@ export const GET = withErrorHandler(async (req) => {
   };
 
   const recebiveis = await listarRecebiveis(filtros);
+
+  // Anexa os disparos de notificação (badges WhatsApp/e-mail na UI) em uma única query.
+  const disparosMap = await listarDisparosPorBoletos(recebiveis.map((r) => r.boletoId));
+  for (const r of recebiveis) {
+    r.disparos = (disparosMap[r.boletoId] ?? []).map((d) => ({
+      canal: d.canal,
+      status: d.status,
+      mensagemErro: d.mensagem_erro,
+      enviadoEm: d.enviado_em,
+    }));
+  }
+
   return Response.json(recebiveis);
 });

@@ -6,6 +6,7 @@ import { recebiveisService, recebiveisQueryKeys } from '@/services/recebiveis';
 import { boletosService } from '@/services/boletos';
 import { ApiClientError } from '@/lib/api-client';
 import { TableSkeleton } from '@/components/ui/Skeleton';
+import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 
@@ -193,7 +194,7 @@ export function RecebiveisManager() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={8} />
+        <TableSkeleton rows={6} cols={9} />
       ) : recebiveis.length === 0 ? (
         <EmptyState
           icon={
@@ -216,6 +217,7 @@ export function RecebiveisManager() {
                 <th>Emitido em</th>
                 <th>Vencimento</th>
                 <th>Status</th>
+                <th>Envios</th>
                 <th className="text-right">Valor pago</th>
                 <th className="text-right">Ações</th>
               </tr>
@@ -229,6 +231,9 @@ export function RecebiveisManager() {
                   <td className="font-mono tabular text-cc-ink-2">{dataHora(r.emitidoEm)}</td>
                   <td className="font-mono tabular text-cc-ink-2">{r.vencimento ?? '—'}</td>
                   <td><StatusBadge status={r.statusDerivado} /></td>
+                  <td>
+                    <DisparoBadges disparos={r.disparos} />
+                  </td>
                   <td className="text-right tabular text-cc-muted">
                     {r.pagoEm ? brl(r.valorPago) : '—'}
                   </td>

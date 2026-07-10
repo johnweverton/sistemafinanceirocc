@@ -3,6 +3,14 @@
 // um boleto por vez, e só sobre resultado com status 'ok' (PRD §2 / §10).
 
 export type GatewayBoleto = 'cora' | 'mock';
+
+/** Registro de envio do boleto por canal (WhatsApp/e-mail) — auditoria de disparo. */
+export interface DisparoBoleto {
+  canal: 'whatsapp' | 'email';
+  status: 'sucesso' | 'falha';
+  mensagemErro: string | null;
+  enviadoEm: string;
+}
 // 'pago'/'cancelado' são resultado da baixa via webhook (Épico 4). 'vencido' NÃO é armazenado —
 // é derivado on-read (vencimento < hoje e sem baixa).
 export type StatusBoleto = 'emitido' | 'falha' | 'pago' | 'cancelado';

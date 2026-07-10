@@ -62,6 +62,32 @@ export async function listarDisparosPorBoleto(boletoId: string): Promise<BoletoD
 }
 
 /**
+ * Lista disparos de vários boletos de uma vez (badges do painel de Recebíveis),
+ * retornando um mapa boletoId → disparos ordenados do mais antigo ao mais novo.
+ */
+export async function listarDisparosPorBoletos(
+  boletoIds: string[],
+): Promise<Record<string, BoletoDisparoRow[]>> {
+  if (boletoIds.length === 0) return {};
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos_disparos')
+    .select('*')
+    .in('boleto_id', boletoIds)
+    .order('enviado_em', { ascending: true });
+
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar disparos dos boletos', 'DB_ERROR', { error: error.message });
+  }
+
+  const mapa: Record<string, BoletoDisparoRow[]> = {};
+  for (const row of data as BoletoDisparoRow[]) {
+    (mapa[row.boleto_id] ??= []).push(row);
+  }
+  return mapa;
+}
+
+/**
  * Lista disparos de toda a execução, retornando um mapa onde a chave é o execucaoResultadoId
  */
 export async function listarDisparosPorExecucao(execucaoId: string): Promise<Record<string, BoletoDisparoRow[]>> {

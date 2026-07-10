@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ExecucaoResultado } from '@cobranca/shared';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { boletosService, CAMPO_COBRANCA_LABEL } from '@/services/boletos';
+import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
 
@@ -255,16 +256,7 @@ function Grupo({
               {onEmitir && (
                 <div className="mt-3 flex flex-wrap items-center justify-between border-t border-cc-hairline pt-3">
                   <div className="flex gap-2">
-                    {r.disparos?.map((d, idx) => (
-                      <span
-                        key={idx}
-                        className={d.status === 'sucesso' ? 'badge-green' : 'badge-amber'}
-                        title={d.mensagemErro ?? undefined}
-                      >
-                        {d.canal === 'whatsapp' ? '📱 WhatsApp' : '📧 E-mail'}
-                        {d.status === 'falha' && ' (Falha)'}
-                      </span>
-                    ))}
+                    <DisparoBadges disparos={r.disparos} />
                   </div>
                   <div className="flex items-center justify-end gap-2">
                     {emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0) ? (

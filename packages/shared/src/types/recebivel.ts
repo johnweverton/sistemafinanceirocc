@@ -1,4 +1,5 @@
 // Recebível — linha de Contas a Receber (Épico 4, Story 4.4). Deriva da view vw_recebiveis.
+import type { DisparoBoleto } from './boleto';
 
 export type StatusRecebivel = 'pago' | 'cancelado' | 'vencido' | 'em_aberto';
 
@@ -15,6 +16,8 @@ export interface Recebivel {
   valorPago: number | null;
   emitidoEm: string;
   statusDerivado: StatusRecebivel;
+  /** Disparos de notificação (WhatsApp/e-mail) do boleto — badges de status na UI. */
+  disparos?: DisparoBoleto[];
 }
 
 export interface FiltroRecebiveis {
