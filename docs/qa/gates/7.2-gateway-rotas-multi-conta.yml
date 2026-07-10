@@ -1,0 +1,30 @@
+# QA Gate — Story 7.2 (Gateway e rotas por conta emissora)
+storyId: "7.2"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-10"
+verdict: CONCERNS
+notes: >
+  8/8 ACs verificados no diff; 288 testes verdes (268 web + 20 shared), typecheck/lint OK.
+  Anti-self-review: mesma sessão do @dev (personas distintas, /full-sdc). Aprovada para
+  close com 1 débito MEDIUM documentado (não corrompe dados; fluxo falha com segurança).
+issues:
+  - id: D-721
+    severity: medium
+    category: code
+    description: >
+      POST /api/boletos/emitir com médico da CV ANTES de CORA_CV_* configurada: o erro
+      claro de getCredenciaisConta (nomeia conta e vars) vira 500 genérico no
+      withErrorHandler — o operador não vê a causa na UI. Cenário provável no período em
+      que médicos já foram classificados mas a assinatura Cora Pro da CV está pendente.
+    recommendation: >
+      Envolver criarBoletoGateway(conta) na rota de emissão em try/catch e mapear para
+      ApiError 503 CONTA_NAO_CONFIGURADA com a mensagem original. Candidata a entrar na
+      7.3 (que já toca o fluxo de emissão na UI) ou hotfix curto.
+  - id: OBS-722
+    severity: low
+    category: code
+    description: >
+      Warn de secrets iguais entre contas é emitido uma vez por cold start da function
+      (flag module-level) — pode repetir entre instâncias. Aceito: é aviso, não controle.
+    recommendation: Sem ação.
