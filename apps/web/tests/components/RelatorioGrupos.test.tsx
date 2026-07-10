@@ -22,6 +22,13 @@ vi.mock('../../src/services/boletos', () => ({
   CAMPO_COBRANCA_LABEL: { email: 'e-mail', cep: 'CEP' },
 }));
 
+// Story 7.3: o diálogo de confirmação mostra a EMPRESA EMISSORA do médico.
+const mockListarMedicos = vi.fn();
+vi.mock('../../src/services/medicos', () => ({
+  medicosService: { listar: (...a: unknown[]) => mockListarMedicos(...a) },
+  queryKeys: { medicos: () => ['medicos'] },
+}));
+
 import { RelatorioGrupos } from '../../src/components/execucoes/RelatorioGrupos';
 
 function renderComProviders() {
@@ -51,21 +58,42 @@ const resultadoOk = {
   alertas: [],
 };
 
+/** Abre o diálogo de confirmação (Story 7.3) e confirma a emissão. */
+async function emitirViaDialogo() {
+  const btn = await screen.findByRole('button', { name: /Emitir boleto/i });
+  fireEvent.click(btn);
+  // A empresa emissora do médico fica VISÍVEL antes da confirmação (AC 2).
+  await screen.findByText('Cavalcante Viana');
+  const confirmar = screen.getByRole('button', { name: /Confirmar emissão/i });
+  await waitFor(() => expect(confirmar).toBeEnabled());
+  fireEvent.click(confirmar);
+}
+
 describe('RelatorioGrupos — emissão de boleto', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockResultados.mockResolvedValue([resultadoOk]);
+    mockListarMedicos.mockResolvedValue([{ id: 'm1', contaEmissora: 'cavalcante_viana' }]);
   });
 
-  it('emite o boleto ao clicar e mostra o badge de emitido', async () => {
+  it('mostra a empresa emissora no diálogo e emite após confirmação (Story 7.3)', async () => {
     mockEmitir.mockResolvedValue({ boleto: { id: 'b1', status: 'emitido' } });
     renderComProviders();
 
-    const btn = await screen.findByRole('button', { name: /Emitir boleto/i });
-    fireEvent.click(btn);
+    await emitirViaDialogo();
 
     await waitFor(() => expect(mockEmitir).toHaveBeenCalledWith('r1'));
     await waitFor(() => expect(screen.getByText('Boleto emitido')).toBeInTheDocument());
+  });
+
+  it('cancelar no diálogo não emite nada', async () => {
+    renderComProviders();
+    fireEvent.click(await screen.findByRole('button', { name: /Emitir boleto/i }));
+    await screen.findByText('Cavalcante Viana');
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+
+    expect(mockEmitir).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Emitir boleto/i })).toBeInTheDocument();
   });
 
   it('mostra os campos faltantes quando a cobrança do médico está incompleta', async () => {
@@ -76,8 +104,7 @@ describe('RelatorioGrupos — emissão de boleto', () => {
     );
     renderComProviders();
 
-    const btn = await screen.findByRole('button', { name: /Emitir boleto/i });
-    fireEvent.click(btn);
+    await emitirViaDialogo();
 
     await waitFor(() =>
       expect(screen.getByText(/Dados de cobrança incompletos \(e-mail, CEP\)/)).toBeInTheDocument(),
@@ -92,8 +119,7 @@ describe('RelatorioGrupos — emissão de boleto', () => {
     );
     renderComProviders();
 
-    const btn = await screen.findByRole('button', { name: /Emitir boleto/i });
-    fireEvent.click(btn);
+    await emitirViaDialogo();
 
     await waitFor(() => expect(screen.getByText('Boleto emitido')).toBeInTheDocument());
   });
@@ -111,6 +137,7 @@ describe('RelatorioGrupos — busca por nome', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockResultados.mockResolvedValue([resultadoOk, resultadoAlerta]);
+    mockListarMedicos.mockResolvedValue([]);
   });
 
   it('filtra os grupos pelo nome digitado, sem afetar o total geral', async () => {
@@ -143,6 +170,7 @@ describe('RelatorioGrupos — revisão de alerta', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockResultados.mockResolvedValue([resultadoAlerta]);
+    mockListarMedicos.mockResolvedValue([]);
   });
 
   it('mantém o botão de confirmar desabilitado até o motivo ter pelo menos 5 caracteres', async () => {

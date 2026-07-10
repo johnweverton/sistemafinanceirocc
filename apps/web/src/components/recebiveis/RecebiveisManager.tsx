@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FiltroRecebiveis, Recebivel, StatusRecebivel } from '@cobranca/shared';
+import type { ContaEmissora, FiltroRecebiveis, Recebivel, StatusRecebivel } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 import { recebiveisService, recebiveisQueryKeys } from '@/services/recebiveis';
 import { boletosService } from '@/services/boletos';
 import { ApiClientError } from '@/lib/api-client';
@@ -38,6 +39,12 @@ const STATUS_OPCOES: { valor: StatusRecebivel | ''; label: string }[] = [
   { valor: 'vencido', label: 'Vencido' },
   { valor: 'pago', label: 'Pago' },
   { valor: 'cancelado', label: 'Cancelado' },
+];
+
+// Filtro por empresa emissora (Story 7.3) — rótulos da fonte única do shared.
+const CONTA_OPCOES: { valor: ContaEmissora | ''; label: string }[] = [
+  { valor: '', label: 'Todas as empresas' },
+  ...CONTAS_EMISSORAS_VALIDAS.map((c) => ({ valor: c, label: CONTA_EMISSORA_LABEL[c] })),
 ];
 
 const MOTIVO_MIN = 5;
@@ -109,6 +116,7 @@ function CancelarBoletoDialog({
 export function RecebiveisManager() {
   const [competencia, setCompetencia] = useState('');
   const [status, setStatus] = useState<StatusRecebivel | ''>('');
+  const [conta, setConta] = useState<ContaEmissora | ''>('');
   const [cancelando, setCancelando] = useState<Recebivel | null>(null);
   const [baixandoId, setBaixandoId] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -134,6 +142,7 @@ export function RecebiveisManager() {
   const filtros: FiltroRecebiveis = {
     competencia: competencia || undefined,
     statusDerivado: status || undefined,
+    contaEmissora: conta || undefined,
   };
 
   const { data, isLoading } = useQuery({
@@ -190,11 +199,21 @@ export function RecebiveisManager() {
               <option key={o.valor} value={o.valor}>{o.label}</option>
             ))}
           </select>
+          <select
+            value={conta}
+            onChange={(e) => setConta(e.target.value as ContaEmissora | '')}
+            className="input w-44"
+            aria-label="Filtrar por empresa emissora"
+          >
+            {CONTA_OPCOES.map((o) => (
+              <option key={o.valor} value={o.valor}>{o.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={9} />
+        <TableSkeleton rows={6} cols={10} />
       ) : recebiveis.length === 0 ? (
         <EmptyState
           icon={
@@ -212,6 +231,7 @@ export function RecebiveisManager() {
             <thead className="border-b border-cc-hairline bg-cc-surface-2">
               <tr>
                 <th>Médico</th>
+                <th>Empresa</th>
                 <th>Competência</th>
                 <th className="text-right">Valor</th>
                 <th>Emitido em</th>
@@ -226,6 +246,11 @@ export function RecebiveisManager() {
               {recebiveis.map((r) => (
                 <tr key={r.boletoId}>
                   <td className="font-medium">{r.nome}</td>
+                  <td>
+                    <span className="badge-slate" title="Empresa emissora do boleto">
+                      {CONTA_EMISSORA_LABEL[r.contaEmissora]}
+                    </span>
+                  </td>
                   <td className="font-mono tabular text-cc-ink-2">{r.competencia}</td>
                   <td className="text-right tabular font-medium">{brl(r.valor)}</td>
                   <td className="font-mono tabular text-cc-ink-2">{dataHora(r.emitidoEm)}</td>

@@ -1,11 +1,13 @@
 'use client';
 import { useMemo, useState } from 'react';
-import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca } from '@cobranca/shared';
-import { tipoDoMedico, combinacaoClasseValida } from '@cobranca/shared';
+import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora } from '@cobranca/shared';
+import { tipoDoMedico, combinacaoClasseValida, CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import type { NovoMedicoPayload } from '@/services/medicos';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
 
-type FormState = NovoMedicoPayload;
+// contaEmissora admite '' no ESTADO (novo médico começa sem escolha — decisão consciente,
+// Story 7.3); o submit só habilita com empresa selecionada, e o payload sai tipado.
+type FormState = Omit<NovoMedicoPayload, 'contaEmissora'> & { contaEmissora: ContaEmissora | '' };
 
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB',
@@ -37,6 +39,7 @@ const VAZIO: FormState = {
   modoMudancaData: 'nao',
   modoCobranca: 'faixa_guias',
   percentualProducao: null,
+  contaEmissora: '', // escolha explícita obrigatória em médicos novos (Story 7.3)
   colaboradorResponsavel: null,
   ativo: true,
 };
@@ -65,7 +68,8 @@ function temAlgumaCondicao(c: CondicoesCobranca): boolean {
 interface Props {
   inicial?: Medico;
   exigeMotivo?: boolean;
-  onSubmit: (dados: FormState, motivo: string) => Promise<void> | void;
+  // Recebe o payload já fechado (contaEmissora garantida) — o '' é só estado interno.
+  onSubmit: (dados: NovoMedicoPayload, motivo: string) => Promise<void> | void;
   salvando?: boolean;
 }
 
@@ -82,6 +86,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           modoMudancaData: inicial.modoMudancaData,
           modoCobranca: inicial.modoCobranca,
           percentualProducao: inicial.percentualProducao,
+          contaEmissora: inicial.contaEmissora, // existentes exibem o backfill ('mc')
           colaboradorResponsavel: inicial.colaboradorResponsavel,
           ativo: inicial.ativo,
         }
@@ -101,8 +106,10 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const percentualOk =
     form.modoCobranca !== 'percentual_producao' ||
     (form.percentualProducao != null && form.percentualProducao > 0);
+  // Empresa emissora é obrigatória (Story 7.3): boleto pela empresa errada = contestação.
+  const contaOk = form.contaEmissora !== '';
   const podeSalvar =
-    combinacaoValida && motivoOk && cpfOk && percentualOk && form.nome.trim().length > 0;
+    combinacaoValida && motivoOk && cpfOk && percentualOk && contaOk && form.nome.trim().length > 0;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -141,8 +148,10 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const isPediatra = form.especialidade?.toLowerCase().includes('pediat') ?? false;
 
   function handleSubmit() {
-    const payload: FormState = {
+    const payload: NovoMedicoPayload = {
       ...form,
+      // Garantido por podeSalvar (contaOk) — aqui nunca é ''.
+      contaEmissora: form.contaEmissora as ContaEmissora,
       modoMudancaData: isPediatra ? form.modoMudancaData : 'nao',
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
       condicoes: temAlgumaCondicao(condicoes) ? condicoes : null,
@@ -236,6 +245,31 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
             </select>
           </Field>
         )}
+
+        <Field label="Empresa emissora (boletos)">
+          <select
+            name="contaEmissora"
+            value={form.contaEmissora}
+            onChange={(e) => set('contaEmissora', e.target.value as FormState['contaEmissora'])}
+            className="input"
+            aria-invalid={!contaOk}
+            required
+          >
+            <option value="" disabled>
+              Selecione a empresa…
+            </option>
+            {CONTAS_EMISSORAS_VALIDAS.map((conta) => (
+              <option key={conta} value={conta}>
+                {CONTA_EMISSORA_LABEL[conta]}
+              </option>
+            ))}
+          </select>
+          {!contaOk && (
+            <p className="mt-1 text-xs text-cc-danger" role="alert">
+              Escolha a empresa que emitirá os boletos deste médico.
+            </p>
+          )}
+        </Field>
 
         <Field label="Modo de cobrança">
           <select

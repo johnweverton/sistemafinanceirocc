@@ -36,10 +36,37 @@ describe('MedicoForm', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Nome completo/i }), {
       target: { value: 'Dr. Teste' },
     });
+    fireEvent.change(screen.getByRole('combobox', { name: /Empresa emissora/i }), {
+      target: { value: 'mc' },
+    });
     // padrão: credenciado + não outros → TIPO 2
     expect(screen.getByText(/TIPO calculado/i)).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Salvar/i })).toBeEnabled();
+  });
+
+  // Story 7.3 (AC 1): médico novo exige a escolha explícita da empresa emissora.
+  it('bloqueia salvar em médico NOVO até escolher a empresa emissora', () => {
+    const onSubmit = vi.fn();
+    render(<MedicoForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
+      target: { value: '12345678901' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /Nome completo/i }), {
+      target: { value: 'Dr. Teste' },
+    });
+
+    expect(screen.getByText(/Escolha a empresa que emitirá os boletos/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Salvar/i })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /Empresa emissora/i }), {
+      target: { value: 'cavalcante_viana' },
+    });
+    expect(screen.getByRole('button', { name: /Salvar/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }));
+    expect(onSubmit.mock.calls[0]?.[0]?.contaEmissora).toBe('cavalcante_viana');
   });
 
   it('quando exigeMotivo é false, envia um motivo padrão em vez de string vazia (o servidor sempre exige motivo)', () => {
@@ -51,6 +78,9 @@ describe('MedicoForm', () => {
     });
     fireEvent.change(screen.getByRole('textbox', { name: /Nome completo/i }), {
       target: { value: 'Dr. Teste' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: /Empresa emissora/i }), {
+      target: { value: 'mc' },
     });
     expect(screen.queryByLabelText(/Motivo da alteração/i)).not.toBeInTheDocument();
 

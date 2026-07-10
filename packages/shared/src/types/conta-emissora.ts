@@ -12,3 +12,12 @@ export const CONTAS_EMISSORAS_VALIDAS = ['mc', 'cavalcante_viana'] as const sati
 
 /** Conta usada no backfill e como fallback seguro pré-migration (comportamento original). */
 export const CONTA_EMISSORA_DEFAULT: ContaEmissora = 'mc';
+
+/**
+ * Nome exibido de cada conta — fonte ÚNICA dos rótulos (Story 7.3): UI, e-mail e registro
+ * server-side derivam daqui. Nunca escrever o nome da empresa como string solta.
+ */
+export const CONTA_EMISSORA_LABEL: Record<ContaEmissora, string> = {
+  mc: 'MC',
+  cavalcante_viana: 'Cavalcante Viana',
+};

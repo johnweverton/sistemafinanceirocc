@@ -32,12 +32,14 @@ function renderComProviders() {
 const recebivelPago = {
   boletoId: 'b1', execucaoResultadoId: 'r1', idExterno: 'inv_1', competencia: '2026-06',
   medicoId: 'm1', nome: 'Dr. Pago', valor: 1500, vencimento: '2026-07-01',
-  pagoEm: '2026-06-15T00:00:00Z', valorPago: 1500, emitidoEm: '2026-06-01T00:00:00Z', statusDerivado: 'pago',
+  pagoEm: '2026-06-15T00:00:00Z', valorPago: 1500, emitidoEm: '2026-06-01T00:00:00Z',
+  contaEmissora: 'mc', statusDerivado: 'pago',
 };
 const recebivelVencido = {
   boletoId: 'b2', execucaoResultadoId: 'r2', idExterno: 'inv_2', competencia: '2026-06',
   medicoId: 'm2', nome: 'Dra. Vencida', valor: 800, vencimento: '2020-01-01',
-  pagoEm: null, valorPago: null, emitidoEm: '2026-06-01T00:00:00Z', statusDerivado: 'vencido',
+  pagoEm: null, valorPago: null, emitidoEm: '2026-06-01T00:00:00Z',
+  contaEmissora: 'cavalcante_viana', statusDerivado: 'vencido',
 };
 
 describe('RecebiveisManager', () => {
@@ -54,6 +56,28 @@ describe('RecebiveisManager', () => {
     const tabela = screen.getByRole('table');
     expect(within(tabela).getByText('Pago')).toBeInTheDocument();
     expect(within(tabela).getByText('Vencido')).toBeInTheDocument();
+  });
+
+  // Story 7.3 (AC 3): badge "Empresa" por linha + filtro por empresa emissora.
+  it('mostra o badge da empresa emissora e filtra por empresa', async () => {
+    mockListar.mockResolvedValue([recebivelPago, recebivelVencido]);
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Dr. Pago')).toBeInTheDocument());
+
+    const tabela = screen.getByRole('table');
+    expect(within(tabela).getByText('MC')).toBeInTheDocument();
+    expect(within(tabela).getByText('Cavalcante Viana')).toBeInTheDocument();
+
+    // Seleciona a empresa no filtro → nova query com contaEmissora.
+    mockListar.mockResolvedValue([recebivelVencido]);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrar por empresa emissora' }), {
+      target: { value: 'cavalcante_viana' },
+    });
+    await waitFor(() =>
+      expect(mockListar).toHaveBeenCalledWith(
+        expect.objectContaining({ contaEmissora: 'cavalcante_viana' }),
+      ),
+    );
   });
 
   it('mostra empty state quando não há recebíveis', async () => {

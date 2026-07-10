@@ -51,3 +51,38 @@ describe('importação CSV — dados de cobrança', () => {
     expect(novoMedicoSchema.safeParse(input).success).toBe(false);
   });
 });
+
+// Story 7.3 (AC 4): coluna opcional conta_emissora no modelo estendido.
+describe('importação CSV — conta emissora', () => {
+  const HEADER_CONTA = `${HEADER},conta_emissora`;
+
+  function parseUmaComConta(linha: string) {
+    const rows = parseCsv(`${HEADER_CONTA}\n${linha}`);
+    return rowToInput(rows[0]!);
+  }
+
+  it('coluna ausente/vazia → campo omitido (default mc fica no banco)', () => {
+    const semColuna = parseUma('11122233344,Dr. Beltrano,Orto,credenciado,nao,nao,nao,Maria,,,,,,,,,,,');
+    expect('contaEmissora' in semColuna).toBe(false);
+
+    const vazia = parseUmaComConta('11122233344,Dr. Beltrano,Orto,credenciado,nao,nao,nao,Maria,,,,,,,,,,,,');
+    expect('contaEmissora' in vazia).toBe(false);
+    expect(novoMedicoSchema.safeParse(vazia).success).toBe(true);
+  });
+
+  it('valor válido é aceito e chega tipado no schema', () => {
+    const input = parseUmaComConta(
+      '11122233344,Dr. Beltrano,Orto,credenciado,nao,nao,nao,Maria,,,,,,,,,,,,cavalcante_viana',
+    );
+    const parsed = novoMedicoSchema.safeParse(input);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.contaEmissora).toBe('cavalcante_viana');
+  });
+
+  it('valor inválido é rejeitado pelo schema com mensagem clara (linha vai para erros[])', () => {
+    const input = parseUmaComConta(
+      '11122233344,Dr. Beltrano,Orto,credenciado,nao,nao,nao,Maria,,,,,,,,,,,,banco_x',
+    );
+    expect(novoMedicoSchema.safeParse(input).success).toBe(false);
+  });
+});

@@ -27,4 +27,6 @@ export interface FiltroRecebiveis {
   competencia?: string;
   medicoId?: string;
   statusDerivado?: StatusRecebivel;
+  /** Filtro por empresa emissora (Story 7.3). */
+  contaEmissora?: ContaEmissora;
 }

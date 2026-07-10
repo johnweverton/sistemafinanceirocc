@@ -3,10 +3,12 @@
 // (resolvidas por getCredenciaisConta em @/lib/env, único leitor de process.env).
 // Adicionar uma 3ª conta = nova entrada aqui + env vars correspondentes.
 import type { ContaEmissora } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 
 export interface ContaEmissoraInfo {
   slug: ContaEmissora;
-  /** Nome exibido na UI e nas mensagens ao médico (remetente de e-mail etc.). */
+  /** Nome exibido nas mensagens ao médico (remetente de e-mail etc.) — deriva do shared
+   *  (CONTA_EMISSORA_LABEL, fonte única de rótulos desde a Story 7.3). */
   nomeExibicao: string;
   /** Prefixo das env vars de credenciais (ex.: CORA_MC → CORA_MC_CERT_BASE64). */
   envPrefix: string;
@@ -15,12 +17,12 @@ export interface ContaEmissoraInfo {
 export const CONTAS_EMISSORAS: Record<ContaEmissora, ContaEmissoraInfo> = {
   mc: {
     slug: 'mc',
-    nomeExibicao: 'MC',
+    nomeExibicao: CONTA_EMISSORA_LABEL.mc,
     envPrefix: 'CORA_MC',
   },
   cavalcante_viana: {
     slug: 'cavalcante_viana',
-    nomeExibicao: 'Cavalcante Viana',
+    nomeExibicao: CONTA_EMISSORA_LABEL.cavalcante_viana,
     envPrefix: 'CORA_CV',
   },
 };

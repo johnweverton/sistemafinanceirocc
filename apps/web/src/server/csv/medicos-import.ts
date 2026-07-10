@@ -57,6 +57,9 @@ export function rowToInput(row: Record<string, string>) {
     modoMudancaData: (row.modo_mudanca_data as 'sim' | 'nao') || 'nao',
     colaboradorResponsavel: row.colaborador_responsavel || null,
     ativo: true,
+    // Coluna opcional conta_emissora (Story 7.3): ausente/vazia → default 'mc' do banco;
+    // valor inválido é reprovado pelo novoMedicoSchema e a linha entra em `erros[]`.
+    ...(row.conta_emissora ? { contaEmissora: row.conta_emissora } : {}),
   };
 
   // Bloco de cobrança é opcional: só monta quando há algum dado na linha. Se parcial/inválido,

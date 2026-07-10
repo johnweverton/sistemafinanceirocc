@@ -1,9 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ExecucaoResultado } from '@cobranca/shared';
+import type { ContaEmissora, ExecucaoResultado } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { boletosService, CAMPO_COBRANCA_LABEL } from '@/services/boletos';
+import { medicosService, queryKeys as medicoQueryKeys } from '@/services/medicos';
 import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
@@ -29,6 +31,17 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
   const { toast } = useToast();
   const [emitidos, setEmitidos] = useState<Set<string>>(new Set());
   const [busca, setBusca] = useState('');
+  // Confirmação de emissão (Story 7.3): mostra POR QUAL EMPRESA o boleto sairá antes do
+  // clique final — última barreira contra emissão pela conta errada.
+  const [confirmandoEmissao, setConfirmandoEmissao] = useState<ExecucaoResultado | null>(null);
+  const { data: medicos } = useQuery({
+    queryKey: medicoQueryKeys.medicos(),
+    queryFn: medicosService.listar,
+  });
+  const contaPorMedico = useMemo(
+    () => new Map((medicos ?? []).map((m) => [m.id, m.contaEmissora])),
+    [medicos],
+  );
 
   // Revisão manual de 'alerta' → 'ok' (gap de arquitetura identificado 2026-07-08: um resultado
   // em alerta nunca tinha caminho de saída). Ao confirmar, o item some do grupo "alerta" e reaparece
@@ -54,13 +67,20 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     mutationFn: (resultadoId: string) => boletosService.emitir(resultadoId),
     onSuccess: (_res, resultadoId) => {
       setEmitidos((prev) => new Set(prev).add(resultadoId));
+      setConfirmandoEmissao(null);
       toast('Boleto emitido com sucesso', 'success');
     },
     onError: (e, resultadoId) => {
+      setConfirmandoEmissao(null);
       if (e instanceof ApiClientError) {
         if (e.code === 'BOLETO_JA_EMITIDO') {
           setEmitidos((prev) => new Set(prev).add(resultadoId));
           toast('Este resultado já tem boleto emitido', 'info');
+          return;
+        }
+        if (e.code === 'CONTA_NAO_CONFIGURADA') {
+          // Débito D-721 (gate 7.2): conta da empresa ainda sem credenciais na Vercel.
+          toast(e.message, 'error');
           return;
         }
         if (e.code === 'COBRANCA_INCOMPLETA') {
@@ -130,7 +150,10 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         resultados={ok}
         emitidos={emitidos}
         emitindoId={emitir.isPending ? emitir.variables : null}
-        onEmitir={(id) => emitir.mutate(id)}
+        onEmitir={(id) => {
+          const resultado = ok.find((r) => r.id === id);
+          if (resultado) setConfirmandoEmissao(resultado);
+        }}
         reenviarPendingId={reenviar.isPending ? reenviar.variables : null}
         onReenviar={(id) => reenviar.mutate(id)}
       />
@@ -147,6 +170,76 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
       <div className="flex items-center justify-between border-t border-cc-hairline pt-4">
         <span className="font-mono text-2xs uppercase tracking-wider text-cc-muted">Total geral</span>
         <span className="tabular text-lg font-semibold text-cc-ink">{brl(totalGeral)}</span>
+      </div>
+
+      {confirmandoEmissao && (
+        <EmitirBoletoDialog
+          resultado={confirmandoEmissao}
+          conta={
+            confirmandoEmissao.medicoId
+              ? (contaPorMedico.get(confirmandoEmissao.medicoId) ?? null)
+              : null
+          }
+          confirmando={emitir.isPending}
+          onConfirm={() => emitir.mutate(confirmandoEmissao.id)}
+          onCancel={() => setConfirmandoEmissao(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Confirmação de emissão (Story 7.3): a EMPRESA EMISSORA fica visível antes do clique final —
+ * o beneficiário do boleto é parte da cobrança, não detalhe técnico. `conta` null = lista de
+ * médicos ainda carregando (ou resultado sem médico): confirma desabilitado até resolver.
+ */
+function EmitirBoletoDialog({
+  resultado,
+  conta,
+  confirmando,
+  onConfirm,
+  onCancel,
+}: {
+  resultado: ExecucaoResultado;
+  conta: ContaEmissora | null;
+  confirmando: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-cc-surface card w-full max-w-md shadow-2xl">
+        <div className="border-b border-cc-hairline px-6 py-4">
+          <h2 className="text-lg font-bold text-cc-ink">Emitir boleto</h2>
+        </div>
+        <div className="space-y-3 px-6 py-4">
+          <p className="text-sm text-cc-ink-2">
+            Emitir boleto de <strong>{brl(resultado.totalValor ?? 0)}</strong> para{' '}
+            <strong>{resultado.nome}</strong>?
+          </p>
+          <p className="rounded-lg border border-cc-hairline bg-cc-surface-2 px-4 py-3 text-sm text-cc-ink">
+            Empresa emissora:{' '}
+            <strong>{conta ? CONTA_EMISSORA_LABEL[conta] : 'carregando…'}</strong>
+          </p>
+          <p className="text-xs text-cc-muted">
+            O boleto sai registrado em nome da empresa acima e as notificações (WhatsApp/e-mail)
+            são enviadas ao médico automaticamente.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
+          <button onClick={onCancel} disabled={confirmando} className="btn-ghost btn btn-sm">
+            Voltar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={confirmando || conta == null}
+            className="btn-primary btn btn-sm"
+            title={conta == null ? 'Aguardando a empresa emissora do médico' : undefined}
+          >
+            {confirmando ? 'Emitindo…' : 'Confirmar emissão'}
+          </button>
+        </div>
       </div>
     </div>
   );

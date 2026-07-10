@@ -11,6 +11,8 @@ const recebiveisQuerySchema = z.object({
   competencia: z.string().regex(/^\d{4}-\d{2}$/, 'Formato esperado: YYYY-MM').optional(),
   medico: z.string().uuid('medico deve ser UUID').optional(),
   status: z.enum(['pago', 'cancelado', 'vencido', 'em_aberto']).optional(),
+  // Filtro por empresa emissora (Story 7.3) — espelha a CHECK do banco.
+  conta: z.enum(['mc', 'cavalcante_viana']).optional(),
 });
 
 export const GET = withErrorHandler(async (req) => {
@@ -20,6 +22,7 @@ export const GET = withErrorHandler(async (req) => {
     competencia: url.searchParams.get('competencia') ?? undefined,
     medico: url.searchParams.get('medico') ?? undefined,
     status: url.searchParams.get('status') ?? undefined,
+    conta: url.searchParams.get('conta') ?? undefined,
   });
   if (!query.success) {
     throw new ApiError(400, 'Parâmetros de consulta inválidos', 'VALIDATION', { issues: query.error.issues });
@@ -29,6 +32,7 @@ export const GET = withErrorHandler(async (req) => {
     competencia: query.data.competencia,
     medicoId: query.data.medico,
     statusDerivado: query.data.status,
+    contaEmissora: query.data.conta,
   };
 
   const recebiveis = await listarRecebiveis(filtros);

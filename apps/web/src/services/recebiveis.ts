@@ -7,6 +7,7 @@ export const recebiveisService = {
     if (filtros.competencia) qs.set('competencia', filtros.competencia);
     if (filtros.medicoId) qs.set('medico', filtros.medicoId);
     if (filtros.statusDerivado) qs.set('status', filtros.statusDerivado);
+    if (filtros.contaEmissora) qs.set('conta', filtros.contaEmissora);
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return apiFetch<Recebivel[]>(`/recebiveis${suffix}`);
   },

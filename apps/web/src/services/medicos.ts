@@ -1,4 +1,4 @@
-import type { Medico, MedicoHistorico, DadosCobranca, CondicoesCobranca, ClienteExterno } from '@cobranca/shared';
+import type { Medico, MedicoHistorico, DadosCobranca, CondicoesCobranca, ClienteExterno, ContaEmissora } from '@cobranca/shared';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import type { ApiErrorBody } from '@/lib/api-error';
 
@@ -45,6 +45,8 @@ export interface NovoMedicoPayload {
   // Modo de cobrança (Story 6.2) — percentual obrigatório quando modo = percentual_producao.
   modoCobranca: Medico['modoCobranca'];
   percentualProducao: number | null;
+  /** Empresa que emite os boletos deste médico (Story 7.3) — obrigatório no form. */
+  contaEmissora: ContaEmissora;
   colaboradorResponsavel: string | null;
   ativo: boolean;
   // Cobrança (Fase 3) — opcional; médico pode ser salvo e completado depois.
