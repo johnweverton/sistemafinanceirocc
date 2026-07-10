@@ -101,6 +101,18 @@ export const POST = withErrorHandler(async (req) => {
     throw new ApiError(400, 'Resultado sem valor para cobrar', 'VALOR_ZERO');
   }
 
+  // A Cora rejeita invoices abaixo de 500 centavos ("amount must be >= 500", verificado em
+  // produção 2026-07-09). Falhar aqui com mensagem clara em vez de 502 do gateway.
+  const VALOR_MINIMO_GATEWAY = 5;
+  if (Number(resultadoRow.total_valor) < VALOR_MINIMO_GATEWAY) {
+    throw new ApiError(
+      422,
+      `Valor do resultado (R$ ${Number(resultadoRow.total_valor).toFixed(2)}) está abaixo do ` +
+        'mínimo aceito pelo gateway (R$ 5,00).',
+      'VALOR_ABAIXO_MINIMO',
+    );
+  }
+
   // 5. Carregar o médico do resultado — o pagador do boleto vem do bloco de cobrança dele
   //    (não do CPF do resultado, que é só a chave de cruzamento com a API da Carmem).
   if (!resultadoRow.medico_id) {

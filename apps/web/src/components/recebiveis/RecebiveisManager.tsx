@@ -98,8 +98,26 @@ export function RecebiveisManager() {
   const [competencia, setCompetencia] = useState('');
   const [status, setStatus] = useState<StatusRecebivel | ''>('');
   const [cancelando, setCancelando] = useState<Recebivel | null>(null);
+  const [baixandoId, setBaixandoId] = useState<string | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
+
+  // Abre o PDF do boleto em nova aba (URL pública da Cora) — permite conferir o boleto e
+  // reenviar manualmente quando o disparo automático falhar.
+  async function baixarBoleto(boletoId: string) {
+    setBaixandoId(boletoId);
+    try {
+      const { url } = await boletosService.pdf(boletoId);
+      window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      toast(
+        e instanceof ApiClientError ? e.message : 'Erro ao obter o PDF do boleto',
+        'error',
+      );
+    } finally {
+      setBaixandoId(null);
+    }
+  }
 
   const filtros: FiltroRecebiveis = {
     competencia: competencia || undefined,
@@ -202,18 +220,27 @@ export function RecebiveisManager() {
                     {r.pagoEm ? brl(r.valorPago) : '—'}
                   </td>
                   <td className="text-right">
-                    {/* Cancelável só em aberto/vencido (boleto 'emitido'); pago/cancelado não têm ação. */}
-                    {(r.statusDerivado === 'em_aberto' || r.statusDerivado === 'vencido') ? (
+                    <div className="flex items-center justify-end gap-1">
+                      {/* PDF disponível para qualquer boleto emitido (a rota devolve 404 se não houver). */}
                       <button
-                        onClick={() => setCancelando(r)}
-                        className="btn-ghost btn btn-sm text-cc-danger"
-                        disabled={cancelar.isPending}
+                        onClick={() => void baixarBoleto(r.boletoId)}
+                        className="btn-ghost btn btn-sm"
+                        disabled={baixandoId === r.boletoId}
+                        title="Abrir o PDF do boleto em nova aba"
                       >
-                        Cancelar
+                        {baixandoId === r.boletoId ? 'Abrindo…' : 'Boleto (PDF)'}
                       </button>
-                    ) : (
-                      <span className="text-xs text-cc-muted">—</span>
-                    )}
+                      {/* Cancelável só em aberto/vencido (boleto 'emitido'); pago/cancelado não têm ação. */}
+                      {(r.statusDerivado === 'em_aberto' || r.statusDerivado === 'vencido') && (
+                        <button
+                          onClick={() => setCancelando(r)}
+                          className="btn-ghost btn btn-sm text-cc-danger"
+                          disabled={cancelar.isPending}
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

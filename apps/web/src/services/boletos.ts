@@ -17,6 +17,9 @@ export const boletosService = {
       method: 'POST',
       body: JSON.stringify({ motivo }),
     }),
+  // URL do PDF do boleto (bank_slip da Cora) — para visualizar/baixar e reenviar manualmente.
+  pdf: (boletoId: string) =>
+    apiFetch<{ url: string; digitable: string | null }>(`/boletos/${boletoId}/pdf`),
 };
 
 /** Rótulos amigáveis para os campos de `details.faltantes` do erro 422 COBRANCA_INCOMPLETA. */
