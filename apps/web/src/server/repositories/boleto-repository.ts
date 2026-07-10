@@ -1,7 +1,7 @@
 // Boleto Repository — única porta de leitura/escrita da tabela boletos.
 // Segue o mesmo padrão do medico-repository e execucao-repository.
 // Toda escrita via service role (bypassa RLS).
-import type { Boleto, BoletoEvento, GatewayBoleto, StatusBoleto } from '@cobranca/shared';
+import type { Boleto, BoletoEvento, ContaEmissora, GatewayBoleto, StatusBoleto } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 import { toBoleto, toBoletoEvento, type BoletoRow, type BoletoEventoRow } from './mappers';
@@ -14,6 +14,8 @@ export interface CriarBoletoParams {
   emitidoPor: string;
   payloadResposta: unknown;
   vencimento?: string | null; // AAAA-MM-DD — mesma data do payment_terms (Story 4.2)
+  /** Conta que emitiu o boleto (Épico 7). Omitida → default 'mc' do banco (pré-7.2/pré-migration). */
+  contaEmissora?: ContaEmissora;
 }
 
 /** Persiste um boleto na tabela de auditoria. */
@@ -29,6 +31,9 @@ export async function criarBoleto(params: CriarBoletoParams): Promise<Boleto> {
       emitido_por: params.emitidoPor,
       payload_resposta: params.payloadResposta,
       vencimento: params.vencimento ?? null,
+      // Só envia a coluna quando informada: em banco pré-migration 0021 o insert
+      // continua válido, e com a migration o default 'mc' cobre a omissão.
+      ...(params.contaEmissora ? { conta_emissora: params.contaEmissora } : {}),
     })
     .select('*')
     .single();

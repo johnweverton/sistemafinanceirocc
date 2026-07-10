@@ -39,6 +39,7 @@ function boletoBase(overrides: Partial<Boleto> = {}): Boleto {
     id: 'b1',
     execucaoResultadoId: 'r1',
     gateway: 'cora',
+    contaEmissora: 'mc',
     idExterno: 'inv_1',
     status: 'emitido',
     emitidoPor: 'u1',

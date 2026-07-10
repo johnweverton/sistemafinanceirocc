@@ -1,4 +1,5 @@
 // Barrel de tipos compartilhados — única fonte de verdade dos modelos de domínio.
+export * from './types/conta-emissora';
 export * from './types/medico';
 export * from './types/integracao';
 export * from './types/execucao';

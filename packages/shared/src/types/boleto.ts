@@ -2,6 +2,8 @@
 // FEATURE DESLIGADA POR PADRÃO: nunca emite sem confirmação humana explícita, por médico,
 // um boleto por vez, e só sobre resultado com status 'ok' (PRD §2 / §10).
 
+import type { ContaEmissora } from './conta-emissora';
+
 export type GatewayBoleto = 'cora' | 'mock';
 
 /** Registro de envio do boleto por canal (WhatsApp/e-mail) — auditoria de disparo. */
@@ -19,6 +21,8 @@ export interface Boleto {
   id: string;
   execucaoResultadoId: string;
   gateway: GatewayBoleto;
+  /** Conta Cora que emitiu ESTE boleto (Épico 7) — operações pós-emissão usam sempre esta. */
+  contaEmissora: ContaEmissora;
   idExterno: string | null; // id retornado pelo gateway (ex.: invoice id da Cora)
   status: StatusBoleto;
   emitidoPor: string; // profiles.id de quem confirmou a emissão

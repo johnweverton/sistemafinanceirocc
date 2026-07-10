@@ -28,6 +28,8 @@ export interface MedicoRow {
   /** Modo de cobrança (migration 0018) — opcional em bancos sem a migration aplicada. */
   modo_cobranca?: Medico['modoCobranca'] | null;
   percentual_producao?: number | null;
+  /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
+  conta_emissora?: Medico['contaEmissora'] | null;
   colaborador_responsavel: string | null;
   ativo: boolean;
   necessita_configuracao: boolean;
@@ -105,6 +107,7 @@ export function toMedico(row: MedicoRow): Medico {
     modoMudancaData: row.modo_mudanca_data,
     modoCobranca: row.modo_cobranca ?? 'faixa_guias', // default seguro pré-migration 0018
     percentualProducao: row.percentual_producao ?? null,
+    contaEmissora: row.conta_emissora ?? 'mc', // default seguro pré-migration 0021 (backfill)
     colaboradorResponsavel: row.colaborador_responsavel,
     ativo: row.ativo,
     necessitaConfiguracao: row.necessita_configuracao ?? false,
@@ -152,6 +155,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     modoMudancaData: 'modo_mudanca_data',
     modoCobranca: 'modo_cobranca',
     percentualProducao: 'percentual_producao',
+    contaEmissora: 'conta_emissora',
     colaboradorResponsavel: 'colaborador_responsavel',
     ativo: 'ativo',
     necessitaConfiguracao: 'necessita_configuracao',
@@ -355,6 +359,8 @@ export interface BoletoRow {
   id: string;
   execucao_resultado_id: string;
   gateway: Boleto['gateway'];
+  /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
+  conta_emissora?: Boleto['contaEmissora'] | null;
   id_externo: string | null;
   status: Boleto['status'];
   emitido_por: string;
@@ -376,6 +382,7 @@ export function toBoleto(row: BoletoRow): Boleto {
     id: row.id,
     execucaoResultadoId: row.execucao_resultado_id,
     gateway: row.gateway,
+    contaEmissora: row.conta_emissora ?? 'mc', // default seguro pré-migration 0021 (backfill)
     idExterno: row.id_externo,
     status: row.status,
     emitidoPor: row.emitido_por,
@@ -426,6 +433,8 @@ export interface RecebivelRow {
   pago_em: string | null;
   valor_pago: number | null;
   emitido_em: string;
+  /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
+  conta_emissora?: Recebivel['contaEmissora'] | null;
   status_derivado: StatusRecebivel;
 }
 
@@ -442,6 +451,7 @@ export function toRecebivel(row: RecebivelRow): Recebivel {
     pagoEm: row.pago_em,
     valorPago: row.valor_pago,
     emitidoEm: row.emitido_em,
+    contaEmissora: row.conta_emissora ?? 'mc', // default seguro pré-migration 0021 (backfill)
     statusDerivado: row.status_derivado,
   };
 }

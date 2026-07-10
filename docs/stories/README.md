@@ -175,3 +175,43 @@ médicos auxiliares (percentual da produção mensal em vez de faixas por guias)
 - Conciliação bancária / plano de contas / DRE (candidata a épico próprio — em discovery
   com a coordenação, sem spec).
 - Cancelamento em lote e estorno de boleto pago.
+
+---
+
+# Épico 7 — Multi-Conta Emissora (MC + Cavalcante Viana)
+
+**Fonte de verdade:** `docs/architecture/feature-multi-conta-emissora.md`
+**Objetivo:** a empresa opera com duas contas Cora — MC (configurada) e Cavalcante Viana
+(pendente) — e o sistema assumia uma conta global. Introduzir "conta emissora" como atributo
+do médico para que boleto, beneficiário, mensagens e conciliação saiam pela empresa correta.
+
+## Decisões fechadas (dono, 2026-07-10)
+- **D1-A:** conta emissora é atributo do médico (`medicos.conta_emissora`); backfill `mc`.
+- **D2-A:** credenciais em env prefixadas (`CORA_MC_*` / `CORA_CV_*`) + registro estático de
+  contas em código; `CORA_*` legadas viram fallback da MC (deploy sem env nova = status quo).
+- **D3:** webhook com um secret por conta na mesma rota; reconsulta/cancelamento SEMPRE pela
+  conta gravada no boleto (`boletos.conta_emissora`, desnormalização proposital).
+
+## Pré-requisitos operacionais (gates externos — NÃO bloqueiam 7.1–7.3)
+- **Assinatura Cora Pro na conta Cavalcante Viana** (~R$ 44,90/mês): a API de Integração
+  Direta é habilitada por conta, e as credenciais (client_id + certificado) são gemas da
+  conta/CNPJ — credencial da MC não emite pela CV. Decisão de custo do dono pendente;
+  o sistema segue 100% MC até lá (fallback).
+- Gerar credenciais mTLS da CV → configurar `CORA_CV_*` na Vercel.
+- Registrar webhook na conta CV (secret próprio) e smoke test de baixo valor (arquitetura §8).
+- Classificar os médicos da CV no cadastro (UI da 7.3 ou CSV).
+
+## Stories
+
+| # | Story | Depende de | Foco |
+|---|-------|-----------|------|
+| 7.1 | Fundação multi-conta: migration + tipos + registro + env | migration 0021 | `shared` + `contas-emissoras.ts` + `env.ts` (fallback legado) + repositories |
+| 7.2 | Gateway e rotas por conta emissora | 7.1 | `CoraGateway` parametrizado + factory + emitir/cancelar/webhook + remetente de e-mail |
+| 7.3 | UI: empresa no cadastro, confirmação de emissão e recebíveis | 7.1 (7.2 p/ E2E) | MedicoForm + diálogo de emissão + badge/filtro em Recebíveis + CSV |
+
+7.2 e 7.3 são paralelizáveis após 7.1.
+
+## Fora de escopo
+- Segmentação do dashboard por empresa (fase 2, arquitetura §6).
+- Override de conta por emissão e 3ª conta/contas dinâmicas (sem caso de uso).
+- Migração das env `CORA_*` legadas para `CORA_MC_*` na Vercel (opcional, por higiene).

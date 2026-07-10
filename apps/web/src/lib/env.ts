@@ -2,6 +2,7 @@
 // Variáveis server-side só são lidas em código de servidor; este módulo nunca deve
 // ser importado por Client Components que precisem das chaves secretas.
 import { z } from 'zod';
+import type { ContaEmissora } from '@cobranca/shared';
 
 const publicSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
@@ -52,6 +53,22 @@ const serverSchema = z.object({
   // Segredo do path do webhook do Cora (Épico 4). Comparado em tempo constante.
   // Achado M-1: entropia mínima quando presente.
   CORA_WEBHOOK_SECRET: z.string().min(16, 'CORA_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
+
+  // ---------------------------------------------------------------------------
+  // MULTI-CONTA EMISSORA (Épico 7) — credenciais por conta, prefixadas.
+  // As CORA_* legadas (acima) valem como FALLBACK da conta 'mc': deploy sem env
+  // nova = comportamento atual. A CV só opera quando CORA_CV_* for configurada.
+  // ---------------------------------------------------------------------------
+  CORA_MC_CERT_BASE64: z.string().optional(),
+  CORA_MC_KEY_BASE64: z.string().optional(),
+  CORA_MC_API_URL: z.string().url().optional(),
+  CORA_MC_CLIENT_ID: z.string().optional(),
+  CORA_MC_WEBHOOK_SECRET: z.string().min(16, 'CORA_MC_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
+  CORA_CV_CERT_BASE64: z.string().optional(),
+  CORA_CV_KEY_BASE64: z.string().optional(),
+  CORA_CV_API_URL: z.string().url().optional(),
+  CORA_CV_CLIENT_ID: z.string().optional(),
+  CORA_CV_WEBHOOK_SECRET: z.string().min(16, 'CORA_CV_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
   
   // ---------------------------------------------------------------------------
   // DISPARO DE MENSAGENS — WhatsApp (Zappy) e E-mail (SMTP UOL)
@@ -89,6 +106,16 @@ export function getServerEnv() {
     CORA_API_URL: process.env.CORA_API_URL,
     CORA_CLIENT_ID: process.env.CORA_CLIENT_ID,
     CORA_WEBHOOK_SECRET: process.env.CORA_WEBHOOK_SECRET,
+    CORA_MC_CERT_BASE64: process.env.CORA_MC_CERT_BASE64,
+    CORA_MC_KEY_BASE64: process.env.CORA_MC_KEY_BASE64,
+    CORA_MC_API_URL: process.env.CORA_MC_API_URL,
+    CORA_MC_CLIENT_ID: process.env.CORA_MC_CLIENT_ID,
+    CORA_MC_WEBHOOK_SECRET: process.env.CORA_MC_WEBHOOK_SECRET,
+    CORA_CV_CERT_BASE64: process.env.CORA_CV_CERT_BASE64,
+    CORA_CV_KEY_BASE64: process.env.CORA_CV_KEY_BASE64,
+    CORA_CV_API_URL: process.env.CORA_CV_API_URL,
+    CORA_CV_CLIENT_ID: process.env.CORA_CV_CLIENT_ID,
+    CORA_CV_WEBHOOK_SECRET: process.env.CORA_CV_WEBHOOK_SECRET,
     ZAPPY_API_URL: process.env.ZAPPY_API_URL,
     ZAPPY_API_TOKEN: process.env.ZAPPY_API_TOKEN,
     SMTP_HOST: process.env.SMTP_HOST,
@@ -96,4 +123,66 @@ export function getServerEnv() {
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PASS: process.env.SMTP_PASS,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Credenciais por conta emissora (Épico 7, arquitetura §2-D2)
+// ---------------------------------------------------------------------------
+
+/** Credenciais mTLS/OAuth de UMA conta Cora, já resolvidas (prefixadas ?? legadas). */
+export interface CredenciaisConta {
+  certBase64: string;
+  keyBase64: string;
+  apiUrl: string;
+  clientId: string;
+  /** Secret do webhook desta conta; null se não configurado (não bloqueia emissão). */
+  webhookSecret: string | null;
+}
+
+/**
+ * Resolve as credenciais da conta emissora a partir das env vars prefixadas
+ * (CORA_MC_* / CORA_CV_*). Para 'mc', as CORA_* legadas valem como fallback —
+ * deploy sem env nova mantém a MC funcionando exatamente como hoje.
+ * Lança erro nomeando a conta e as vars faltantes (AC 4 da Story 7.1); a outra
+ * conta não é afetada.
+ */
+export function getCredenciaisConta(conta: ContaEmissora): CredenciaisConta {
+  const env = getServerEnv();
+
+  const fontes =
+    conta === 'mc'
+      ? {
+          certBase64: { valor: env.CORA_MC_CERT_BASE64 ?? env.CORA_CERT_BASE64, var: 'CORA_MC_CERT_BASE64 (ou CORA_CERT_BASE64)' },
+          keyBase64: { valor: env.CORA_MC_KEY_BASE64 ?? env.CORA_KEY_BASE64, var: 'CORA_MC_KEY_BASE64 (ou CORA_KEY_BASE64)' },
+          apiUrl: { valor: env.CORA_MC_API_URL ?? env.CORA_API_URL, var: 'CORA_MC_API_URL (ou CORA_API_URL)' },
+          clientId: { valor: env.CORA_MC_CLIENT_ID ?? env.CORA_CLIENT_ID, var: 'CORA_MC_CLIENT_ID (ou CORA_CLIENT_ID)' },
+          webhookSecret: env.CORA_MC_WEBHOOK_SECRET ?? env.CORA_WEBHOOK_SECRET ?? null,
+        }
+      : {
+          certBase64: { valor: env.CORA_CV_CERT_BASE64, var: 'CORA_CV_CERT_BASE64' },
+          keyBase64: { valor: env.CORA_CV_KEY_BASE64, var: 'CORA_CV_KEY_BASE64' },
+          apiUrl: { valor: env.CORA_CV_API_URL, var: 'CORA_CV_API_URL' },
+          clientId: { valor: env.CORA_CV_CLIENT_ID, var: 'CORA_CV_CLIENT_ID' },
+          webhookSecret: env.CORA_CV_WEBHOOK_SECRET ?? null,
+        };
+
+  const faltantes = (['certBase64', 'keyBase64', 'apiUrl', 'clientId'] as const)
+    .filter((campo) => !fontes[campo].valor)
+    .map((campo) => fontes[campo].var);
+
+  if (faltantes.length > 0) {
+    throw new Error(
+      `Credenciais da conta emissora '${conta}' não configuradas. ` +
+        `Variáveis faltantes: ${faltantes.join(', ')}. ` +
+        'Emissões pelas demais contas não são afetadas.',
+    );
+  }
+
+  return {
+    certBase64: fontes.certBase64.valor!,
+    keyBase64: fontes.keyBase64.valor!,
+    apiUrl: fontes.apiUrl.valor!,
+    clientId: fontes.clientId.valor!,
+    webhookSecret: fontes.webhookSecret,
+  };
 }

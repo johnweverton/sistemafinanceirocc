@@ -1,5 +1,6 @@
 // Domínio: Médico — fonte única de verdade dos parâmetros de faturamento.
 // Derivado da arquitetura (Data Models) e do PRD §5.1 / §7.
+import type { ContaEmissora } from './conta-emissora';
 
 export type StatusHapvida = 'credenciado' | 'nao_credenciado' | 'nenhum';
 export type ModoMudancaData = 'sim' | 'nao';
@@ -65,6 +66,8 @@ export interface Medico {
   modoCobranca: ModoCobranca;
   /** Percentual sobre o valor cobrado da produção (ex.: 5 = 5%). Obrigatório no modo percentual. */
   percentualProducao: number | null;
+  /** Conta Cora que emite os boletos deste médico (Épico 7). Backfill: 'mc'. */
+  contaEmissora: ContaEmissora;
   colaboradorResponsavel: string | null;
   ativo: boolean;
   /** true = médico auto-descoberto, parâmetros de faturamento ainda não configurados. */
