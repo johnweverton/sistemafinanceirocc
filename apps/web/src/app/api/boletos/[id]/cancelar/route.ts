@@ -20,6 +20,12 @@ import {
 } from '@/server/repositories/boleto-repository';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 
+// A rota encadeia 3 round-trips mTLS na Cora (token → reconsulta → DELETE). Limita a function
+// a 60s (em vez do teto de 300s da Vercel) para falhar rápido em vez de deixar o navegador
+// preso em "Cancelando…" — mesmo orçamento da rota de emissão; cabe folgado com o timeout
+// de 10s por chamada mTLS.
+export const maxDuration = 60;
+
 // Mesmo limite da emissão: máximo 10 cancelamentos por minuto por usuário.
 const cancelarLimiter = createRateLimiter('boletos-cancelar', { limit: 10, windowMs: 60_000 });
 
