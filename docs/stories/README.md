@@ -215,3 +215,45 @@ do médico para que boleto, beneficiário, mensagens e conciliação saiam pela 
 - Segmentação do dashboard por empresa (fase 2, arquitetura §6).
 - Override de conta por emissão e 3ª conta/contas dinâmicas (sem caso de uso).
 - Migração das env `CORA_*` legadas para `CORA_MC_*` na Vercel (opcional, por higiene).
+
+---
+
+# Épico 8 — Conciliação Bancária (extrato Cora + saldo por empresa)
+
+**Fonte de verdade:** `docs/architecture/feature-conciliacao-bancaria.md`
+**Discovery técnico:** `docs/research/2026-07-10-cora-apis-integracao-direta/`
+**Objetivo:** trazer o caixa real para dentro do sistema — extrato por empresa (MC/CV) com
+conciliação automática crédito↔boleto pago, fila de sugestões para casos ambíguos, tarifas
+visíveis e saldo por conta no dashboard.
+
+## Decisões fechadas (dono, 2026-07-10)
+- **D1:** extrato SNAPSHOT no Supabase (`extrato_transacoes`) — conciliação exige estado.
+- **D2:** matching conservador em camadas: auto SÓ com valor + CPF/CNPJ da contraparte +
+  janela ±3 dias; ambiguidade → `sugerido` (revisão humana); tudo reversível com trilha.
+- **D3:** sync sob demanda (botão por empresa) na v1, overlap de 3 dias; cron = fase 2.
+- **D5:** saldo por conta no dashboard (cache 60s; degradação graciosa p/ CV).
+- **D4 (Pix copia-e-cola) ADIADO** — "só se cobra por boleto mesmo"; desenho preservado na
+  arquitetura §2-D4.
+
+## Restrição técnica central
+O extrato da Cora NÃO referencia o invoice_id do boleto (pesquisa §1) — o vínculo é
+heurístico por natureza; a UX assume isso (fila de sugestões, nunca auto-conciliar ambíguo).
+
+## Pré-requisitos operacionais
+- Migration `0022_conciliacao_bancaria.sql` — dono roda manualmente no Supabase (padrão).
+- Ambiente stage da Cora para testar o sync real (recomendado antes da 8.2; não bloqueia).
+
+## Stories
+
+| # | Story | Depende de | Foco |
+|---|-------|-----------|------|
+| 8.1 | Fundação: migration 0022 + refactor `cora-http` + porta/gateways + repository | migration | `ContaBancariaPort` + `CoraContaGateway` + upsert idempotente |
+| 8.2 | Sync do extrato + motor de conciliação + rotas | 8.1 | engine puro em camadas + sincronizar/conciliar/ignorar/desfazer |
+| 8.3 | UI: página Extrato/Conciliação + saldo no dashboard | 8.2 | fila de sugestões + tarifas + cards MC/CV |
+
+Sequência 8.1 → 8.2 → 8.3 (sem paralelismo — cada uma consome a anterior).
+
+## Fora de escopo
+- Pix copia-e-cola nas mensagens (adiado pelo dono).
+- Plano de contas / DRE / categorização contábil; contas a PAGAR; NFS-e (épicos próprios).
+- Cron de sync automático (fase 2) e conciliação N↔1/pagamento parcial.
