@@ -1,0 +1,49 @@
+# QA Gate — Story 8.2 (Sync do extrato + motor de conciliação + rotas) — iteração 1 (final)
+storyId: "8.2"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-10"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [OBS-821 (low, p/ 8.3), OBS-822 (low, p/ 8.3), OBS-823 (low, p/ dono)]
+notes: >
+  AC 1-6 verificados. Engine puro com a propriedade central AUDITADA: auto-conciliação
+  exige par único nos DOIS sentidos (transação↔boleto) — mais conservador que o AC, correto
+  para o domínio (falso positivo financeiro é inaceitável); bateria de 17 casos cobre todos
+  os ramos (auto, sugerido c/ e s/ candidato, ambos os lados da ambiguidade, janela ±3d nos
+  limites, centavos, débito/FEE, 1↔1, determinismo). Corrida sync×manual resolvida com
+  updates condicionais (manual vence; testado) e 23505→descarte no sync / 409 na ação
+  manual (OBS-812 do gate 8.1 RESOLVIDA). Idempotência do re-sync herdada da 8.1 +
+  recálculo de sugerido testado (inclusive sugestão órfã → sem_match). Rotas com
+  requireRole, rate limit, Zod whitelist e códigos de erro de negócio (503/502/409/422).
+  typecheck/lint/test verdes (web 372 + shared 20; 53 novos). Anti-self-review: mesma
+  sessão do @dev (personas distintas, /full-sdc — padrão dos Épicos 7/8.1). CodeRabbit
+  indisponível na máquina — cobertura manual reforçada.
+issues:
+  - id: OBS-821
+    severity: low
+    category: requirements
+    description: >
+      Desfazer uma conciliação AUTO não é "sticky": o próximo sync recalcula e tende a
+      re-auto-conciliar o mesmo par (mesmo valor+documento+janela). O fluxo esperado é o
+      operador reclassificar em seguida (conciliar com o boleto certo ou ignorar) — aí o
+      estado é manual e o motor não toca mais.
+    recommendation: >
+      Na UI da 8.3, após "desfazer" de um auto, orientar a próxima ação (vincular certo /
+      ignorar). Se o dono quiser desfazer persistente, é uma flag aditiva futura.
+  - id: OBS-822
+    severity: low
+    category: code
+    description: >
+      GET /api/extrato filtra o fim do período no dia UTC (fim T23:59:59.999Z) —
+      transações após 21h de Brasília caem no dia UTC seguinte.
+    recommendation: Decidir fuso de exibição/filtragem na página /extrato (8.3).
+  - id: OBS-823
+    severity: low
+    category: requirements
+    description: >
+      Motivo do "ignorar" é aceito no corpo mas não persistido (sem coluna própria;
+      payload jsonb é auditoria crua da API). Trilha quem/quando existe.
+    recommendation: Validar com o dono se o texto do motivo é necessário; coluna aditiva futura.
