@@ -12,12 +12,17 @@ import {
 } from '@/server/repositories/plano-contas-repository';
 import { CAMPOS_REGRA_CATEGORIZACAO_VALIDOS } from '@cobranca/shared';
 
-const patchSchema = z.object({
-  campo: z.enum(CAMPOS_REGRA_CATEGORIZACAO_VALIDOS).optional(),
-  padrao: z.string().min(1).optional(),
-  prioridade: z.number().int().optional(),
-  ativo: z.literal(false).optional(),
-});
+const patchSchema = z
+  .object({
+    campo: z.enum(CAMPOS_REGRA_CATEGORIZACAO_VALIDOS).optional(),
+    padrao: z.string().min(1).optional(),
+    prioridade: z.number().int().optional(),
+    ativo: z.literal(false).optional(),
+  })
+  .refine(
+    (d) => d.campo !== undefined || d.padrao !== undefined || d.prioridade !== undefined || d.ativo !== undefined,
+    { message: 'Informe ao menos um campo para atualizar (campo, padrao, prioridade ou ativo).' },
+  );
 
 export const PATCH = withErrorHandler<{ id: string }>(async (req, { params }) => {
   await requireRole(['admin']);

@@ -14,11 +14,15 @@ import {
   excluirCategoria,
 } from '@/server/repositories/plano-contas-repository';
 
-const patchSchema = z.object({
-  nome: z.string().min(1).optional(),
-  ordem: z.number().int().optional(),
-  ativo: z.literal(false).optional(),
-});
+const patchSchema = z
+  .object({
+    nome: z.string().min(1).optional(),
+    ordem: z.number().int().optional(),
+    ativo: z.literal(false).optional(),
+  })
+  .refine((d) => d.nome !== undefined || d.ordem !== undefined || d.ativo !== undefined, {
+    message: 'Informe ao menos um campo para atualizar (nome, ordem ou ativo).',
+  });
 
 export const PATCH = withErrorHandler<{ id: string }>(async (req, { params }) => {
   await requireRole(['admin']);

@@ -1,0 +1,62 @@
+# QA Gate — Story 9.2 (Motor de categorização + relatório do DRE + rotas) — iteração 1 (final)
+storyId: "9.2"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-11"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [QA-921-1 (medium, corrigida na iteração), OBS-922 (low, deferida), OBS-923 (low, deferida)]
+notes: >
+  AC 1-9 verificados. Motor `categorizacao.ts` audita corretamente a prioridade das 2
+  auto-regras de sistema sobre regras do usuário (testado: transação conciliada com
+  descrição que bateria numa regra cadastrada ainda assim vira confirmada/Receita — a
+  auto-regra nunca cede). Motor `relatorio-dre.ts` (D4) auditado nas bordas: mês parcial
+  no início e no fim do período, `dataInicio` do template posterior ao início do
+  relatório, `dataFim` cortando antes do fim do período, `dataFim` null (sem corte),
+  `diaDoMes=28` em fevereiro — todos corretos via comparação de STRING de data (mesma
+  técnica do fix OBS-822 do Épico 8, evita armadilhas de fuso). Extensão de
+  `sincronizar/route.ts` (Épico 8, produção) é aditiva e testada: só toca transações
+  `sem_categoria`, nunca recategoriza `sugerida`/`confirmada`; suíte pré-existente de
+  `sincronizar.test.ts` passa sem alteração de asserções (AC 9). RBAC de todas as 8 rotas
+  conferido contra a AC (admin vs admin/financeiro) — consistente. `excluirRegra`
+  (lacuna encontrada na validação da 9.2) implementada sem guard de vínculos (correto —
+  regra é cadastro-folha). typecheck (web+shared)/lint verdes; 482 testes web (60
+  arquivos) + 20 shared; `next build` completo gera as 8 rotas novas (aprendizado do
+  FIX-831 da 8.3 aplicado — build verificado, não só tsc/lint/vitest). Anti-self-review:
+  mesma sessão do @dev (personas distintas — padrão dos Épicos 7/8/9). CodeRabbit
+  indisponível na máquina — cobertura manual reforçada com build de produção.
+issues:
+  - id: QA-921-1
+    severity: medium
+    category: code
+    description: >
+      PATCH /api/plano-contas/[id] e /api/plano-contas/regras/[id] aceitavam corpo vazio
+      `{}` (todos os campos são opcionais no schema) — a rota cairia no ramo
+      `atualizarCategoria`/`atualizarRegra` com `{nome: undefined, ordem: undefined}` (ou
+      equivalente), que o Supabase serializa como um PATCH sem colunas a atualizar. Efeito
+      provável: erro pouco claro do PostgREST (ou 500 genérico) em vez de um 422 direto —
+      só se manifestaria com uma chamada HTTP malformada (cliente da 9.3 ou teste manual),
+      não achado por typecheck/lint/vitest (o mock de repository não reproduz o
+      comportamento real do PostgREST).
+    recommendation: >
+      CORRIGIDA na iteração 1 — `.refine()` nos dois schemas exigindo ao menos um campo
+      preenchido; corpo vazio agora rejeita com 422 claro ANTES de chegar no repository.
+      Testes dedicados adicionados nos dois arquivos de rota.
+  - id: OBS-922
+    severity: low
+    category: requirements
+    description: >
+      `GET /api/dre/relatorio` não valida `inicio <= fim`. Um período invertido não
+      quebra (o engine devolve um relatório zerado, já que nenhuma transação/lançamento
+      cai num intervalo vazio/invertido) — apenas confunde quem chamou a rota errado.
+    recommendation: Considerar validação explícita (400) na 9.3 se a UI permitir esse erro de digitação.
+  - id: OBS-923
+    severity: low
+    category: performance
+    description: >
+      Herdada do gate 9.1 (OBS-912): sem índice em `categoria_id` nas tabelas do DRE.
+      Irrelevante no volume atual (dezenas de categorias/lançamentos, centenas de
+      transações/mês) — mesma decisão de deferir já tomada.
+    recommendation: Revisar se o volume crescer significativamente.

@@ -117,6 +117,13 @@ describe('PATCH /api/plano-contas/[id]', () => {
     expect(res.status).toBe(422);
   });
 
+  it('corpo vazio (QA-921-1) → 422 claro, nunca bate no repository', async () => {
+    const res = await reqPatch('cat-1', {});
+    expect(res.status).toBe(422);
+    expect(mockAtualizarCategoria).not.toHaveBeenCalled();
+    expect(mockDesativarCategoria).not.toHaveBeenCalled();
+  });
+
   it('desativar categoria de sistema propaga o 400 do repository', async () => {
     mockDesativarCategoria.mockRejectedValue(
       new ApiError(400, 'Categoria de sistema não pode ser desativada.', 'CATEGORIA_SISTEMA_PROTEGIDA'),

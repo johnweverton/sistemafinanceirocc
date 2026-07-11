@@ -102,6 +102,13 @@ describe('PATCH /api/plano-contas/regras/[id]', () => {
     expect(mockDesativarRegra).toHaveBeenCalledWith('r1');
     expect(mockAtualizarRegra).not.toHaveBeenCalled();
   });
+
+  it('corpo vazio (QA-921-1) → 422 claro, nunca bate no repository', async () => {
+    const res = await reqPatch({});
+    expect(res.status).toBe(422);
+    expect(mockAtualizarRegra).not.toHaveBeenCalled();
+    expect(mockDesativarRegra).not.toHaveBeenCalled();
+  });
 });
 
 describe('DELETE /api/plano-contas/regras/[id]', () => {
