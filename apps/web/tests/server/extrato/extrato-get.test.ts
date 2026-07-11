@@ -46,13 +46,13 @@ beforeEach(() => {
 });
 
 describe('GET /api/extrato', () => {
-  it('repassa filtros validados ao repository (fim vira fim-do-dia inclusivo)', async () => {
+  it('repassa filtros validados ao repository (início/fim do dia em Brasília, OBS-822)', async () => {
     const res = await reqGet('?conta=mc&inicio=2026-07-01&fim=2026-07-10&status=sugerido&tipo=CREDIT');
     expect(res.status).toBe(200);
     expect(mockListarTransacoes).toHaveBeenCalledWith({
       contaEmissora: 'mc',
-      dataInicio: '2026-07-01',
-      dataFim: '2026-07-10T23:59:59.999Z',
+      dataInicio: '2026-07-01T00:00:00.000-03:00',
+      dataFim: '2026-07-10T23:59:59.999-03:00',
       status: 'sugerido',
       tipo: 'CREDIT',
     });

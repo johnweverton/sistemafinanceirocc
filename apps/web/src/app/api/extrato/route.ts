@@ -34,11 +34,14 @@ export const GET = withErrorHandler(async (req) => {
     });
   }
 
+  // data_transacao é timestamptz — "inicio"/"fim" chegam como data pura (YYYY-MM-DD) e
+  // representam o dia em Brasília, não em UTC. Offset fixo -03:00 (Brasil não tem mais
+  // horário de verão desde 2019): sem ele, o intervalo abre 3h cedo e fecha 3h cedo,
+  // vazando a noite anterior para dentro e cortando o fim da noite do último dia (OBS-822).
   const filtros: FiltroListagemExtrato = {
     contaEmissora: query.data.conta,
-    dataInicio: query.data.inicio,
-    // data_transacao é timestamptz — o fim do dia fecha o intervalo inclusivo.
-    dataFim: query.data.fim ? `${query.data.fim}T23:59:59.999Z` : undefined,
+    dataInicio: query.data.inicio ? `${query.data.inicio}T00:00:00.000-03:00` : undefined,
+    dataFim: query.data.fim ? `${query.data.fim}T23:59:59.999-03:00` : undefined,
     status: query.data.status,
     tipo: query.data.tipo,
   };
