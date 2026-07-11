@@ -50,17 +50,20 @@ function totalDoGrupo(r: RelatorioDre, grupo: GrupoPlanoContas): number {
 /** Diálogo de criação de lançamento manual — campos condicionais por tipo (avulso/recorrente). */
 function NovoLancamentoDialog({
   categorias,
+  contaEmissoraPadrao,
   criando,
   onConfirm,
   onCancel,
 }: {
   categorias: PlanoContas[];
+  /** Empresa pré-selecionada = filtro ativo na tela; 'mc' quando "Consolidado". */
+  contaEmissoraPadrao: ContaEmissora;
   criando: boolean;
   onConfirm: (input: CriarLancamentoInput) => void;
   onCancel: () => void;
 }) {
   const [tipo, setTipo] = useState<'avulso' | 'recorrente'>('avulso');
-  const [contaEmissora, setContaEmissora] = useState<ContaEmissora>('mc');
+  const [contaEmissora, setContaEmissora] = useState<ContaEmissora>(contaEmissoraPadrao);
   const [categoriaId, setCategoriaId] = useState('');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
@@ -227,10 +230,18 @@ export function DreManager() {
     queryKey: dreQueryKeys.lancamentos(conta || undefined),
     queryFn: () => dreService.listarLancamentos(conta || undefined),
   });
+  // Lista COMPLETA (ativas + inativas) — uma categoria pode ser desativada (soft-disable)
+  // enquanto ainda referenciada por lançamentos antigos; usar só ativas faria o nome
+  // sumir (virar "—") para lançamentos históricos de categorias desativadas depois.
   const categoriasQ = useQuery({
-    queryKey: planoContasQueryKeys.categorias(true),
-    queryFn: () => planoContasService.listarCategorias(true),
+    queryKey: planoContasQueryKeys.categorias(),
+    queryFn: () => planoContasService.listarCategorias(),
   });
+  // Só as ativas entram como opção selecionável no diálogo de novo lançamento.
+  const categoriasAtivas = useMemo(
+    () => (categoriasQ.data ?? []).filter((c) => c.ativo),
+    [categoriasQ.data],
+  );
 
   const categoriaPorId = useMemo(
     () => new Map((categoriasQ.data ?? []).map((c) => [c.id, c])),
@@ -412,7 +423,8 @@ export function DreManager() {
 
       {novoLancamento && (
         <NovoLancamentoDialog
-          categorias={categoriasQ.data ?? []}
+          categorias={categoriasAtivas}
+          contaEmissoraPadrao={conta || 'mc'}
           criando={criarLancamento.isPending}
           onConfirm={(input) => criarLancamento.mutate(input)}
           onCancel={() => setNovoLancamento(false)}

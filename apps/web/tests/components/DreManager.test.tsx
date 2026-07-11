@@ -121,6 +121,22 @@ describe('DreManager', () => {
     expect(within(tabela).getByText('Despesas administrativas')).toBeInTheDocument();
   });
 
+  it('lançamento de categoria DESATIVADA ainda mostra o nome (QA-931-1)', async () => {
+    mockRelatorio.mockResolvedValue(RELATORIO_POSITIVO);
+    mockListarLancamentos.mockResolvedValue([{ ...LANCAMENTO_AVULSO, categoriaId: 'cat-antiga' }]);
+    // listarCategorias() sem filtro (lista completa) inclui a categoria já desativada.
+    mockListarCategorias.mockResolvedValue([
+      CATEGORIA_RECEITA,
+      CATEGORIA_ALUGUEL,
+      { id: 'cat-antiga', grupo: 'despesa_operacional', nome: 'Categoria antiga', sistema: false, ativo: false, ordem: 0, criadoEm: '2026-01-01T00:00:00Z' },
+    ]);
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByText('Reforma')).toBeInTheDocument());
+    const tabela = screen.getAllByRole('table')[0]!;
+    expect(within(tabela).getByText('Categoria antiga')).toBeInTheDocument();
+  });
+
   it('cria lançamento avulso com o payload certo', async () => {
     mockRelatorio.mockResolvedValue(RELATORIO_POSITIVO);
     mockCriarLancamento.mockResolvedValue(LANCAMENTO_AVULSO);
