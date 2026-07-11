@@ -262,9 +262,8 @@ Sequência 8.1 → 8.2 → 8.3 (sem paralelismo — cada uma consome a anterior)
 
 # Épico 9 — DRE / Plano de Contas (categorização contábil)
 
-**Status:** Em discovery — decisões de escopo fechadas com o dono (2026-07-11); arquitetura
-detalhada (schema/migration/UI) ainda não desenhada. Fonte de verdade a criar:
-`docs/architecture/feature-dre-plano-contas.md`.
+**Status:** Arquitetura proposta (2026-07-11), aguarda GO do dono para virar stories.
+**Fonte de verdade:** `docs/architecture/feature-dre-plano-contas.md`
 
 **Objetivo:** transformar o caixa que já entra pelo Épico 8 (extrato + conciliação) em uma
 Demonstração de Resultado (DRE) contábil formal — receitas, deduções, despesas por categoria
@@ -300,20 +299,24 @@ e resultado líquido —, incluindo despesas que não passam pela conta Cora.
    RESULTADO LÍQUIDO = Receitas − Deduções − Despesas
    ```
 
-## Perguntas em aberto (para a fase de arquitetura)
-- Granularidade temporal do DRE: por competência (mesmo conceito já usado no dashboard/
-  recebíveis) ou por mês de caixa (data da transação)? Provável: mês de caixa, já que a
-  base é o extrato bancário, não competência de emissão.
-- Regra de sugestão de categoria: por palavra-chave na descrição/contraparte, por
-  `transaction_type` cru da Cora, ou combinação — desenhar junto com o motor de
-  conciliação existente (`engine/conciliacao.ts`) ou como motor próprio?
-- Papel que edita o plano de contas (admin apenas, ou também financeiro?).
-- Recorrência do lançamento manual: fim automático (data-limite) ou só editável/cancelável
-  manualmente?
+## Decisões de arquitetura (Aria @architect, 2026-07-11 — detalhe completo na fonte de verdade)
+- **Granularidade: mês de caixa** (data da transação/lançamento), não competência — o DRE
+  nasce do extrato bancário.
+- **Motor próprio** `server/engine/categorizacao.ts` (mesmo padrão puro/testável do
+  `conciliacao.ts`, mas independente dele): 2 auto-regras de sistema (crédito conciliado
+  com boleto → Receita de honorários; débito FEE → Tarifas bancárias, ambas `confirmada`
+  sem revisão) + regras do usuário por palavra-chave em contraparte/descrição (sempre
+  `sugerida`, exige confirmação).
+- **Plano de contas editável**: papel **admin** (mesmo padrão de `config-cobranca`).
+  Categorizar transação, lançar manual e ver o relatório: **admin/financeiro** (mesmo
+  padrão de `/extrato`/`/recebiveis`).
+- **Recorrência sem cron**: lançamento recorrente é um template projetado NA LEITURA do
+  relatório (sem cron/job novo); ajustar um mês isolado exige encerrar o template e lançar
+  esse mês como avulso (limitação documentada, v1).
 
 ## Pré-requisitos operacionais
 Nenhum novo — reaproveita 100% a infraestrutura do Épico 8 (extrato sincronizado por
-conta). Migration própria a definir (após `0022_conciliacao_bancaria.sql`).
+conta). Migration `0023_dre_plano_contas.sql` (schema completo na fonte de verdade §4).
 
 ## Fora de escopo
 - Contas a PAGAR como módulo completo (fornecedores, vencimentos, workflow de aprovação)
@@ -321,9 +324,19 @@ conta). Migration própria a definir (após `0022_conciliacao_bancaria.sql`).
   contas a pagar.
 - NFS-e (épico próprio).
 - Integração com contador/exportação para sistema contábil externo (SPED etc.).
+- Exceção por mês em lançamento recorrente; recategorização retroativa automática ao
+  cadastrar regra nova; gráficos/comparativo entre períodos (v1 é tabular).
+
+## Stories propostas (@sm detalha após o GO)
+
+| # | Story | Depende de | Foco |
+|---|-------|-----------|------|
+| 9.1 | Fundação: migration 0023 + seed + tipos shared + repositories básicos | migration | schema (plano_contas, regras, lançamentos manuais, colunas em extrato_transacoes) |
+| 9.2 | Motor de categorização + rotas | 9.1 | `categorizacao.ts` (regras em camadas) + CRUD/ação de categorizar |
+| 9.3 | UI: `/dre` (relatório) + `/dre/cadastro` (plano de contas/regras) + extensão do `/extrato` | 9.2 | telas + testes de componente |
+
+Sequência 9.1 → 9.2 → 9.3 (mesmo padrão sequencial do Épico 8).
 
 ## Próximo passo
-Arquitetura detalhada (@architect): schema de `plano_contas` + `dre_lancamentos_manuais` +
-regra de vínculo categoria↔transação, motor de sugestão, páginas de UI (cadastro de plano
-de contas, categorização em fila, relatório DRE por período/empresa). Depois, quebra em
-stories (@sm) seguindo o padrão sequencial dos épicos anteriores.
+**Aguarda GO do dono** sobre a arquitetura proposta (`docs/architecture/feature-dre-plano-contas.md`)
+para o @sm quebrar em stories e iniciar o SDC.
