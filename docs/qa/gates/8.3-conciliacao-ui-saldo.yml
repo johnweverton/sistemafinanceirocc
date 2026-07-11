@@ -1,0 +1,52 @@
+# QA Gate — Story 8.3 (UI da conciliação + saldo por empresa) — iteração 1 (final)
+storyId: "8.3"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-11"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [FIX-831 (high, corrigida na iteração), OBS-832 (low, p/ dono), OBS-822 (low, deferida)]
+notes: >
+  AC 1-5 verificados. Página /extrato completa: filtros com whitelist Zod espelhada na UI,
+  fila de sugestões em destaque (transação × boleto; sugestão ambígua orienta vínculo
+  manual em vez de esconder ação), conciliação manual restrita a boletos pagos LIVRES da
+  mesma conta (rota boletos-conciliaveis exclui conciliados via boletoIdsConciliados),
+  corrida tratada na UI (409 BOLETO_JA_CONCILIADO → toast + refetch), desfazer com
+  orientação de próxima ação (OBS-821 do gate 8.2 ATENDIDA). Sync por empresa trata
+  CONTA_NAO_CONFIGURADA com toast informativo sem quebrar a página. GET /api/extrato
+  embute o recebível vinculado em UMA query (sem N+1). Saldo: rota com requireRole,
+  cache 60s por conta e degradação por conta (não configurada / indisponível / ok) —
+  nunca erro HTTP; cards no dashboard renderizam também no empty state. Paginação
+  client-side (50/página) + período default mês corrente (OBS-813 ATENDIDA). Rotas novas
+  com requireRole admin/financeiro + Zod. typecheck (web+shared), lint, 380 testes e
+  NEXT BUILD completo verdes (8 testes de componente novos cobrem as 4 chaves do AC 5).
+  Anti-self-review: mesma sessão do @dev (personas distintas — padrão dos Épicos 7/8).
+  CodeRabbit indisponível na máquina — cobertura manual reforçada com build de produção.
+issues:
+  - id: FIX-831
+    severity: high
+    category: code
+    description: >
+      `limparCacheSaldos` exportado de app/api/contas/saldo/route.ts — o App Router só
+      aceita handlers/config como exports de route.ts; o `next build` falharia no deploy
+      (invisível para tsc/lint/vitest).
+    recommendation: CORRIGIDA na iteração 1 (commit 1063865) — export removido, build validado.
+  - id: OBS-832
+    severity: low
+    category: requirements
+    description: >
+      O card "totais do período" soma as transações FILTRADAS: com filtro de tipo/status
+      ativo, "Recebido no período" pode mostrar R$ 0,00 (ex.: filtro "Débitos"). Coerente
+      com a listagem exibida, mas o rótulo sugere o período inteiro.
+    recommendation: >
+      Validar com o dono se o card deve ignorar os filtros de tipo/status. Ajuste simples
+      (calcular totais sem esses filtros) se desejado.
+  - id: OBS-822
+    severity: low
+    category: code
+    description: >
+      Herdada do gate 8.2 e ainda válida: o fim do período é interpretado como fim do dia
+      UTC — transações após ~21h de Brasília caem no dia seguinte do filtro.
+    recommendation: Deferida — decidir fuso canônico de exibição/filtragem com o dono (pós-épico).
