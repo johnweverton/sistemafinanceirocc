@@ -12,6 +12,7 @@ import type {
   FiltroExtrato,
   FiltroListagemExtrato,
   StatusConciliacao,
+  StatusCategorizacao,
   TransacaoExtratoApi,
 } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -355,6 +356,38 @@ export async function atualizarStatusConciliacao(
       );
     }
     throw new ApiError(500, 'Falha ao atualizar status de conciliação', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  const row = (data ?? [])[0] as ExtratoTransacaoRow | undefined;
+  if (!row) {
+    throw new ApiError(404, 'Transação do extrato não encontrada', 'NOT_FOUND', { id });
+  }
+  return toExtratoTransacao(row);
+}
+
+export interface Categorizacao {
+  categoriaId: string;
+  status: StatusCategorizacao;
+}
+
+/**
+ * Grava categoria/status de categorização (Épico 9, D2) — eixo INDEPENDENTE de
+ * status_conciliacao: uma transação pode estar conciliada e sem categoria ao mesmo tempo.
+ * Consumida pelo motor de categorização e pela confirmação manual (9.2).
+ */
+export async function categorizarTransacao(
+  id: string,
+  categorizacao: Categorizacao,
+): Promise<ExtratoTransacao> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('extrato_transacoes')
+    .update({ categoria_id: categorizacao.categoriaId, status_categorizacao: categorizacao.status })
+    .eq('id', id)
+    .select('*');
+  if (error) {
+    throw new ApiError(500, 'Falha ao categorizar transação do extrato', 'DB_ERROR', {
       error: error.message,
     });
   }

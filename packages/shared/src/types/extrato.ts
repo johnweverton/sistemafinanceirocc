@@ -6,6 +6,7 @@
 
 import type { ContaEmissora } from './conta-emissora';
 import type { Recebivel } from './recebivel';
+import type { StatusCategorizacao } from './dre';
 
 /** Sentido da transação no extrato (cru da API da Cora). */
 export type TipoTransacaoExtrato = 'CREDIT' | 'DEBIT';
@@ -68,6 +69,12 @@ export interface ExtratoTransacao extends TransacaoExtratoApi {
   conciliadoPor: string | null;
   conciliadoEm: string | null;
   sincronizadoEm: string;
+  /**
+   * Categoria do DRE (Épico 9) — eixo INDEPENDENTE da conciliação: uma transação pode
+   * estar conciliada e sem categoria ao mesmo tempo até o motor de categorização rodar.
+   */
+  categoriaId: string | null;
+  statusCategorizacao: StatusCategorizacao;
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   ultimoSync,
   listarTransacoes,
   atualizarStatusConciliacao,
+  categorizarTransacao,
 } from '@/server/repositories/extrato-repository';
 import { ApiError } from '@/lib/api-error';
 
@@ -69,6 +70,8 @@ const ROW_COMPLETA = {
   conciliado_em: null,
   payload: { raw: true },
   sincronizado_em: '2026-07-10T00:00:00Z',
+  categoria_id: null,
+  status_categorizacao: 'sem_categoria',
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -315,6 +318,47 @@ describe('atualizarStatusConciliacao (transições com trilha)', () => {
     mockFrom.mockReturnValueOnce(makeBuilder({ data: [], error: null }));
     await expect(
       atualizarStatusConciliacao('tx-x', { status: 'sem_match' }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('categorizarTransacao (Épico 9, D2 — eixo independente da conciliação)', () => {
+  it('grava categoria e status de categorização', async () => {
+    const builder = makeBuilder({
+      data: [{ ...ROW_COMPLETA, categoria_id: 'cat-1', status_categorizacao: 'confirmada' }],
+      error: null,
+    });
+    mockFrom.mockReturnValueOnce(builder);
+
+    const r = await categorizarTransacao('tx-1', { categoriaId: 'cat-1', status: 'confirmada' });
+
+    expect(builder.update).toHaveBeenCalledWith({
+      categoria_id: 'cat-1',
+      status_categorizacao: 'confirmada',
+    });
+    expect(builder.eq).toHaveBeenCalledWith('id', 'tx-1');
+    expect(r.categoriaId).toBe('cat-1');
+    expect(r.statusCategorizacao).toBe('confirmada');
+  });
+
+  it('não toca status_conciliacao/boleto_id — eixo independente', async () => {
+    const builder = makeBuilder({
+      data: [{ ...ROW_COMPLETA, categoria_id: 'cat-1', status_categorizacao: 'sugerida' }],
+      error: null,
+    });
+    mockFrom.mockReturnValueOnce(builder);
+
+    await categorizarTransacao('tx-1', { categoriaId: 'cat-1', status: 'sugerida' });
+
+    const patch = builder.update.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch).not.toHaveProperty('status_conciliacao');
+    expect(patch).not.toHaveProperty('boleto_id');
+  });
+
+  it('transação inexistente → ApiError 404', async () => {
+    mockFrom.mockReturnValueOnce(makeBuilder({ data: [], error: null }));
+    await expect(
+      categorizarTransacao('tx-x', { categoriaId: 'cat-1', status: 'confirmada' }),
     ).rejects.toMatchObject({ status: 404 });
   });
 });

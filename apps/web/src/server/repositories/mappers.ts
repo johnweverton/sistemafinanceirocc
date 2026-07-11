@@ -15,6 +15,9 @@ import type {
   ResumoMedico,
   AgingFaixa,
   ExtratoTransacao,
+  PlanoContas,
+  RegraCategorizacao,
+  LancamentoManual,
 } from '@cobranca/shared';
 
 export interface MedicoRow {
@@ -535,6 +538,8 @@ export interface ExtratoTransacaoRow {
   conciliado_em: string | null;
   payload: unknown;
   sincronizado_em: string;
+  categoria_id: string | null;
+  status_categorizacao: ExtratoTransacao['statusCategorizacao'];
 }
 
 export function toExtratoTransacao(row: ExtratoTransacaoRow): ExtratoTransacao {
@@ -555,5 +560,87 @@ export function toExtratoTransacao(row: ExtratoTransacaoRow): ExtratoTransacao {
     conciliadoEm: row.conciliado_em,
     payload: row.payload,
     sincronizadoEm: row.sincronizado_em,
+    categoriaId: row.categoria_id,
+    statusCategorizacao: row.status_categorizacao,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// DRE / Plano de contas (Épico 9)
+// ---------------------------------------------------------------------------
+
+export interface PlanoContasRow {
+  id: string;
+  grupo: PlanoContas['grupo'];
+  nome: string;
+  sistema: boolean;
+  ativo: boolean;
+  ordem: number;
+  criado_em: string;
+}
+
+export function toPlanoContas(row: PlanoContasRow): PlanoContas {
+  return {
+    id: row.id,
+    grupo: row.grupo,
+    nome: row.nome,
+    sistema: row.sistema,
+    ativo: row.ativo,
+    ordem: row.ordem,
+    criadoEm: row.criado_em,
+  };
+}
+
+export interface RegraCategorizacaoRow {
+  id: string;
+  categoria_id: string;
+  campo: RegraCategorizacao['campo'];
+  padrao: string;
+  prioridade: number;
+  ativo: boolean;
+  criado_em: string;
+}
+
+export function toRegraCategorizacao(row: RegraCategorizacaoRow): RegraCategorizacao {
+  return {
+    id: row.id,
+    categoriaId: row.categoria_id,
+    campo: row.campo,
+    padrao: row.padrao,
+    prioridade: row.prioridade,
+    ativo: row.ativo,
+    criadoEm: row.criado_em,
+  };
+}
+
+export interface LancamentoManualRow {
+  id: string;
+  conta_emissora: LancamentoManual['contaEmissora'];
+  categoria_id: string;
+  descricao: string;
+  valor: number;
+  tipo_lancamento: LancamentoManual['tipoLancamento'];
+  data: string | null;
+  dia_do_mes: number | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  criado_por: string;
+  criado_em: string;
+}
+
+export function toLancamentoManual(row: LancamentoManualRow): LancamentoManual {
+  return {
+    id: row.id,
+    contaEmissora: row.conta_emissora,
+    categoriaId: row.categoria_id,
+    descricao: row.descricao,
+    valor: Number(row.valor),
+    tipoLancamento: row.tipo_lancamento,
+    data: row.data,
+    diaDoMes: row.dia_do_mes,
+    dataInicio: row.data_inicio,
+    dataFim: row.data_fim,
+    criadoPor: row.criado_por,
+    criadoEm: row.criado_em,
   };
 }
