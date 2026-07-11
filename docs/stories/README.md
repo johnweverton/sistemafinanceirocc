@@ -262,7 +262,7 @@ Sequência 8.1 → 8.2 → 8.3 (sem paralelismo — cada uma consome a anterior)
 
 # Épico 9 — DRE / Plano de Contas (categorização contábil)
 
-**Status:** Arquitetura proposta (2026-07-11), aguarda GO do dono para virar stories.
+**Status:** Em desenvolvimento — 9.1 Done (2026-07-11), 9.2 próxima.
 **Fonte de verdade:** `docs/architecture/feature-dre-plano-contas.md`
 
 **Objetivo:** transformar o caixa que já entra pelo Épico 8 (extrato + conciliação) em uma
@@ -329,14 +329,15 @@ conta). Migration `0023_dre_plano_contas.sql` (schema completo na fonte de verda
 
 ## Stories propostas (@sm detalha após o GO)
 
-| # | Story | Depende de | Foco |
-|---|-------|-----------|------|
-| 9.1 | Fundação: migration 0023 + seed + tipos shared + repositories básicos | migration | schema (plano_contas, regras, lançamentos manuais, colunas em extrato_transacoes) |
-| 9.2 | Motor de categorização + rotas | 9.1 | `categorizacao.ts` (regras em camadas) + CRUD/ação de categorizar |
-| 9.3 | UI: `/dre` (relatório) + `/dre/cadastro` (plano de contas/regras) + extensão do `/extrato` | 9.2 | telas + testes de componente |
+| # | Story | Status | Depende de | Foco |
+|---|-------|--------|-----------|------|
+| 9.1 | Fundação: migration 0023 + seed + tipos shared + repositories básicos | **Done** (2026-07-11) | migration | schema (plano_contas, regras, lançamentos manuais, colunas em extrato_transacoes) |
+| 9.2 | Motor de categorização + rotas | Próxima | 9.1 | `categorizacao.ts` (regras em camadas) + CRUD/ação de categorizar |
+| 9.3 | UI: `/dre` (relatório) + `/dre/cadastro` (plano de contas/regras) + extensão do `/extrato` | — | 9.2 | telas + testes de componente |
 
 Sequência 9.1 → 9.2 → 9.3 (mesmo padrão sequencial do Épico 8).
 
 ## Próximo passo
-**Aguarda GO do dono** sobre a arquitetura proposta (`docs/architecture/feature-dre-plano-contas.md`)
-para o @sm quebrar em stories e iniciar o SDC.
+Story 9.1 fechada (gate PASS, `docs/qa/gates/9.1-dre-fundacao.yml`), branch
+`feat/9.1-dre-fundacao` local — aguarda push do @devops. Próxima: @sm rascunha a 9.2
+(motor de categorização + rotas HTTP) a partir da arquitetura §4/§7.
