@@ -1,0 +1,62 @@
+# QA Gate — Story 9.3 (UI do DRE: relatório, cadastro do plano de contas, extensão do extrato) — iteração 1 (final)
+storyId: "9.3"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-11"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [QA-931-1 (medium, corrigida na iteração), OBS-922 (low, herdada/deferida), OBS-923 (low, herdada/deferida)]
+notes: >
+  AC 1-7 verificados. `GET /api/extrato` embute `categoria` com a mesma técnica de
+  `boletoVinculado` (Promise.all, sem N+1, `porCategoria` por Map); `t.categoriaId!` no
+  botão Confirmar do ExtratoManager é seguro porque `statusCategorizacao === 'sugerida'`
+  é a invariante do motor da 9.2 que garante `categoriaId` preenchido. Página `/dre`:
+  agrupamento por grupo na ordem fixa da fórmula do DRE (não reordena, não re-soma —
+  usa os 4 totais já prontos da resposta), resultado líquido com cor condicional
+  (verde/vermelho), diálogo de lançamento com campos condicionais por tipo
+  (avulso: data; recorrente: diaDoMes 1-28 + dataInicio + dataFim opcional) e validação
+  client-side (`valido`) antes de habilitar o botão. Página `/dre/cadastro`: os 3 códigos
+  de erro de negócio (`CATEGORIA_SISTEMA_PROTEGIDA`/`CATEGORIA_EM_USO`/`CATEGORIA_INATIVA`)
+  mapeados para mensagem específica via `mensagemErroCategoria`, nunca genérica; ações
+  Desativar/Excluir escondidas na própria UI para categoria de sistema (mas backend
+  também protege — dupla camada, defesa em profundidade correta); escrita não esconde
+  por papel (confia no 403, mesmo padrão `ConfigCobrancaForm`). Diálogos com
+  `role="dialog"`/`aria-modal`/`aria-label`; campos com `aria-label`; toasts de erro
+  cobrindo os fluxos de negócio. typecheck (web+shared)/lint verdes; 501 testes web
+  (62 arquivos, incluindo o fix da iteração) + 20 shared; `next build` completo gera
+  `/dre` e `/dre/cadastro` (padrão do FIX-831 mantido: build real, não só tsc/lint/vitest).
+  Anti-self-review: mesma sessão do @dev (personas distintas — padrão dos Épicos 7/8/9).
+  CodeRabbit indisponível na máquina — cobertura manual reforçada com build de produção.
+  Fecha o Épico 9.
+issues:
+  - id: QA-931-1
+    severity: medium
+    category: code
+    description: >
+      `DreManager` buscava `listarCategorias(true)` (só ativas) para o lookup
+      `categoriaId → nome` da lista de lançamentos manuais. Uma categoria desativada
+      (soft-disable, AC 4) que já tivesse lançamentos históricos vinculados sumiria da
+      Map — a coluna "Categoria" desses lançamentos virava "—" silenciosamente, sem
+      erro, só perda de informação de exibição.
+    recommendation: >
+      CORRIGIDA na iteração 1 — `listarCategorias()` sem filtro para o lookup (lista
+      completa, ativas+inativas); filtro de ativo aplicado só nas opções selecionáveis
+      do diálogo "Novo lançamento" (`categoriasAtivas`, via `useMemo`). Teste dedicado
+      adicionado (`DreManager.test.tsx`).
+  - id: OBS-922
+    severity: low
+    category: requirements
+    description: >
+      Herdada do gate 9.2: `GET /api/dre/relatorio` não valida `inicio <= fim`. A UI da
+      9.3 também não valida no cliente — período invertido não quebra (engine devolve
+      relatório zerado), apenas confunde quem digitou errado.
+    recommendation: Considerar validação explícita (400 no backend e/ou aviso no cliente) se o caso real aparecer em uso.
+  - id: OBS-923
+    severity: low
+    category: performance
+    description: >
+      Herdada dos gates 9.1/9.2: sem índice em `categoria_id` nas tabelas do DRE.
+      Irrelevante no volume atual (dezenas de categorias, centenas de transações/mês).
+    recommendation: Revisar se o volume crescer significativamente.
