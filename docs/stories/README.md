@@ -262,7 +262,7 @@ Sequência 8.1 → 8.2 → 8.3 (sem paralelismo — cada uma consome a anterior)
 
 # Épico 9 — DRE / Plano de Contas (categorização contábil)
 
-**Status:** Em desenvolvimento — 9.1 Done (2026-07-11), 9.2 próxima.
+**Status:** Em desenvolvimento — 9.1/9.2 Done (2026-07-11), 9.3 (UI) próxima.
 **Fonte de verdade:** `docs/architecture/feature-dre-plano-contas.md`
 
 **Objetivo:** transformar o caixa que já entra pelo Épico 8 (extrato + conciliação) em uma
@@ -332,12 +332,13 @@ conta). Migration `0023_dre_plano_contas.sql` (schema completo na fonte de verda
 | # | Story | Status | Depende de | Foco |
 |---|-------|--------|-----------|------|
 | 9.1 | Fundação: migration 0023 + seed + tipos shared + repositories básicos | **Done** (2026-07-11) | migration | schema (plano_contas, regras, lançamentos manuais, colunas em extrato_transacoes) |
-| 9.2 | Motor de categorização + rotas | Próxima | 9.1 | `categorizacao.ts` (regras em camadas) + CRUD/ação de categorizar |
-| 9.3 | UI: `/dre` (relatório) + `/dre/cadastro` (plano de contas/regras) + extensão do `/extrato` | — | 9.2 | telas + testes de componente |
+| 9.2 | Motor de categorização + relatório do DRE + rotas | **Done** (2026-07-11) | 9.1 | `categorizacao.ts` + `relatorio-dre.ts` + 8 rotas (plano de contas/regras/categorizar/lançamentos/relatório) |
+| 9.3 | UI: `/dre` (relatório) + `/dre/cadastro` (plano de contas/regras) + extensão do `/extrato` | Próxima | 9.2 | telas + testes de componente |
 
 Sequência 9.1 → 9.2 → 9.3 (mesmo padrão sequencial do Épico 8).
 
 ## Próximo passo
-Story 9.1 fechada (gate PASS, `docs/qa/gates/9.1-dre-fundacao.yml`), branch
-`feat/9.1-dre-fundacao` local — aguarda push do @devops. Próxima: @sm rascunha a 9.2
-(motor de categorização + rotas HTTP) a partir da arquitetura §4/§7.
+Stories 9.1/9.2 fechadas (gates PASS, `docs/qa/gates/9.1-dre-fundacao.yml` e
+`9.2-dre-motor-rotas.yml`), branches locais (`feat/9.1-dre-fundacao`,
+`feat/9.2-dre-motor-rotas`) — aguardam push do @devops. Próxima: @sm rascunha a 9.3 (UI)
+a partir da arquitetura §4/§7 — última story do Épico 9.
