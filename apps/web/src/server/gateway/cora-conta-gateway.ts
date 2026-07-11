@@ -118,10 +118,18 @@ export class CoraContaGateway implements ContaBancariaPort {
           if (t) transacoes.push(t);
         }
         // Página incompleta = acabou; página cheia pode ter continuação.
-        if (entries.length < PER_PAGE) break;
+        if (entries.length < PER_PAGE) return { sucesso: true, transacoes };
       }
 
-      return { sucesso: true, transacoes };
+      // QA-811-2: a última página permitida ainda veio cheia — em conciliação financeira,
+      // extrato parcial NUNCA pode parecer completo (transações ausentes virariam "sem
+      // movimento" para o operador). Falha orientando janela menor.
+      return {
+        sucesso: false,
+        erro:
+          `Cora extrato: período com mais de ${MAX_PAGINAS * PER_PAGE} entradas — ` +
+          'sincronize uma janela menor de datas',
+      };
     } catch (error) {
       return { sucesso: false, erro: error instanceof Error ? error.message : String(error) };
     }

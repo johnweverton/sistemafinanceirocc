@@ -160,6 +160,24 @@ describe('CoraContaGateway.consultarExtrato', () => {
     }
   });
 
+  it('QA-811-2: todas as páginas cheias até o teto → sucesso=false (parcial nunca parece completo)', async () => {
+    const paginaCheia = { entries: Array.from({ length: 500 }, (_, i) => entryCora(i)) };
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, TOKEN_OK))
+      .mockImplementation(simularResposta(200, paginaCheia));
+
+    const { CoraContaGateway } = await import('@/server/gateway/cora-conta-gateway');
+    const r = await new CoraContaGateway(CRED_TESTE).consultarExtrato({
+      inicio: '2026-01-01',
+      fim: '2026-07-10',
+    });
+
+    expect(r.sucesso).toBe(false);
+    if (!r.sucesso) expect(r.erro).toMatch(/janela menor/);
+    // token + 40 páginas (teto) — parou de buscar, mas não devolveu dados parciais.
+    expect(mockRequest).toHaveBeenCalledTimes(41);
+  });
+
   it('HTTP 500 da Cora → sucesso=false com erro tipado (nunca lança)', async () => {
     mockRequest
       .mockImplementationOnce(simularResposta(200, TOKEN_OK))

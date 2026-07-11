@@ -23,6 +23,17 @@ export interface ResultadoUpsertExtrato {
   qtdAtualizadas: number;
 }
 
+// QA-811-1: o .in() do PostgREST vira querystring — lotes grandes estouram o limite de URL.
+// Selects em lotes de 200 ids; upserts em lotes de 500 linhas (corpo, folga apenas).
+const LOTE_SELECT = 200;
+const LOTE_UPSERT = 500;
+
+function emLotes<T>(itens: T[], tamanho: number): T[][] {
+  const lotes: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) lotes.push(itens.slice(i, i + tamanho));
+  return lotes;
+}
+
 /**
  * Upsert idempotente das transações de um sync (ON CONFLICT conta_emissora+entry_id).
  * O payload NUNCA inclui status_conciliacao/boleto_id/conciliado_* — uma transação já
@@ -39,17 +50,20 @@ export async function upsertTransacoes(
   // Descobre o que já existe ANTES do upsert para contabilizar novas × atualizadas
   // (o upsert do PostgREST não distingue insert de update no retorno).
   const entryIds = transacoes.map((t) => t.entryId);
-  const { data: existentes, error: erroSelect } = await db
-    .from('extrato_transacoes')
-    .select('entry_id')
-    .eq('conta_emissora', conta)
-    .in('entry_id', entryIds);
-  if (erroSelect) {
-    throw new ApiError(500, 'Falha ao consultar transações existentes do extrato', 'DB_ERROR', {
-      error: erroSelect.message,
-    });
+  const jaExistem = new Set<string>();
+  for (const lote of emLotes(entryIds, LOTE_SELECT)) {
+    const { data: existentes, error: erroSelect } = await db
+      .from('extrato_transacoes')
+      .select('entry_id')
+      .eq('conta_emissora', conta)
+      .in('entry_id', lote);
+    if (erroSelect) {
+      throw new ApiError(500, 'Falha ao consultar transações existentes do extrato', 'DB_ERROR', {
+        error: erroSelect.message,
+      });
+    }
+    for (const r of existentes ?? []) jaExistem.add((r as { entry_id: string }).entry_id);
   }
-  const jaExistem = new Set((existentes ?? []).map((r) => (r as { entry_id: string }).entry_id));
 
   const agora = new Date().toISOString();
   const rows = transacoes.map((t) => ({
@@ -66,13 +80,15 @@ export async function upsertTransacoes(
     sincronizado_em: agora,
   }));
 
-  const { error: erroUpsert } = await db
-    .from('extrato_transacoes')
-    .upsert(rows, { onConflict: 'conta_emissora,entry_id' });
-  if (erroUpsert) {
-    throw new ApiError(500, 'Falha ao gravar transações do extrato', 'DB_ERROR', {
-      error: erroUpsert.message,
-    });
+  for (const lote of emLotes(rows, LOTE_UPSERT)) {
+    const { error: erroUpsert } = await db
+      .from('extrato_transacoes')
+      .upsert(lote, { onConflict: 'conta_emissora,entry_id' });
+    if (erroUpsert) {
+      throw new ApiError(500, 'Falha ao gravar transações do extrato', 'DB_ERROR', {
+        error: erroUpsert.message,
+      });
+    }
   }
 
   const qtdNovas = transacoes.filter((t) => !jaExistem.has(t.entryId)).length;

@@ -122,6 +122,25 @@ describe('upsertTransacoes (idempotência do sync)', () => {
     expect(rows[0]).not.toHaveProperty('conciliado_em');
   });
 
+  it('QA-811-1: lotes grandes são fatiados (.in ≤ 200 ids) sem perder a contagem', async () => {
+    // 250 transações → 2 selects (200 + 50) + 1 upsert (≤ 500 linhas).
+    const muitas = Array.from({ length: 250 }, (_, i) => transacao(`e${i}`));
+    const builderSelect1 = makeBuilder({ data: [{ entry_id: 'e0' }], error: null });
+    const builderSelect2 = makeBuilder({ data: [{ entry_id: 'e249' }], error: null });
+    const builderUpsert = makeBuilder({ data: null, error: null });
+    mockFrom
+      .mockReturnValueOnce(builderSelect1)
+      .mockReturnValueOnce(builderSelect2)
+      .mockReturnValueOnce(builderUpsert);
+
+    const r = await upsertTransacoes('mc', muitas);
+
+    expect(r).toEqual({ qtdNovas: 248, qtdAtualizadas: 2 });
+    expect(builderSelect1.in.mock.calls[0][1]).toHaveLength(200);
+    expect(builderSelect2.in.mock.calls[0][1]).toHaveLength(50);
+    expect(builderUpsert.upsert.mock.calls[0][0]).toHaveLength(250);
+  });
+
   it('lista vazia → não toca o banco', async () => {
     const r = await upsertTransacoes('mc', []);
     expect(r).toEqual({ qtdNovas: 0, qtdAtualizadas: 0 });

@@ -1,0 +1,57 @@
+# QA Gate — Story 8.1 (Fundação da conciliação) — iteração 1
+storyId: "8.1"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-10"
+verdict: CONCERNS
+iterations:
+  - n: 1
+    verdict: CONCERNS
+    issues: [QA-811-1 (medium), QA-811-2 (medium), OBS-812 (low, para 8.2), OBS-813 (low, para 8.3)]
+notes: >
+  AC 1-7 verificados: migration 0022 fiel à arquitetura §3 (UNIQUE conta+entry_id, UNIQUE
+  parcial de boleto conciliado, RLS espelhando boletos, rollback); refactor cora-http com
+  REGRESSÃO ZERO comprovada (suíte do CoraGateway de 17 testes passou sem alteração);
+  porta/tipos em reais no domínio; CoraContaGateway valida datas ANTES da rede e pagina;
+  factory no padrão 7.2; upsert estruturalmente incapaz de regredir status (colunas de
+  conciliação fora do payload + teste dedicado). typecheck/lint/test verdes (web 317 +
+  shared 20; 39 novos). Dois MEDIUM de robustez exigem fix barato antes do close
+  (apply-qa-fixes acionado). Anti-self-review: mesma sessão do @dev (personas distintas,
+  /full-sdc — padrão registrado no Épico 7). CodeRabbit indisponível na máquina (WSL sem
+  binário) — cobertura manual reforçada nesta revisão.
+issues:
+  - id: QA-811-1
+    severity: medium
+    category: code
+    description: >
+      upsertTransacoes passa TODOS os entry_ids em um único .in() — no PostgREST isso vira
+      querystring; a primeira sincronização de uma janela longa (milhares de entradas) pode
+      estourar o limite de URL e derrubar o sync inteiro com erro obscuro.
+    recommendation: >
+      Processar em lotes (ex. 200 ids por .in(); upsert em lotes de 500 linhas) — mantém a
+      idempotência e o contrato; teste cobrindo lote > tamanho do chunk.
+  - id: QA-811-2
+    severity: medium
+    category: code
+    description: >
+      consultarExtrato trunca em MAX_PAGINAS (40) devolvendo sucesso=true com dados
+      PARCIAIS — em conciliação financeira, extrato incompleto não pode parecer completo
+      (transações ausentes virariam "sem movimento" para o operador).
+    recommendation: >
+      Se a última página permitida ainda vier cheia (len == perPage), devolver
+      { sucesso: false, erro } orientando janela menor; teste dedicado.
+  - id: OBS-812
+    severity: low
+    category: code
+    description: >
+      Conciliar transação apontando boleto JÁ conciliado viola o UNIQUE parcial e vira
+      ApiError 500 genérico (DB_ERROR). A rota da 8.2 deve mapear 23505 → 409 com mensagem
+      de negócio ("boleto já conciliado com outra transação").
+    recommendation: Tratar na rota /conciliar da Story 8.2 (fora do escopo da fundação).
+  - id: OBS-813
+    severity: low
+    category: performance
+    description: >
+      listarTransacoes sem paginação — adequado ao volume v1 (~centenas/mês), mas a página
+      /extrato (8.3) deve considerar paginação/limite quando o snapshot acumular meses.
+    recommendation: Avaliar limit/offset na Story 8.3.
