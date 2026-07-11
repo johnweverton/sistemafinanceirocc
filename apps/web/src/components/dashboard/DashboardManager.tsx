@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardService, dashboardQueryKeys } from '@/services/dashboard';
+import { SaldoEmpresas } from '@/components/dashboard/SaldoEmpresas';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -59,6 +60,8 @@ export function DashboardManager() {
     return (
       <section className="space-y-5">
         <div className="page-header"><h1 className="page-title">Dashboard financeiro</h1></div>
+        {/* Saldo independe de boletos emitidos (Story 8.3, AC 2). */}
+        <SaldoEmpresas />
         <EmptyState title="Sem dados financeiros ainda" description="Emita boletos para ver os indicadores por competência, médico e inadimplência." />
       </section>
     );
@@ -75,6 +78,9 @@ export function DashboardManager() {
           ))}
         </select>
       </div>
+
+      {/* Saldo por empresa (Story 8.3, AC 2) */}
+      <SaldoEmpresas />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">

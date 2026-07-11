@@ -5,6 +5,7 @@
 // Valores sempre em REAIS no domínio — a Cora devolve centavos; a conversão é na borda (mapper).
 
 import type { ContaEmissora } from './conta-emissora';
+import type { Recebivel } from './recebivel';
 
 /** Sentido da transação no extrato (cru da API da Cora). */
 export type TipoTransacaoExtrato = 'CREDIT' | 'DEBIT';
@@ -116,6 +117,33 @@ export type ResultadoSaldo =
 export interface ContaBancariaPort {
   consultarExtrato(filtros: FiltroExtrato): Promise<ResultadoExtrato>;
   consultarSaldo(): Promise<ResultadoSaldo>;
+}
+
+/**
+ * Transação enriquecida para a UI (Story 8.3): quando há boleto vinculado (conciliado) ou
+ * candidato (sugerido), o GET /api/extrato embute o resumo do recebível — a fila de
+ * sugestões mostra transação × boleto lado a lado sem N+1 no cliente.
+ */
+export interface ExtratoTransacaoComBoleto extends ExtratoTransacao {
+  boletoVinculado: Recebivel | null;
+}
+
+/** Totais do período retornados pelo GET /api/extrato (tarifas ⊂ débitos). */
+export interface TotaisExtrato {
+  creditos: number;
+  debitos: number;
+  tarifas: number;
+}
+
+/** Saldo de uma conta para os cards do dashboard (D5) — degradação por conta, nunca erro. */
+export interface SaldoEmpresa {
+  conta: ContaEmissora;
+  nome: string;
+  /** false = credenciais ausentes (CV pré-ativação) → card "não configurada". */
+  configurada: boolean;
+  saldo: SaldoConta | null;
+  /** Presente quando configurada mas a consulta falhou (indisponível agora). */
+  erro?: string;
 }
 
 /** Registro de uma sincronização executada (extrato_syncs) — auditoria + janela do próximo sync. */

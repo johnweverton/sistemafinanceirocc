@@ -6,6 +6,18 @@ import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 import { toRecebivel, type RecebivelRow } from './mappers';
 
+/**
+ * Recebíveis de um conjunto de boletos (Story 8.3) — resumo do boleto vinculado/candidato
+ * embutido nas transações do extrato (fila de sugestões mostra os dois lados sem N+1).
+ */
+export async function listarRecebiveisPorBoletoIds(boletoIds: string[]): Promise<Recebivel[]> {
+  if (boletoIds.length === 0) return [];
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from('vw_recebiveis').select('*').in('boleto_id', boletoIds);
+  if (error) throw new ApiError(500, 'Falha ao buscar boletos vinculados', 'DB_ERROR', { error: error.message });
+  return (data as RecebivelRow[]).map(toRecebivel);
+}
+
 /** Lista os recebíveis, aplicando filtros opcionais, ordenados por vencimento. */
 export async function listarRecebiveis(filtros: FiltroRecebiveis = {}): Promise<Recebivel[]> {
   const db = getSupabaseAdmin();

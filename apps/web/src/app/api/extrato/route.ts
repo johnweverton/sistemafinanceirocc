@@ -5,8 +5,9 @@ import { z } from 'zod';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarTransacoes } from '@/server/repositories/extrato-repository';
+import { listarRecebiveisPorBoletoIds } from '@/server/repositories/recebiveis-repository';
 import { CONTAS_EMISSORAS_VALIDAS, STATUS_CONCILIACAO_VALIDOS } from '@cobranca/shared';
-import type { FiltroListagemExtrato } from '@cobranca/shared';
+import type { ExtratoTransacaoComBoleto, FiltroListagemExtrato } from '@cobranca/shared';
 
 // Whitelists via Zod (mesmo padrão da rota de recebíveis) — enums espelham as CHECKs do banco.
 const extratoQuerySchema = z.object({
@@ -44,6 +45,16 @@ export const GET = withErrorHandler(async (req) => {
 
   const transacoes = await listarTransacoes(filtros);
 
+  // Embute o resumo do boleto vinculado/candidato (Story 8.3): a fila de sugestões mostra
+  // transação × boleto lado a lado sem N+1 no cliente. Uma query para todos os ids.
+  const boletoIds = [...new Set(transacoes.map((t) => t.boletoId).filter((id): id is string => !!id))];
+  const recebiveis = await listarRecebiveisPorBoletoIds(boletoIds);
+  const porBoleto = new Map(recebiveis.map((r) => [r.boletoId, r]));
+  const comBoleto: ExtratoTransacaoComBoleto[] = transacoes.map((t) => ({
+    ...t,
+    boletoVinculado: t.boletoId ? (porBoleto.get(t.boletoId) ?? null) : null,
+  }));
+
   // Totais do período para o card da 8.3 (volume v1 é pequeno — soma em memória).
   // Tarifas são um recorte dos débitos (transaction_type FEE), não uma terceira categoria.
   const totais = transacoes.reduce(
@@ -58,5 +69,5 @@ export const GET = withErrorHandler(async (req) => {
     { creditos: 0, debitos: 0, tarifas: 0 },
   );
 
-  return Response.json({ transacoes, totais });
+  return Response.json({ transacoes: comBoleto, totais });
 });

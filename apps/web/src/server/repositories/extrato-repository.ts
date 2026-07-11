@@ -183,6 +183,22 @@ export async function listarTransacoes(
   return (data as ExtratoTransacaoRow[]).map(toExtratoTransacao);
 }
 
+/** Ids dos boletos já vinculados a uma transação conciliada — exclui candidatos da UI (8.3). */
+export async function boletoIdsConciliados(): Promise<Set<string>> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('extrato_transacoes')
+    .select('boleto_id')
+    .like('status_conciliacao', 'conciliado%')
+    .not('boleto_id', 'is', null);
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar boletos conciliados', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  return new Set((data ?? []).map((r) => (r as { boleto_id: string }).boleto_id));
+}
+
 /** Busca uma transação do snapshot por id; null se não existe. */
 export async function buscarTransacao(id: string): Promise<ExtratoTransacao | null> {
   const db = getSupabaseAdmin();
