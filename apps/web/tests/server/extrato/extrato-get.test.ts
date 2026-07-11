@@ -11,6 +11,11 @@ vi.mock('@/server/repositories/extrato-repository', () => ({
   listarTransacoes: (...a: unknown[]) => mockListarTransacoes(...a),
 }));
 
+const mockListarCategorias = vi.fn();
+vi.mock('@/server/repositories/plano-contas-repository', () => ({
+  listarCategorias: (...a: unknown[]) => mockListarCategorias(...a),
+}));
+
 import { GET } from '@/app/api/extrato/route';
 
 function transacao(overrides: Record<string, unknown> = {}) {
@@ -43,6 +48,7 @@ function reqGet(qs = '') {
 beforeEach(() => {
   vi.clearAllMocks();
   mockListarTransacoes.mockResolvedValue([]);
+  mockListarCategorias.mockResolvedValue([]);
 });
 
 describe('GET /api/extrato', () => {
@@ -67,6 +73,21 @@ describe('GET /api/extrato', () => {
   it('data malformada → 400', async () => {
     const res = await reqGet('?inicio=01/07/2026');
     expect(res.status).toBe(400);
+  });
+
+  it('embute a categoria (Story 9.3) — categoriaId presente resolve para o objeto certo', async () => {
+    mockListarTransacoes.mockResolvedValue([
+      transacao({ id: 't1', categoriaId: 'cat-1' }),
+      transacao({ id: 't2', categoriaId: null }),
+    ]);
+    mockListarCategorias.mockResolvedValue([
+      { id: 'cat-1', grupo: 'receita', nome: 'Receita de honorários', sistema: true, ativo: true, ordem: 0, criadoEm: '2026-07-11T00:00:00Z' },
+    ]);
+
+    const res = await reqGet();
+    const body = await res.json();
+    expect(body.transacoes[0].categoria).toMatchObject({ id: 'cat-1', nome: 'Receita de honorários' });
+    expect(body.transacoes[1].categoria).toBeNull();
   });
 
   it('totais: créditos, débitos e tarifas (FEE é recorte dos débitos)', async () => {

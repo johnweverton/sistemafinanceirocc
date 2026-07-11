@@ -6,6 +6,7 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarTransacoes } from '@/server/repositories/extrato-repository';
 import { listarRecebiveisPorBoletoIds } from '@/server/repositories/recebiveis-repository';
+import { listarCategorias } from '@/server/repositories/plano-contas-repository';
 import { CONTAS_EMISSORAS_VALIDAS, STATUS_CONCILIACAO_VALIDOS } from '@cobranca/shared';
 import type { ExtratoTransacaoComBoleto, FiltroListagemExtrato } from '@cobranca/shared';
 
@@ -51,11 +52,18 @@ export const GET = withErrorHandler(async (req) => {
   // Embute o resumo do boleto vinculado/candidato (Story 8.3): a fila de sugestões mostra
   // transação × boleto lado a lado sem N+1 no cliente. Uma query para todos os ids.
   const boletoIds = [...new Set(transacoes.map((t) => t.boletoId).filter((id): id is string => !!id))];
-  const recebiveis = await listarRecebiveisPorBoletoIds(boletoIds);
+  const [recebiveis, categorias] = await Promise.all([
+    listarRecebiveisPorBoletoIds(boletoIds),
+    // Plano de contas é pequeno (dezenas de linhas) — busca a lista inteira de uma vez,
+    // ao contrário de boletos (que são filtrados por id porque a tabela é grande).
+    listarCategorias(),
+  ]);
   const porBoleto = new Map(recebiveis.map((r) => [r.boletoId, r]));
+  const porCategoria = new Map(categorias.map((c) => [c.id, c]));
   const comBoleto: ExtratoTransacaoComBoleto[] = transacoes.map((t) => ({
     ...t,
     boletoVinculado: t.boletoId ? (porBoleto.get(t.boletoId) ?? null) : null,
+    categoria: t.categoriaId ? (porCategoria.get(t.categoriaId) ?? null) : null,
   }));
 
   // Totais do período para o card da 8.3 (volume v1 é pequeno — soma em memória).

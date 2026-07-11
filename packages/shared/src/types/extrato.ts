@@ -6,7 +6,7 @@
 
 import type { ContaEmissora } from './conta-emissora';
 import type { Recebivel } from './recebivel';
-import type { StatusCategorizacao } from './dre';
+import type { StatusCategorizacao, PlanoContas } from './dre';
 
 /** Sentido da transação no extrato (cru da API da Cora). */
 export type TipoTransacaoExtrato = 'CREDIT' | 'DEBIT';
@@ -135,6 +135,12 @@ export interface ContaBancariaPort {
  */
 export interface ExtratoTransacaoComBoleto extends ExtratoTransacao {
   boletoVinculado: Recebivel | null;
+  /**
+   * Categoria do DRE (Épico 9, Story 9.3) — embutida do mesmo jeito que
+   * `boletoVinculado` (sem N+1 no cliente); `categoriaId` sozinho não basta para exibir
+   * o nome.
+   */
+  categoria: PlanoContas | null;
 }
 
 /** Totais do período retornados pelo GET /api/extrato (tarifas ⊂ débitos). */

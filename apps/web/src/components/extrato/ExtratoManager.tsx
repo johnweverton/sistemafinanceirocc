@@ -7,11 +7,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ContaEmissora,
   ExtratoTransacaoComBoleto,
+  PlanoContas,
   Recebivel,
+  StatusCategorizacao,
   StatusConciliacao,
 } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 import { extratoService, extratoQueryKeys, type FiltroExtratoUi } from '@/services/extrato';
+import { planoContasService, planoContasQueryKeys } from '@/services/plano-contas';
 import { ApiClientError } from '@/lib/api-client';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -46,6 +49,13 @@ function StatusConciliacaoBadge({ status }: { status: StatusConciliacao }) {
   if (status === 'sugerido') return <span className="badge-amber">Sugestão</span>;
   if (status === 'ignorado') return <span className="badge-slate">Ignorado</span>;
   return <span className="badge-slate">Sem match</span>;
+}
+
+/** Badge do eixo de categorização do DRE (Épico 9) — independente da conciliação. */
+function CategorizacaoBadge({ status, nome }: { status: StatusCategorizacao; nome: string | null }) {
+  if (status === 'confirmada') return <span className="badge-green">{nome}</span>;
+  if (status === 'sugerida') return <span className="badge-amber">Sugestão: {nome}</span>;
+  return <span className="badge-slate">Sem categoria</span>;
 }
 
 const STATUS_OPCOES: { valor: StatusConciliacao | ''; label: string }[] = [
@@ -175,6 +185,107 @@ function VincularBoletoDialog({
   );
 }
 
+/**
+ * Diálogo de categorização manual (Story 9.3): lista o plano de contas ATIVO agrupado
+ * na ordem da fórmula do DRE, para escolher/corrigir a categoria de uma transação.
+ */
+function CategorizarDialog({
+  transacao,
+  categorizando,
+  onConfirm,
+  onCancel,
+}: {
+  transacao: ExtratoTransacaoComBoleto;
+  categorizando: boolean;
+  onConfirm: (categoriaId: string) => void;
+  onCancel: () => void;
+}) {
+  const [selecionado, setSelecionado] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: planoContasQueryKeys.categorias(true),
+    queryFn: () => planoContasService.listarCategorias(true),
+  });
+
+  const porGrupo = useMemo(() => {
+    const grupos: { grupo: string; label: string; categorias: PlanoContas[] }[] = [
+      { grupo: 'receita', label: 'Receitas', categorias: [] },
+      { grupo: 'deducao_receita', label: 'Deduções da Receita', categorias: [] },
+      { grupo: 'despesa_operacional', label: 'Despesas Operacionais', categorias: [] },
+      { grupo: 'despesa_financeira', label: 'Despesas Financeiras', categorias: [] },
+    ];
+    for (const c of data ?? []) {
+      grupos.find((g) => g.grupo === c.grupo)?.categorias.push(c);
+    }
+    return grupos.filter((g) => g.categorias.length > 0);
+  }, [data]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Categorizar transação"
+        className="bg-cc-surface card w-full max-w-lg shadow-2xl"
+      >
+        <div className="border-b border-cc-hairline px-6 py-4">
+          <h2 className="text-lg font-bold text-cc-ink">Categorizar transação</h2>
+          <p className="mt-1 text-sm text-cc-ink-2">
+            <strong>{brl(transacao.valor)}</strong> em {dataHora(transacao.dataTransacao)}
+            {transacao.contraparteNome ? <> — {transacao.contraparteNome}</> : null}. Escolha a
+            categoria do plano de contas.
+          </p>
+        </div>
+        <div className="max-h-80 space-y-4 overflow-y-auto px-6 py-4">
+          {isLoading ? (
+            <p className="text-sm text-cc-muted">Carregando plano de contas…</p>
+          ) : porGrupo.length === 0 ? (
+            <p className="text-sm text-cc-muted">
+              Nenhuma categoria ativa cadastrada — vá em Plano de contas para criar uma.
+            </p>
+          ) : (
+            porGrupo.map((g) => (
+              <div key={g.grupo}>
+                <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-cc-muted">
+                  {g.label}
+                </p>
+                <ul className="overflow-hidden rounded-lg border border-cc-hairline">
+                  {g.categorias.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelecionado(c.id)}
+                        className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm transition-colors hover:bg-cc-surface-2 ${
+                          selecionado === c.id ? 'bg-cc-surface-2 font-semibold' : ''
+                        }`}
+                        aria-pressed={selecionado === c.id}
+                      >
+                        {c.nome}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
+          <button onClick={onCancel} disabled={categorizando} className="btn-ghost btn btn-sm">
+            Voltar
+          </button>
+          <button
+            onClick={() => selecionado && onConfirm(selecionado)}
+            disabled={categorizando || !selecionado}
+            className="btn-primary btn btn-sm"
+          >
+            {categorizando ? 'Salvando…' : 'Categorizar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Card da fila de sugestões: transação × boleto candidato lado a lado. */
 function SugestaoCard({
   t,
@@ -243,6 +354,7 @@ export function ExtratoManager() {
   const [status, setStatus] = useState<StatusConciliacao | ''>('');
   const [tipoUi, setTipoUi] = useState<TipoUi>('');
   const [vinculando, setVinculando] = useState<ExtratoTransacaoComBoleto | null>(null);
+  const [categorizando, setCategorizando] = useState<ExtratoTransacaoComBoleto | null>(null);
   const [visiveis, setVisiveis] = useState(POR_PAGINA);
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -309,6 +421,17 @@ export function ExtratoManager() {
     },
   });
 
+  const categorizar = useMutation({
+    mutationFn: ({ transacaoId, categoriaId }: { transacaoId: string; categoriaId?: string }) =>
+      extratoService.categorizar(transacaoId, categoriaId),
+    onSuccess: () => {
+      toast('Transação categorizada.', 'success');
+      setCategorizando(null);
+      invalidar();
+    },
+    onError: (e) => erroToast(e, 'Erro ao categorizar a transação'),
+  });
+
   const ignorar = useMutation({
     mutationFn: (transacaoId: string) => extratoService.ignorar(transacaoId),
     onSuccess: () => {
@@ -332,7 +455,11 @@ export function ExtratoManager() {
   });
 
   const pendente =
-    conciliar.isPending || ignorar.isPending || desfazer.isPending || sincronizar.isPending;
+    conciliar.isPending ||
+    ignorar.isPending ||
+    desfazer.isPending ||
+    sincronizar.isPending ||
+    categorizar.isPending;
 
   const transacoes = useMemo(() => {
     const lista = data?.transacoes ?? [];
@@ -446,7 +573,7 @@ export function ExtratoManager() {
       )}
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={7} />
+        <TableSkeleton rows={6} cols={8} />
       ) : transacoes.length === 0 ? (
         <EmptyState
           icon={
@@ -468,6 +595,7 @@ export function ExtratoManager() {
                 <th className="text-right">Valor</th>
                 <th>Conciliação</th>
                 <th>Boleto vinculado</th>
+                <th>Categoria</th>
                 <th className="text-right">Ações</th>
               </tr>
             </thead>
@@ -502,6 +630,9 @@ export function ExtratoManager() {
                       '—'
                     )}
                   </td>
+                  <td>
+                    <CategorizacaoBadge status={t.statusCategorizacao} nome={t.categoria?.nome ?? null} />
+                  </td>
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {t.tipo === 'CREDIT' &&
@@ -532,6 +663,24 @@ export function ExtratoManager() {
                           Desfazer
                         </button>
                       )}
+                      {t.statusCategorizacao === 'sugerida' && (
+                        <button
+                          onClick={() => categorizar.mutate({ transacaoId: t.id, categoriaId: t.categoriaId! })}
+                          className="btn-ghost btn btn-sm"
+                          disabled={pendente}
+                        >
+                          Confirmar
+                        </button>
+                      )}
+                      {t.statusCategorizacao !== 'confirmada' && (
+                        <button
+                          onClick={() => setCategorizando(t)}
+                          className="btn-ghost btn btn-sm"
+                          disabled={pendente}
+                        >
+                          Categorizar
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -555,6 +704,15 @@ export function ExtratoManager() {
           vinculando={conciliar.isPending}
           onConfirm={(boletoId) => conciliar.mutate({ transacaoId: vinculando.id, boletoId })}
           onCancel={() => setVinculando(null)}
+        />
+      )}
+
+      {categorizando && (
+        <CategorizarDialog
+          transacao={categorizando}
+          categorizando={categorizar.isPending}
+          onConfirm={(categoriaId) => categorizar.mutate({ transacaoId: categorizando.id, categoriaId })}
+          onCancel={() => setCategorizando(null)}
         />
       )}
     </section>

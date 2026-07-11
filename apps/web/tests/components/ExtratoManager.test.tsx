@@ -12,6 +12,7 @@ const mockConciliar = vi.fn();
 const mockIgnorar = vi.fn();
 const mockDesfazer = vi.fn();
 const mockBoletosConciliaveis = vi.fn();
+const mockCategorizar = vi.fn();
 vi.mock('../../src/services/extrato', () => ({
   extratoService: {
     listar: (...a: unknown[]) => mockListar(...a),
@@ -20,11 +21,18 @@ vi.mock('../../src/services/extrato', () => ({
     ignorar: (...a: unknown[]) => mockIgnorar(...a),
     desfazer: (...a: unknown[]) => mockDesfazer(...a),
     boletosConciliaveis: (...a: unknown[]) => mockBoletosConciliaveis(...a),
+    categorizar: (...a: unknown[]) => mockCategorizar(...a),
   },
   extratoQueryKeys: {
     extrato: (f: unknown) => ['extrato', f],
     boletosConciliaveis: (c: unknown) => ['extrato', 'boletos-conciliaveis', c],
   },
+}));
+
+const mockListarCategoriasAtivas = vi.fn();
+vi.mock('../../src/services/plano-contas', () => ({
+  planoContasService: { listarCategorias: (...a: unknown[]) => mockListarCategoriasAtivas(...a) },
+  planoContasQueryKeys: { categorias: (ativo: unknown) => ['plano-contas', 'categorias', ativo] },
 }));
 
 import { ExtratoManager } from '../../src/components/extrato/ExtratoManager';
@@ -53,7 +61,11 @@ const base = {
   dataTransacao: '2026-06-15T12:30:00Z', payload: {}, contaEmissora: 'mc',
   boletoId: null, conciliadoPor: null, conciliadoEm: null,
   sincronizadoEm: '2026-06-15T13:00:00Z',
+  categoriaId: null, statusCategorizacao: 'sem_categoria', categoria: null,
 };
+
+const CATEGORIA_RECEITA = { id: 'cat-receita', grupo: 'receita', nome: 'Receita de honorários', sistema: true, ativo: true, ordem: 0, criadoEm: '2026-07-11T00:00:00Z' };
+const CATEGORIA_ALUGUEL = { id: 'cat-aluguel', grupo: 'despesa_operacional', nome: 'Despesas administrativas', sistema: false, ativo: true, ordem: 0, criadoEm: '2026-07-11T00:00:00Z' };
 
 const sugerida = {
   ...base, id: 't-sugerida', tipo: 'CREDIT', valor: 1500,
@@ -67,7 +79,10 @@ const semMatch = {
 const totais = { creditos: 2400, debitos: 310.5, tarifas: 12.9 };
 
 describe('ExtratoManager', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockListarCategoriasAtivas.mockResolvedValue([CATEGORIA_RECEITA, CATEGORIA_ALUGUEL]);
+  });
 
   it('fila de sugestões: Confirmar chama conciliar com a transação e o boletoId certos', async () => {
     mockListar.mockResolvedValue({ transacoes: [sugerida, semMatch], totais });
@@ -128,5 +143,71 @@ describe('ExtratoManager', () => {
     expect(within(tabela).getByRole('button', { name: 'Vincular' })).toBeInTheDocument();
     expect(within(tabela).getByRole('button', { name: 'Ignorar' })).toBeInTheDocument();
     expect(within(tabela).getByRole('button', { name: 'Desfazer' })).toBeInTheDocument();
+  });
+
+  it('coluna Categoria mostra o badge certo por statusCategorizacao (Story 9.3)', async () => {
+    const confirmada = {
+      ...base, id: 't-confirmada', entryId: 'entry-4', tipo: 'CREDIT', valor: 1500,
+      statusConciliacao: 'conciliado_auto', categoriaId: 'cat-receita',
+      statusCategorizacao: 'confirmada', categoria: CATEGORIA_RECEITA,
+    };
+    const sugeridaCategoria = {
+      ...semMatch, id: 't-sug-cat', entryId: 'entry-5',
+      categoriaId: 'cat-aluguel', statusCategorizacao: 'sugerida', categoria: CATEGORIA_ALUGUEL,
+    };
+    mockListar.mockResolvedValue({ transacoes: [confirmada, sugeridaCategoria, semMatch], totais });
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    expect(screen.getByText('Receita de honorários')).toBeInTheDocument();
+    expect(screen.getByText(/Sugestão: Despesas administrativas/)).toBeInTheDocument();
+    expect(screen.getByText('Sem categoria')).toBeInTheDocument();
+  });
+
+  it('sugerida: Confirmar chama categorizar com o categoriaId sugerido', async () => {
+    const sugeridaCategoria = {
+      ...semMatch, id: 't-sug-cat', entryId: 'entry-5',
+      categoriaId: 'cat-aluguel', statusCategorizacao: 'sugerida', categoria: CATEGORIA_ALUGUEL,
+    };
+    mockListar.mockResolvedValue({ transacoes: [sugeridaCategoria], totais });
+    mockCategorizar.mockResolvedValue({ transacao: sugeridaCategoria });
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(mockCategorizar).toHaveBeenCalledWith('t-sug-cat', 'cat-aluguel'));
+  });
+
+  it('confirmada não tem ação de categorizar; sem_categoria tem "Categorizar"', async () => {
+    const confirmada = {
+      ...base, id: 't-confirmada', entryId: 'entry-4', tipo: 'CREDIT', valor: 1500,
+      statusConciliacao: 'conciliado_auto', categoriaId: 'cat-receita',
+      statusCategorizacao: 'confirmada', categoria: CATEGORIA_RECEITA,
+    };
+    mockListar.mockResolvedValue({ transacoes: [confirmada, semMatch], totais });
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    const linhaConfirmada = screen.getByText('Receita de honorários').closest('tr')!;
+    expect(within(linhaConfirmada).queryByRole('button', { name: 'Categorizar' })).toBeNull();
+    const linhaSemCategoria = screen.getByText('Sem categoria').closest('tr')!;
+    expect(within(linhaSemCategoria).getByRole('button', { name: 'Categorizar' })).toBeInTheDocument();
+  });
+
+  it('diálogo de categorização: escolhe uma categoria e chama categorizar', async () => {
+    mockListar.mockResolvedValue({ transacoes: [semMatch], totais });
+    mockCategorizar.mockResolvedValue({ transacao: semMatch });
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Categorizar' }));
+
+    const dialogo = await screen.findByRole('dialog', { name: 'Categorizar transação' });
+    fireEvent.click(within(dialogo).getByText('Despesas administrativas'));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Categorizar' }));
+
+    await waitFor(() =>
+      expect(mockCategorizar).toHaveBeenCalledWith('t-sem-match', 'cat-aluguel'),
+    );
   });
 });

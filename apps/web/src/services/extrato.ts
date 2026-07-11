@@ -63,6 +63,12 @@ export const extratoService = {
     apiFetch<{ transacao: ExtratoTransacaoComBoleto }>(`/extrato/${transacaoId}/desfazer`, {
       method: 'POST',
     }),
+  /** Sem categoriaId = roda o motor de categorização (D3) para essa transação isolada. */
+  categorizar: (transacaoId: string, categoriaId?: string) =>
+    apiFetch<{ transacao: ExtratoTransacaoComBoleto }>(`/extrato/${transacaoId}/categorizar`, {
+      method: 'POST',
+      body: JSON.stringify(categoriaId ? { categoriaId } : {}),
+    }),
   boletosConciliaveis: (conta: ContaEmissora) =>
     apiFetch<Recebivel[]>(`/extrato/boletos-conciliaveis?conta=${conta}`),
 };
