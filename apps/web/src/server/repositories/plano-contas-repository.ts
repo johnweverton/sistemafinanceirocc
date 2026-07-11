@@ -166,6 +166,30 @@ export async function excluirCategoria(id: string): Promise<void> {
   }
 }
 
+export interface CategoriasSistemaIds {
+  receitaHonorariosId: string;
+  tarifasBancariasId: string;
+}
+
+/**
+ * Localiza as 2 categorias de sistema por `sistema=true` + `grupo` — NUNCA por `nome`
+ * (D3, 9.2): `atualizarCategoria` permite renomear qualquer categoria, inclusive as de
+ * sistema; dentro de cada grupo só existe 1 linha `sistema=true` (seed da migration 0023).
+ */
+export async function buscarCategoriasSistema(): Promise<CategoriasSistemaIds> {
+  const categorias = await listarCategorias();
+  const receita = categorias.find((c) => c.sistema && c.grupo === 'receita');
+  const tarifa = categorias.find((c) => c.sistema && c.grupo === 'deducao_receita');
+  if (!receita || !tarifa) {
+    throw new ApiError(
+      500,
+      'Categorias de sistema do plano de contas não encontradas — seed da migration 0023 ausente?',
+      'CATEGORIAS_SISTEMA_AUSENTES',
+    );
+  }
+  return { receitaHonorariosId: receita.id, tarifasBancariasId: tarifa.id };
+}
+
 // ---------------------------------------------------------------------------
 // Regras de categorização (plano_contas_regras)
 // ---------------------------------------------------------------------------
@@ -247,4 +271,16 @@ export async function desativarRegra(id: string): Promise<RegraCategorizacao> {
   }
   if (!data) throw new ApiError(404, 'Regra de categorização não encontrada', 'NOT_FOUND', { id });
   return toRegraCategorizacao(data as RegraCategorizacaoRow);
+}
+
+/**
+ * DELETE físico — regra é cadastro-folha (nenhuma outra tabela referencia
+ * plano_contas_regras.id), então não precisa do guard de vínculos que excluirCategoria tem.
+ */
+export async function excluirRegra(id: string): Promise<void> {
+  const db = getSupabaseAdmin();
+  const { error } = await db.from('plano_contas_regras').delete().eq('id', id);
+  if (error) {
+    throw new ApiError(500, 'Falha ao excluir regra de categorização', 'DB_ERROR', { error: error.message });
+  }
 }

@@ -94,6 +94,8 @@ export interface FiltroListagemExtrato {
   dataFim?: string;
   status?: StatusConciliacao;
   tipo?: TipoTransacaoExtrato;
+  /** Filtro pelo eixo de categorização do DRE (Épico 9) — independente de `status`. */
+  statusCategorizacao?: StatusCategorizacao;
 }
 
 /** Saldo de uma conta no banco (D5 — cards MC/CV no dashboard). Em REAIS. */

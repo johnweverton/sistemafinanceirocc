@@ -174,6 +174,7 @@ export async function listarTransacoes(
   if (filtros.dataFim) query = query.lte('data_transacao', filtros.dataFim);
   if (filtros.status) query = query.eq('status_conciliacao', filtros.status);
   if (filtros.tipo) query = query.eq('tipo', filtros.tipo);
+  if (filtros.statusCategorizacao) query = query.eq('status_categorizacao', filtros.statusCategorizacao);
 
   const { data, error } = await query;
   if (error) {

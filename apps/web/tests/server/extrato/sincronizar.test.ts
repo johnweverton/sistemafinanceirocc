@@ -18,17 +18,28 @@ const mockRegistrarSync = vi.fn();
 const mockUltimoSync = vi.fn();
 const mockListarCreditos = vi.fn();
 const mockAplicarTransicoes = vi.fn();
+const mockListarTransacoes = vi.fn();
+const mockCategorizarTransacao = vi.fn();
 vi.mock('@/server/repositories/extrato-repository', () => ({
   upsertTransacoes: (...a: unknown[]) => mockUpsertTransacoes(...a),
   registrarSync: (...a: unknown[]) => mockRegistrarSync(...a),
   ultimoSync: (...a: unknown[]) => mockUltimoSync(...a),
   listarCreditosParaMatching: (...a: unknown[]) => mockListarCreditos(...a),
   aplicarTransicoesConciliacao: (...a: unknown[]) => mockAplicarTransicoes(...a),
+  listarTransacoes: (...a: unknown[]) => mockListarTransacoes(...a),
+  categorizarTransacao: (...a: unknown[]) => mockCategorizarTransacao(...a),
 }));
 
 const mockListarBoletosPagos = vi.fn();
 vi.mock('@/server/repositories/boleto-repository', () => ({
   listarBoletosPagosParaConciliacao: (...a: unknown[]) => mockListarBoletosPagos(...a),
+}));
+
+const mockBuscarCategoriasSistema = vi.fn();
+const mockListarRegras = vi.fn();
+vi.mock('@/server/repositories/plano-contas-repository', () => ({
+  buscarCategoriasSistema: (...a: unknown[]) => mockBuscarCategoriasSistema(...a),
+  listarRegras: (...a: unknown[]) => mockListarRegras(...a),
 }));
 
 import { POST } from '@/app/api/extrato/sincronizar/route';
@@ -71,6 +82,8 @@ function creditoPersistido(id: string, overrides: Record<string, unknown> = {}) 
     conciliadoEm: null,
     payload: {},
     sincronizadoEm: '2026-07-10T00:00:00Z',
+    categoriaId: null,
+    statusCategorizacao: 'sem_categoria',
     ...overrides,
   };
 }
@@ -84,6 +97,13 @@ beforeEach(() => {
   mockListarBoletosPagos.mockResolvedValue([]);
   mockAplicarTransicoes.mockResolvedValue({ aplicadas: 0, descartadas: 0 });
   mockRegistrarSync.mockResolvedValue(undefined);
+  mockBuscarCategoriasSistema.mockResolvedValue({
+    receitaHonorariosId: 'cat-receita',
+    tarifasBancariasId: 'cat-tarifa',
+  });
+  mockListarRegras.mockResolvedValue([]);
+  mockListarTransacoes.mockResolvedValue([]);
+  mockCategorizarTransacao.mockResolvedValue(undefined);
 });
 
 describe('POST /api/extrato/sincronizar — janela', () => {
@@ -212,5 +232,68 @@ describe('POST /api/extrato/sincronizar — fluxo feliz', () => {
     expect(mockAplicarTransicoes).toHaveBeenCalledWith([
       { transacaoId: 't1', status: 'sem_match', boletoId: null },
     ]);
+  });
+});
+
+describe('POST /api/extrato/sincronizar — categorização (Story 9.2, AC 2)', () => {
+  it('categoriza (engine real) as pendentes sem_categoria da conta e persiste, incluindo o resumo na resposta', async () => {
+    gatewayOk();
+    mockConsultarExtrato.mockResolvedValue({ sucesso: true, transacoes: [] });
+    mockListarTransacoes.mockResolvedValue([
+      creditoPersistido('t-conciliado', { statusConciliacao: 'conciliado_auto' }),
+      creditoPersistido('t-tarifa', { tipo: 'DEBIT', transactionType: 'FEE', statusConciliacao: 'sem_match' }),
+      creditoPersistido('t-sem-match', { statusConciliacao: 'sem_match' }),
+    ]);
+
+    const res = await reqSync('mc');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(mockListarTransacoes).toHaveBeenCalledWith({
+      contaEmissora: 'mc',
+      statusCategorizacao: 'sem_categoria',
+    });
+    expect(mockCategorizarTransacao).toHaveBeenCalledWith('t-conciliado', {
+      categoriaId: 'cat-receita',
+      status: 'confirmada',
+    });
+    expect(mockCategorizarTransacao).toHaveBeenCalledWith('t-tarifa', {
+      categoriaId: 'cat-tarifa',
+      status: 'confirmada',
+    });
+    // t-sem-match não bateu em nenhuma regra → não chama categorizarTransacao para ela.
+    expect(mockCategorizarTransacao).toHaveBeenCalledTimes(2);
+    expect(body.categorizacao).toEqual({ confirmadas: 2, sugeridas: 0, semCategoria: 1 });
+  });
+
+  it('usa as regras ativas do usuário quando as auto-regras de sistema não batem', async () => {
+    gatewayOk();
+    mockConsultarExtrato.mockResolvedValue({ sucesso: true, transacoes: [] });
+    mockListarTransacoes.mockResolvedValue([
+      creditoPersistido('t1', {
+        tipo: 'DEBIT',
+        transactionType: 'TRANSFER',
+        descricao: 'Aluguel do escritório',
+        statusConciliacao: 'sem_match',
+      }),
+    ]);
+    mockListarRegras.mockResolvedValue([
+      { id: 'r1', categoriaId: 'cat-aluguel', campo: 'descricao', padrao: 'aluguel', prioridade: 0, ativo: true, criadoEm: '2026-07-11T00:00:00Z' },
+    ]);
+
+    const res = await reqSync('mc');
+    const body = await res.json();
+
+    expect(mockCategorizarTransacao).toHaveBeenCalledWith('t1', { categoriaId: 'cat-aluguel', status: 'sugerida' });
+    expect(body.categorizacao).toEqual({ confirmadas: 0, sugeridas: 1, semCategoria: 0 });
+  });
+
+  it('sem pendentes → não chama categorizarTransacao', async () => {
+    gatewayOk();
+    mockConsultarExtrato.mockResolvedValue({ sucesso: true, transacoes: [] });
+    mockListarTransacoes.mockResolvedValue([]);
+
+    await reqSync('mc');
+    expect(mockCategorizarTransacao).not.toHaveBeenCalled();
   });
 });

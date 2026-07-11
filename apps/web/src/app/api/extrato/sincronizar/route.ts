@@ -21,9 +21,13 @@ import {
   ultimoSync,
   listarCreditosParaMatching,
   aplicarTransicoesConciliacao,
+  listarTransacoes,
+  categorizarTransacao,
 } from '@/server/repositories/extrato-repository';
 import { listarBoletosPagosParaConciliacao } from '@/server/repositories/boleto-repository';
+import { buscarCategoriasSistema, listarRegras } from '@/server/repositories/plano-contas-repository';
 import { conciliar, resumirTransicoes } from '@/server/engine/conciliacao';
+import { categorizar } from '@/server/engine/categorizacao';
 import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 
 // Sync encadeia token mTLS + N páginas de extrato + upserts; 60s cabe folgado
@@ -122,6 +126,42 @@ export const POST = withErrorHandler(async (req) => {
   // Log do sync (auditoria + janela do próximo).
   await registrarSync(conta, { inicio, fim }, resultadoUpsert, sessao.userId);
 
+  // Categorização (D3, Story 9.2): roda sobre TODAS as transações da conta ainda
+  // sem_categoria — não só o lote deste sync (resolve de brinde qualquer transação
+  // antiga nunca categorizada). Nunca recategoriza o que já é sugerida/confirmada.
+  const categoriasSistema = await buscarCategoriasSistema();
+  const regrasAtivas = await listarRegras({ ativo: true });
+  const pendentesCategorizacao = await listarTransacoes({
+    contaEmissora: conta,
+    statusCategorizacao: 'sem_categoria',
+  });
+  const resultadosCategorizacao = categorizar(
+    pendentesCategorizacao.map((t) => ({
+      transacaoId: t.id,
+      tipo: t.tipo,
+      transactionType: t.transactionType,
+      contraparteNome: t.contraparteNome,
+      descricao: t.descricao,
+      conciliadaComBoleto: t.statusConciliacao.startsWith('conciliado'),
+    })),
+    regrasAtivas.map((r) => ({
+      categoriaId: r.categoriaId,
+      campo: r.campo,
+      padrao: r.padrao,
+      prioridade: r.prioridade,
+    })),
+    categoriasSistema,
+  );
+  for (const r of resultadosCategorizacao) {
+    if (r.status === 'sem_categoria' || !r.categoriaId) continue;
+    await categorizarTransacao(r.transacaoId, { categoriaId: r.categoriaId, status: r.status });
+  }
+  const resumoCategorizacao = {
+    confirmadas: resultadosCategorizacao.filter((r) => r.status === 'confirmada').length,
+    sugeridas: resultadosCategorizacao.filter((r) => r.status === 'sugerida').length,
+    semCategoria: resultadosCategorizacao.filter((r) => r.status === 'sem_categoria').length,
+  };
+
   return NextResponse.json({
     conta,
     periodo: { inicio, fim },
@@ -134,5 +174,6 @@ export const POST = withErrorHandler(async (req) => {
       transicoesAplicadas: aplicacao.aplicadas,
       transicoesDescartadas: aplicacao.descartadas,
     },
+    categorizacao: resumoCategorizacao,
   });
 });
