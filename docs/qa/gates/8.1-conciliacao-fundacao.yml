@@ -1,13 +1,23 @@
-# QA Gate — Story 8.1 (Fundação da conciliação) — iteração 1
+# QA Gate — Story 8.1 (Fundação da conciliação) — iteração 2 (final)
 storyId: "8.1"
 gate: qa-gate
 reviewedBy: Quinn (@qa)
 reviewedAt: "2026-07-10"
-verdict: CONCERNS
+verdict: PASS
 iterations:
   - n: 1
     verdict: CONCERNS
     issues: [QA-811-1 (medium), QA-811-2 (medium), OBS-812 (low, para 8.2), OBS-813 (low, para 8.3)]
+  - n: 2
+    verdict: PASS
+    notes: >
+      QA-811-1 verificado corrigido (emLotes 200/500 no repository; teste com 250 transações
+      cruzando os chunks, contagem preservada). QA-811-2 verificado corrigido (última página
+      cheia → sucesso=false orientando janela menor; teste com teto de 40 páginas). Suíte
+      completa 319 verdes + shared 20; typecheck/lint OK. OBS-812/813 deferidas com dono
+      definido (rotas 8.2 / UI 8.3). Flake intermitente observado 1x na suíte completa
+      (não reproduzido em 2 reruns; fora dos arquivos da story) — registrado no Dev Agent
+      Record, sem bloqueio.
 notes: >
   AC 1-7 verificados: migration 0022 fiel à arquitetura §3 (UNIQUE conta+entry_id, UNIQUE
   parcial de boleto conciliado, RLS espelhando boletos, rollback); refactor cora-http com
