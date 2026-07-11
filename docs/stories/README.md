@@ -257,3 +257,73 @@ Sequência 8.1 → 8.2 → 8.3 (sem paralelismo — cada uma consome a anterior)
 - Pix copia-e-cola nas mensagens (adiado pelo dono).
 - Plano de contas / DRE / categorização contábil; contas a PAGAR; NFS-e (épicos próprios).
 - Cron de sync automático (fase 2) e conciliação N↔1/pagamento parcial.
+
+---
+
+# Épico 9 — DRE / Plano de Contas (categorização contábil)
+
+**Status:** Em discovery — decisões de escopo fechadas com o dono (2026-07-11); arquitetura
+detalhada (schema/migration/UI) ainda não desenhada. Fonte de verdade a criar:
+`docs/architecture/feature-dre-plano-contas.md`.
+
+**Objetivo:** transformar o caixa que já entra pelo Épico 8 (extrato + conciliação) em uma
+Demonstração de Resultado (DRE) contábil formal — receitas, deduções, despesas por categoria
+e resultado líquido —, incluindo despesas que não passam pela conta Cora.
+
+## Decisões fechadas (dono, 2026-07-11)
+1. **DRE formal**, não só um resumo de lucro/prejuízo: receita bruta, deduções da receita,
+   despesas operacionais, despesas financeiras, resultado líquido.
+2. **Categorização por regras + revisão manual** — mesmo padrão da fila de sugestões da
+   conciliação (Épico 8): o sistema sugere a categoria (por contraparte/descrição/tipo já
+   presentes no extrato) e o operador confirma ou corrige.
+3. **Escopo consolidado + drill-down por empresa** (MC / Cavalcante Viana) — mesmo padrão do
+   filtro de conta em `/extrato`.
+4. **Duas fontes de dado:**
+   - transações já sincronizadas do extrato Cora (Épico 8) — reaproveita
+     `extrato_transacoes`, nada de recoletar;
+   - **lançamentos manuais** para despesas fora da Cora (dinheiro, outro banco, cartão).
+5. **Lançamentos manuais avulsos E recorrentes** (ex.: aluguel mensal se repete sozinho).
+6. **Plano de contas — proposta inicial aceita como ponto de partida** (ajustável via
+   cadastro, não fixo em código):
+   ```
+   RECEITAS
+     Receita de honorários (boletos recebidos — já vem do Épico 8/conciliação)
+   DEDUÇÕES DA RECEITA
+     Tarifas bancárias (extrato, transaction_type = FEE)
+     Impostos sobre serviços (ISS, se aplicável)
+   DESPESAS OPERACIONAIS
+     Despesas administrativas
+     Despesas com pessoal
+     Despesas com terceiros
+   DESPESAS FINANCEIRAS
+     Juros e outras taxas (fora tarifas bancárias)
+   RESULTADO LÍQUIDO = Receitas − Deduções − Despesas
+   ```
+
+## Perguntas em aberto (para a fase de arquitetura)
+- Granularidade temporal do DRE: por competência (mesmo conceito já usado no dashboard/
+  recebíveis) ou por mês de caixa (data da transação)? Provável: mês de caixa, já que a
+  base é o extrato bancário, não competência de emissão.
+- Regra de sugestão de categoria: por palavra-chave na descrição/contraparte, por
+  `transaction_type` cru da Cora, ou combinação — desenhar junto com o motor de
+  conciliação existente (`engine/conciliacao.ts`) ou como motor próprio?
+- Papel que edita o plano de contas (admin apenas, ou também financeiro?).
+- Recorrência do lançamento manual: fim automático (data-limite) ou só editável/cancelável
+  manualmente?
+
+## Pré-requisitos operacionais
+Nenhum novo — reaproveita 100% a infraestrutura do Épico 8 (extrato sincronizado por
+conta). Migration própria a definir (após `0022_conciliacao_bancaria.sql`).
+
+## Fora de escopo
+- Contas a PAGAR como módulo completo (fornecedores, vencimentos, workflow de aprovação)
+  — este épico cobre só o lançamento manual de despesa para efeito do DRE, não gestão de
+  contas a pagar.
+- NFS-e (épico próprio).
+- Integração com contador/exportação para sistema contábil externo (SPED etc.).
+
+## Próximo passo
+Arquitetura detalhada (@architect): schema de `plano_contas` + `dre_lancamentos_manuais` +
+regra de vínculo categoria↔transação, motor de sugestão, páginas de UI (cadastro de plano
+de contas, categorização em fila, relatório DRE por período/empresa). Depois, quebra em
+stories (@sm) seguindo o padrão sequencial dos épicos anteriores.
