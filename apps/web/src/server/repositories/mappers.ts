@@ -14,6 +14,7 @@ import type {
   ResumoCompetencia,
   ResumoMedico,
   AgingFaixa,
+  ExtratoTransacao,
 } from '@cobranca/shared';
 
 export interface MedicoRow {
@@ -511,4 +512,48 @@ export interface AgingFaixaRow {
 
 export function toAgingFaixa(row: AgingFaixaRow): AgingFaixa {
   return { faixa: row.faixa, qtd: num(row.qtd), total: num(row.total) };
+}
+
+// ---------------------------------------------------------------------------
+// Extrato bancário (Épico 8)
+// ---------------------------------------------------------------------------
+
+export interface ExtratoTransacaoRow {
+  id: string;
+  conta_emissora: ExtratoTransacao['contaEmissora'];
+  entry_id: string;
+  tipo: ExtratoTransacao['tipo'];
+  transaction_type: string | null;
+  valor: number;
+  descricao: string | null;
+  contraparte_nome: string | null;
+  contraparte_documento: string | null;
+  data_transacao: string;
+  status_conciliacao: ExtratoTransacao['statusConciliacao'];
+  boleto_id: string | null;
+  conciliado_por: string | null;
+  conciliado_em: string | null;
+  payload: unknown;
+  sincronizado_em: string;
+}
+
+export function toExtratoTransacao(row: ExtratoTransacaoRow): ExtratoTransacao {
+  return {
+    id: row.id,
+    contaEmissora: row.conta_emissora,
+    entryId: row.entry_id,
+    tipo: row.tipo,
+    transactionType: row.transaction_type,
+    valor: Number(row.valor), // numeric pode vir como string do PostgREST
+    descricao: row.descricao,
+    contraparteNome: row.contraparte_nome,
+    contraparteDocumento: row.contraparte_documento,
+    dataTransacao: row.data_transacao,
+    statusConciliacao: row.status_conciliacao,
+    boletoId: row.boleto_id,
+    conciliadoPor: row.conciliado_por,
+    conciliadoEm: row.conciliado_em,
+    payload: row.payload,
+    sincronizadoEm: row.sincronizado_em,
+  };
 }

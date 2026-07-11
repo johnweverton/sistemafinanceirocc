@@ -1,14 +1,13 @@
 // Cora Gateway — implementação real de BoletoGatewayPort com mTLS.
 // Usa a API Banking da Cora (POST /v2/invoices) autenticada via certificado mTLS.
 //
-// Fluxo mTLS da Cora (documentação oficial):
-//   1. Certificado e chave privada chegam INJETADOS no construtor (Story 7.2): as
-//      credenciais são POR CONTA EMISSORA (MC / Cavalcante Viana) e resolvidas por
-//      getCredenciaisConta — este módulo não lê env. Uma instância = uma conta.
-//   2. Token OAuth2 obtido via POST /token com client_credentials + mTLS.
-//   3. Invoice criada via POST /v2/invoices com o bearer token + mTLS e
-//      header Idempotency-Key (UUID) obrigatório — sem ele/no path v1 a Cora
-//      responde 404 "/external/invoices Not Found" (confirmado em produção 2026-07-09).
+// O miolo mTLS (agent + token OAuth2 cacheado + fetch via node:https) vive em cora-http.ts
+// (refactor REUSE da Story 8.1) — este módulo só monta payloads e interpreta respostas.
+//   - Credenciais chegam INJETADAS no construtor (Story 7.2): POR CONTA EMISSORA
+//     (MC / Cavalcante Viana), resolvidas por getCredenciaisConta. Uma instância = uma conta.
+//   - Invoice criada via POST /v2/invoices com bearer token + mTLS e header
+//     Idempotency-Key (UUID) obrigatório — sem ele/no path v1 a Cora responde 404
+//     "/external/invoices Not Found" (confirmado em produção 2026-07-09).
 //
 // Sem certificado real, este gateway não funciona — o mock-gateway.ts é o fallback.
 import type {
@@ -21,7 +20,7 @@ import type {
 } from '@cobranca/shared';
 import type { CredenciaisConta } from '@/lib/env';
 import { calcularVencimento } from './vencimento';
-import https from 'node:https';
+import { CoraHttpClient } from './cora-http';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -73,158 +72,22 @@ function montarPaymentTerms(condicoes: CondicoesEmissao): Record<string, unknown
   return terms;
 }
 
-/** Decodifica base64 de env var para Buffer (PEM). */
-function decodificarBase64(base64: string): Buffer {
-  return Buffer.from(base64, 'base64');
-}
-
-/** Cria um https.Agent com certificado e chave mTLS. */
-function criarAgentMtls(certBase64: string, keyBase64: string): https.Agent {
-  return new https.Agent({
-    cert: decodificarBase64(certBase64),
-    key: decodificarBase64(keyBase64),
-    // Rejeita servidores com certificado inválido (produção).
-    rejectUnauthorized: true,
-  });
-}
-
-/** Faz fetch com mTLS via dispatcher do Node.js (undici, embutido no Node 18+). */
-async function fetchMtls(
-  url: string,
-  options: RequestInit & { agent?: https.Agent },
-  agent: https.Agent,
-): Promise<Response> {
-  // Node.js 18+ com undici: fetch global aceita 'dispatcher' em runtime,
-  // mas para mTLS precisamos do módulo https nativo. Usamos a abordagem com
-  // node:https request convertido para Response-like.
-  return new Promise<Response>((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const postData = options.body ? String(options.body) : undefined;
-    const req = https.request(
-      {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port || 443,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: options.method ?? 'POST',
-        headers: {
-          ...(options.headers as Record<string, string>),
-          ...(postData ? { 'Content-Length': Buffer.byteLength(postData).toString() } : {}),
-        },
-        agent,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () => {
-          try {
-            const body = Buffer.concat(chunks).toString('utf-8');
-            const status = res.statusCode ?? 500;
-            // O construtor Response PROÍBE corpo (mesmo '') em status null-body — o DELETE
-            // /v2/invoices da Cora devolve 204 e isso derrubava o processo inteiro na Vercel
-            // (uncaught exception fora da Promise → rota presa → timeout 300s → exit 129).
-            const semCorpo = status === 204 || status === 205 || status === 304;
-            resolve(
-              new Response(semCorpo ? null : body, {
-                status,
-                statusText: res.statusMessage ?? '',
-                headers: res.headers as Record<string, string>,
-              }),
-            );
-          } catch (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
-          }
-        });
-      },
-    );
-    req.on('error', reject);
-    // Timeout de 10s POR CHAMADA: uma operação encadeia até 3 round-trips mTLS (token →
-    // reconsulta → DELETE) e o total precisa caber no maxDuration da function na Vercel;
-    // com 30s cada, a cadeia podia estourar o orçamento e a function morria no meio.
-    req.setTimeout(10_000, () => {
-      req.destroy(new Error('Timeout mTLS request'));
-    });
-    if (postData) req.write(postData);
-    req.end();
-  });
-}
-
-interface CoraTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-}
-
 export class CoraGateway implements BoletoGatewayPort {
-  private agent: https.Agent;
-  private baseUrl: string;
-  private clientId: string;
-
-  // Achado M-5: cache de token OAuth2 em memória — evita chamada a /token a cada operação.
-  private cachedToken: string | null = null;
-  private tokenExpiresAt = 0;
+  private http: CoraHttpClient;
 
   /**
    * Credenciais injetadas por conta emissora (Story 7.2) — presença/erro amigável é
    * responsabilidade de getCredenciaisConta (nomeia conta e vars faltantes). Agent mTLS
-   * e cache de token são por instância, logo por conta: os tokens da MC e da CV nunca
-   * se misturam.
+   * e cache de token são por instância do CoraHttpClient, logo por conta: os tokens da
+   * MC e da CV nunca se misturam.
    */
   constructor(credenciais: CredenciaisConta) {
-    this.agent = criarAgentMtls(credenciais.certBase64, credenciais.keyBase64);
-    this.baseUrl = credenciais.apiUrl.replace(/\/$/, '');
-    this.clientId = credenciais.clientId;
-  }
-
-  /** Invalida o token cacheado (chamado quando uma request recebe 401 da Cora). */
-  private invalidarToken(): void {
-    this.cachedToken = null;
-    this.tokenExpiresAt = 0;
-  }
-
-  /**
-   * Obtém token OAuth2 via client_credentials com mTLS (documentação Cora).
-   * Achado M-5: cacheia o token por (expires_in - 60s) para evitar chamadas redundantes.
-   */
-  private async obterToken(): Promise<string> {
-    // Retorna cache se ainda válido (margem de 60s antes da expiração real).
-    if (this.cachedToken && Date.now() < this.tokenExpiresAt) {
-      return this.cachedToken;
-    }
-
-    const tokenUrl = `${this.baseUrl}/token`;
-    const body = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: this.clientId,
-    }).toString();
-
-    const resp = await fetchMtls(
-      tokenUrl,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-      },
-      this.agent,
-    );
-
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      throw new Error(`Cora token error ${resp.status}: ${errBody}`);
-    }
-
-    const json = (await resp.json()) as CoraTokenResponse;
-
-    // Cachear com margem de segurança: expira 60s antes do real para evitar uso de token expirado.
-    const ttlMs = Math.max((json.expires_in - 60) * 1000, 0);
-    this.cachedToken = json.access_token;
-    this.tokenExpiresAt = Date.now() + ttlMs;
-
-    return json.access_token;
+    this.http = new CoraHttpClient(credenciais);
   }
 
   async emitir(dados: DadosEmissaoBoleto): Promise<EmissaoBoleto> {
     try {
-      const token = await this.obterToken();
+      const token = await this.http.obterToken();
 
       // Monta o payload conforme o contrato POST /invoices da Cora.
       const { pagador, condicoes } = dados;
@@ -265,21 +128,17 @@ export class CoraGateway implements BoletoGatewayPort {
         ],
       };
 
-      const invoiceUrl = `${this.baseUrl}/v2/invoices`;
-      const resp = await fetchMtls(
-        invoiceUrl,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-            // Obrigatório na API v2 — evita emissão duplicada em retry de rede.
-            'Idempotency-Key': randomUUID(),
-          },
-          body: JSON.stringify(invoicePayload),
+      const invoiceUrl = `${this.http.baseUrl}/v2/invoices`;
+      const resp = await this.http.fetch(invoiceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          // Obrigatório na API v2 — evita emissão duplicada em retry de rede.
+          'Idempotency-Key': randomUUID(),
         },
-        this.agent,
-      );
+        body: JSON.stringify(invoicePayload),
+      });
 
       const responseBody = await resp.json();
 
@@ -319,13 +178,12 @@ export class CoraGateway implements BoletoGatewayPort {
    */
   async cancelar(idExterno: string): Promise<ResultadoCancelamento> {
     try {
-      const token = await this.obterToken();
-      const url = `${this.baseUrl}/v2/invoices/${encodeURIComponent(idExterno)}`;
-      const resp = await fetchMtls(
-        url,
-        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
-        this.agent,
-      );
+      const token = await this.http.obterToken();
+      const url = `${this.http.baseUrl}/v2/invoices/${encodeURIComponent(idExterno)}`;
+      const resp = await this.http.fetch(url, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       // Corpo pode ser vazio (200/204) — lê como texto e tenta JSON.
       const texto = await resp.text();
       let body: unknown = null;
@@ -349,13 +207,12 @@ export class CoraGateway implements BoletoGatewayPort {
   /** Consulta o status real de uma invoice (fonte da verdade da conciliação). Erro/404 → 'unknown'. */
   async consultarInvoice(idExterno: string): Promise<StatusInvoice> {
     try {
-      const token = await this.obterToken();
-      const url = `${this.baseUrl}/v2/invoices/${encodeURIComponent(idExterno)}`;
-      const resp = await fetchMtls(
-        url,
-        { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
-        this.agent,
-      );
+      const token = await this.http.obterToken();
+      const url = `${this.http.baseUrl}/v2/invoices/${encodeURIComponent(idExterno)}`;
+      const resp = await this.http.fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!resp.ok) {
         return { status: 'unknown', valorPago: null, pagoEm: null };
       }
@@ -367,4 +224,6 @@ export class CoraGateway implements BoletoGatewayPort {
 }
 
 // Exporta também as funções internas para testes unitários com mocks.
-export { criarAgentMtls, fetchMtls, calcularVencimento, montarPaymentTerms, normalizarStatusInvoice };
+// criarAgentMtls/fetchMtls moram em cora-http.ts desde a Story 8.1 (re-export p/ compat).
+export { criarAgentMtls, fetchMtls } from './cora-http';
+export { calcularVencimento, montarPaymentTerms, normalizarStatusInvoice };
