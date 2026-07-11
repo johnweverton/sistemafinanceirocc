@@ -43,7 +43,7 @@ function validarCamposPorTipo(input: CriarLancamentoInput): void {
     }
     return;
   }
-  if (input.diaDoMes < 1 || input.diaDoMes > 28) {
+  if (!Number.isInteger(input.diaDoMes) || input.diaDoMes < 1 || input.diaDoMes > 28) {
     throw new ApiError(422, 'Lançamento recorrente exige "diaDoMes" entre 1 e 28.', 'VALIDATION_ERROR');
   }
   if (!input.dataInicio) {

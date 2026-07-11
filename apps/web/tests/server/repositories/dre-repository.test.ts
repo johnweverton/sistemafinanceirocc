@@ -120,6 +120,22 @@ describe('criarLancamento', () => {
     expect(mockFrom).not.toHaveBeenCalled();
   });
 
+  it('rejeita recorrente com diaDoMes NaN ou fracionário (QA-911-1)', async () => {
+    const base: CriarLancamentoInput = {
+      tipoLancamento: 'recorrente',
+      contaEmissora: 'mc',
+      categoriaId: 'cat-1',
+      descricao: 'Aluguel',
+      valor: 500,
+      diaDoMes: NaN,
+      dataInicio: '2026-07-01',
+      criadoPor: 'user-1',
+    };
+    await expect(criarLancamento(base)).rejects.toMatchObject({ status: 422 });
+    await expect(criarLancamento({ ...base, diaDoMes: 15.5 })).rejects.toMatchObject({ status: 422 });
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
   it('rejeita recorrente sem dataInicio', async () => {
     const input = {
       tipoLancamento: 'recorrente',

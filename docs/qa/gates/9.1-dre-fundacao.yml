@@ -1,0 +1,58 @@
+# QA Gate — Story 9.1 (Fundação do DRE: migration, plano de contas e repositories) — iteração 1 (final)
+storyId: "9.1"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-11"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [QA-911-1 (medium, corrigida na iteração), OBS-912 (low, para 9.2/9.3)]
+notes: >
+  AC 1-6 verificados. Migration 0023 aditiva/idempotente (padrão 0022): CHECKs, índices,
+  RLS espelhando extrato_transacoes (leitura admin/financeiro, escrita só service role),
+  comentários e rollback. CHECK cruzado de dre_lancamentos_manuais testado nos dois
+  sentidos. Categorias de sistema (Receita de honorários / Tarifas bancárias) protegidas
+  contra DELETE e alteração de grupo/sistema por DESIGN ESTRUTURAL — atualizarCategoria só
+  aceita nome/ordem no tipo do patch (mais forte que um guard condicional, que poderia ser
+  contornado). desativarCategoria/excluirCategoria também rejeitam sistema=true
+  explicitamente (interpretação correta da arquitetura, que menciona só DELETE — desativar
+  uma categoria de sistema quebraria a auto-categorização da 9.2 silenciosamente).
+  excluirCategoria: DELETE físico só com ativo=true e zero vínculos nas 3 tabelas que
+  referenciam categoria_id, testado. categorizarTransacao é eixo independente de
+  atualizarStatusConciliacao (D2), confirmado por teste dedicado (não escreve
+  status_conciliacao/boleto_id). Sem rotas HTTP/motor/UI nesta story (escopo OUT
+  corretamente respeitado — fica para 9.2/9.3, mesmo faseamento do Épico 8).
+  typecheck (web+shared)/lint verdes; 405+9 = 414 testes web (52 arquivos) + 20 shared;
+  zero regressão comprovada na suíte do Épico 8 (extrato-get, extrato-repository,
+  sincronizar, conciliação — todos os 18 testes pré-existentes do extrato-repository
+  passam com o fixture ROW_COMPLETA estendido). Anti-self-review: mesma sessão do @dev
+  (personas distintas — padrão dos Épicos 7/8). CodeRabbit indisponível na máquina —
+  cobertura manual reforçada.
+issues:
+  - id: QA-911-1
+    severity: medium
+    category: code
+    description: >
+      `validarCamposPorTipo` em dre-repository.ts rejeitava `diaDoMes` fora de 1-28 por
+      comparação direta (`< 1 || > 28`), mas NaN e valores fracionários (ex.: 15.5)
+      passavam pela validação sem erro — `NaN < 1` e `NaN > 28` são sempre `false` em
+      JS/TS, então a guarda "antes de bater no banco" (AC 4) não cobria esses casos. O
+      CHECK da migration ainda protegia a integridade dos dados (NaN falha o `between 1
+      and 28` do Postgres, fracionário falha a coerção para `integer`), mas o erro
+      surgiria como 500 DB_ERROR em vez do 422 VALIDATION_ERROR limpo pretendido pela AC.
+    recommendation: >
+      CORRIGIDA na iteração 1 (commit local, ver Dev Agent Record) — adicionado
+      `Number.isInteger(input.diaDoMes)` ao guard; teste dedicado cobrindo NaN e
+      fracionário.
+  - id: OBS-912
+    severity: low
+    category: performance
+    description: >
+      `extrato_transacoes.categoria_id` e `dre_lancamentos_manuais.categoria_id` não têm
+      índice próprio — `excluirCategoria` faz 2 counts sem índice quando essas tabelas
+      crescerem. Volume atual (centenas/mês, mesma premissa documentada no Épico 8) torna
+      isso irrelevante hoje.
+    recommendation: >
+      Se o volume crescer, adicionar índice em migration aditiva futura (9.2/9.3 ou
+      depois) — não bloqueia esta story nem as próximas do épico.
