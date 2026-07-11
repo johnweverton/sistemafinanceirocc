@@ -101,7 +101,12 @@ function VincularBoletoDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-cc-surface card w-full max-w-lg shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Vincular boleto pago"
+        className="bg-cc-surface card w-full max-w-lg shadow-2xl"
+      >
         <div className="border-b border-cc-hairline px-6 py-4">
           <h2 className="text-lg font-bold text-cc-ink">Vincular boleto pago</h2>
           <p className="mt-1 text-sm text-cc-ink-2">

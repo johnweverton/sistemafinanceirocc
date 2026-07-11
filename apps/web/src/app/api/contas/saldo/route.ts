@@ -12,13 +12,10 @@ import { criarContaGateway } from '@/server/gateway/conta-gateway-factory';
 import { CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import type { ContaEmissora, SaldoEmpresa } from '@cobranca/shared';
 
+// Route files só podem exportar handlers/config no App Router — nada de helper exportado
+// para limpar o cache; testes que precisarem disso usam vi.resetModules().
 const CACHE_TTL_MS = 60_000;
 const cache = new Map<ContaEmissora, { em: number; resposta: SaldoEmpresa }>();
-
-/** Limpa o cache — usado apenas nos testes (estado de módulo). */
-export function limparCacheSaldos(): void {
-  cache.clear();
-}
 
 async function saldoDaConta(conta: ContaEmissora): Promise<SaldoEmpresa> {
   const hit = cache.get(conta);
