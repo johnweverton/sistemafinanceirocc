@@ -230,3 +230,80 @@ export async function listarBoletosPorExecucao(execucaoId: string): Promise<Bole
   // O select retorna campos extras do join; extraímos só as colunas do boleto.
   return (data as BoletoRow[]).map(toBoleto);
 }
+
+// ---------------------------------------------------------------------------
+// Conciliação bancária (Story 8.2)
+// ---------------------------------------------------------------------------
+
+/** Boleto pago candidato ao matching — shape do motor de conciliação. */
+export interface BoletoPagoParaConciliacao {
+  boletoId: string;
+  valorPago: number | null;
+  pagoEm: string | null;
+  /** CPF/CNPJ do pagador do médico (medicos.pagador_documento), só dígitos. */
+  pagadorDocumento: string | null;
+}
+
+/**
+ * Boletos PAGOS da conta que ainda não têm transação de extrato conciliada — o outro lado
+ * do matching (Story 8.2). Documento do pagador vem do médico via execucao_resultados
+ * (mesmo caminho da vw_recebiveis). Boletos já vinculados (UNIQUE parcial da 0022) saem
+ * da lista para respeitar o 1↔1.
+ */
+export async function listarBoletosPagosParaConciliacao(
+  conta: ContaEmissora,
+): Promise<BoletoPagoParaConciliacao[]> {
+  const db = getSupabaseAdmin();
+
+  // Boletos já ocupados por uma transação conciliada (auto ou manual).
+  const { data: ocupadosRows, error: erroOcupados } = await db
+    .from('extrato_transacoes')
+    .select('boleto_id')
+    .like('status_conciliacao', 'conciliado%')
+    .not('boleto_id', 'is', null);
+  if (erroOcupados) {
+    throw new ApiError(500, 'Falha ao listar boletos já conciliados', 'DB_ERROR', {
+      error: erroOcupados.message,
+    });
+  }
+  const ocupados = new Set(
+    (ocupadosRows ?? []).map((r) => (r as { boleto_id: string }).boleto_id),
+  );
+
+  const { data, error } = await db
+    .from('boletos')
+    .select('id, valor_pago, pago_em, execucao_resultados!inner(medicos!inner(pagador_documento))')
+    .eq('conta_emissora', conta)
+    .eq('status', 'pago');
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar boletos pagos para conciliação', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+
+  // Relações to-one podem chegar como objeto ou array de 1 (inferência do PostgREST sem
+  // tipos gerados varia) — normaliza os dois shapes antes de mapear.
+  type MedicoDoc = { pagador_documento: string | null };
+  type ResultadoRel = { medicos: MedicoDoc | MedicoDoc[] | null };
+  const umOuPrimeiro = <T>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+
+  return (data ?? [])
+    .filter((row) => !ocupados.has((row as { id: string }).id))
+    .map((row) => {
+      const r = row as unknown as {
+        id: string;
+        valor_pago: number | null;
+        pago_em: string | null;
+        execucao_resultados: ResultadoRel | ResultadoRel[] | null;
+      };
+      const resultado = umOuPrimeiro(r.execucao_resultados);
+      const medico = umOuPrimeiro(resultado?.medicos);
+      return {
+        boletoId: r.id,
+        valorPago: r.valor_pago != null ? Number(r.valor_pago) : null,
+        pagoEm: r.pago_em,
+        pagadorDocumento: medico?.pagador_documento ?? null,
+      };
+    });
+}

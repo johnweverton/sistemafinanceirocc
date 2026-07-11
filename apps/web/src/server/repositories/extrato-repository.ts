@@ -17,6 +17,7 @@ import type {
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 import { toExtratoTransacao, type ExtratoTransacaoRow } from './mappers';
+import type { TransicaoConciliacao } from '@/server/engine/conciliacao';
 
 export interface ResultadoUpsertExtrato {
   qtdNovas: number;
@@ -182,6 +183,99 @@ export async function listarTransacoes(
   return (data as ExtratoTransacaoRow[]).map(toExtratoTransacao);
 }
 
+/** Busca uma transação do snapshot por id; null se não existe. */
+export async function buscarTransacao(id: string): Promise<ExtratoTransacao | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('extrato_transacoes')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    throw new ApiError(500, 'Falha ao buscar transação do extrato', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  return data ? toExtratoTransacao(data as ExtratoTransacaoRow) : null;
+}
+
+/**
+ * Créditos da conta em estado recalculável (sem_match/sugerido) — entrada do motor de
+ * matching (Story 8.2). Estados manuais nunca entram (o engine também os filtra: defesa dupla).
+ */
+export async function listarCreditosParaMatching(
+  conta: ContaEmissora,
+): Promise<ExtratoTransacao[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('extrato_transacoes')
+    .select('*')
+    .eq('conta_emissora', conta)
+    .eq('tipo', 'CREDIT')
+    .in('status_conciliacao', ['sem_match', 'sugerido']);
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar créditos para matching', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  return (data as ExtratoTransacaoRow[]).map(toExtratoTransacao);
+}
+
+/**
+ * Aplica as transições do motor com updates CONDICIONAIS: o WHERE exige que o status atual
+ * ainda seja recalculável (sem_match/sugerido) — uma ação manual concorrente (conciliar/
+ * ignorar entre a leitura e a escrita) vence e a transição do motor é descartada (mitigação
+ * de corrida da story). Corrida no UNIQUE parcial do boleto (23505) também descarta a
+ * transição em vez de falhar o sync.
+ */
+export async function aplicarTransicoesConciliacao(
+  transicoes: TransicaoConciliacao[],
+): Promise<{ aplicadas: number; descartadas: number }> {
+  const db = getSupabaseAdmin();
+  let aplicadas = 0;
+  let descartadas = 0;
+
+  for (const tr of transicoes) {
+    const patch: Record<string, unknown> =
+      tr.status === 'conciliado_auto'
+        ? {
+            status_conciliacao: 'conciliado_auto',
+            boleto_id: tr.boletoId,
+            conciliado_por: null, // ação do sistema
+            conciliado_em: new Date().toISOString(),
+          }
+        : {
+            // sugerido guarda o candidato; sem_match limpa. Nenhum dos dois tem trilha humana.
+            status_conciliacao: tr.status,
+            boleto_id: tr.status === 'sugerido' ? tr.boletoId : null,
+            conciliado_por: null,
+            conciliado_em: null,
+          };
+
+    const { data, error } = await db
+      .from('extrato_transacoes')
+      .update(patch)
+      .eq('id', tr.transacaoId)
+      .in('status_conciliacao', ['sem_match', 'sugerido'])
+      .select('id');
+
+    if (error) {
+      if (error.code === '23505') {
+        // Boleto foi conciliado com outra transação no meio do caminho — descarta o auto.
+        descartadas++;
+        continue;
+      }
+      throw new ApiError(500, 'Falha ao aplicar transições de conciliação', 'DB_ERROR', {
+        error: error.message,
+      });
+    }
+    if ((data ?? []).length > 0) aplicadas++;
+    else descartadas++; // status mudou por ação manual concorrente — manual vence
+  }
+
+  return { aplicadas, descartadas };
+}
+
 export interface MudancaConciliacao {
   status: StatusConciliacao;
   /** Obrigatório em conciliado_*; a sugestão (sugerido) também aponta o candidato. */
@@ -234,6 +328,16 @@ export async function atualizarStatusConciliacao(
     .eq('id', id)
     .select('*');
   if (error) {
+    // OBS-812 (gate 8.1): violação do UNIQUE parcial = boleto já conciliado com outra
+    // transação — erro de NEGÓCIO (409), não de infraestrutura.
+    if (error.code === '23505') {
+      throw new ApiError(
+        409,
+        'Boleto já está conciliado com outra transação do extrato.',
+        'BOLETO_JA_CONCILIADO',
+        { boletoId: mudanca.boletoId },
+      );
+    }
     throw new ApiError(500, 'Falha ao atualizar status de conciliação', 'DB_ERROR', {
       error: error.message,
     });
