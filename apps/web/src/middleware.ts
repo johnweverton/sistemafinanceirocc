@@ -3,6 +3,15 @@
 // permitindo remover 'unsafe-inline' de script-src em produção.
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { createRateLimiter, checkLimit } from '@/lib/rate-limit';
+
+// Rate limit GLOBAL para todas as rotas /api/*, por usuário autenticado — defesa em
+// profundidade complementar aos limiters pontuais (rate-limit.ts) das rotas de maior custo.
+// Objetivo aqui é diferente: impedir scraping em massa de dados pessoais (médicos, execuções,
+// financeiro) por uma sessão comprometida ou automatizada, não limitar operações caras isoladas.
+// 300 req/min é generoso o bastante para não afetar o uso normal do dashboard (várias
+// chamadas paralelas por tela) mas barra varredura sistemática em poucos segundos.
+const apiGlobalLimiter = createRateLimiter('api-global', { limit: 300, windowMs: 60_000 });
 
 export async function middleware(req: NextRequest) {
   // 1. Gerar nonce criptográfico para esta request (Achado A-4).
@@ -79,6 +88,25 @@ export async function middleware(req: NextRequest) {
   if (user && isLogin) {
     return NextResponse.redirect(new URL('/medicos', req.url));
   }
+
+  // Rate limit global de API — só se aplica após autenticação resolvida (LGPD: contém
+  // dados pessoais). Rotas de saúde/webhooks já ficam fora do matcher deste middleware.
+  if (user && req.nextUrl.pathname.startsWith('/api/')) {
+    const { allowed, resetAt } = checkLimit(apiGlobalLimiter, user.id);
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'RATE_LIMITED',
+            message: 'Limite de requisições excedido. Tente novamente em instantes.',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((resetAt - Date.now()) / 1000)) } },
+      );
+    }
+  }
+
   return res;
 }
 
