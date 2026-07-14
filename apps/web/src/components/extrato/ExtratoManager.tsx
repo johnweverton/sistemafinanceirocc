@@ -585,7 +585,7 @@ export function ExtratoManager() {
           description={`Sincronize o extrato de ${CONTA_EMISSORA_LABEL[conta]} para trazer as transações do banco, ou ajuste o período e os filtros.`}
         />
       ) : (
-        <div className="card overflow-hidden">
+        <div className="card overflow-x-auto">
           <table className="data-table">
             <thead className="border-b border-cc-hairline bg-cc-surface-2">
               <tr>

@@ -167,7 +167,7 @@
   }
 
   /* Tabela padrão */
-  .data-table { @apply w-full text-left text-sm; }
+  .data-table { @apply w-full whitespace-nowrap text-left text-sm; }
   .data-table th {
     @apply px-4 py-3 text-2xs font-semibold uppercase tracking-wider text-cc-muted;
   }

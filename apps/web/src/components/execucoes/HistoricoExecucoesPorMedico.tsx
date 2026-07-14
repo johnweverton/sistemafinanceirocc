@@ -106,7 +106,7 @@ export function HistoricoExecucoesPorMedico() {
         />
       ) : (
         <>
-          <div className="card overflow-hidden">
+          <div className="card overflow-x-auto">
             <table className="data-table">
               <thead className="border-b border-cc-hairline bg-cc-surface-2">
                 <tr>
@@ -212,6 +212,7 @@ function LinhaMedico({
             ) : !historico || historico.length === 0 ? (
               <p className="p-4 text-sm text-cc-muted">Nenhuma ocorrência encontrada.</p>
             ) : (
+              <div className="overflow-x-auto">
               <table className="data-table w-full">
                 <thead className="border-b border-cc-hairline">
                   <tr>
@@ -240,6 +241,7 @@ function LinhaMedico({
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </td>
         </tr>

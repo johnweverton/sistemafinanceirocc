@@ -314,6 +314,7 @@ function Grupo({
                 </div>
               )}
               {!resumido && r.subtotais && r.subtotais.length > 0 && (
+                <div className="overflow-x-auto">
                 <table className="mt-3 w-full text-xs">
                   <tbody>
                     {r.subtotais.map((s, i) => (
@@ -332,6 +333,7 @@ function Grupo({
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
               {mostrarAlertas &&
                 r.alertas.map((a, i) => (

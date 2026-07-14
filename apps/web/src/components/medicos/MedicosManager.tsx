@@ -511,7 +511,7 @@ export function MedicosManager() {
         />
       ) : (
         <>
-          <div className="card overflow-hidden">
+          <div className="card overflow-x-auto">
             <table className="data-table">
               <thead className="border-b border-cc-hairline bg-cc-surface-2">
                 <tr>

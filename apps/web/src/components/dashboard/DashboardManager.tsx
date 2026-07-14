@@ -120,7 +120,7 @@ export function DashboardManager() {
         ) : (medicos.data ?? []).length === 0 ? (
           <p className="text-sm text-cc-muted">Nenhum boleto nesta competência.</p>
         ) : (
-          <div className="card overflow-hidden">
+          <div className="card overflow-x-auto">
             <table className="data-table">
               <thead className="border-b border-cc-hairline bg-cc-surface-2">
                 <tr>

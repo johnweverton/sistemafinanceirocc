@@ -193,7 +193,7 @@ export function PlanoContasCadastro() {
         ) : categorias.length === 0 ? (
           <p className="text-sm text-cc-muted">Nenhuma categoria cadastrada.</p>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-cc-hairline">
+          <div className="overflow-x-auto rounded-lg border border-cc-hairline">
             <table className="data-table">
               <thead className="border-b border-cc-hairline bg-cc-surface-2">
                 <tr>
@@ -348,7 +348,7 @@ export function PlanoContasCadastro() {
         ) : (regrasQ.data ?? []).length === 0 ? (
           <p className="text-sm text-cc-muted">Nenhuma regra cadastrada.</p>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-cc-hairline">
+          <div className="overflow-x-auto rounded-lg border border-cc-hairline">
             <table className="data-table">
               <thead className="border-b border-cc-hairline bg-cc-surface-2">
                 <tr>

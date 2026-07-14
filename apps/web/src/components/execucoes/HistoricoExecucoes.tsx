@@ -247,6 +247,7 @@ function GrupoCompetencia({
         </svg>
       </button>
       {expandido && (
+        <div className="overflow-x-auto">
         <table className="data-table border-t border-cc-hairline">
           <thead className="border-b border-cc-hairline bg-cc-surface-2">
             <tr>
@@ -289,6 +290,7 @@ function GrupoCompetencia({
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );
