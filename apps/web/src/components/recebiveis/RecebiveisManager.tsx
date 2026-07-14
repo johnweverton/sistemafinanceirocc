@@ -227,7 +227,10 @@ export function RecebiveisManager() {
         />
       ) : (
         <div className="card overflow-hidden">
-          <table className="data-table">
+          {/* Scroll horizontal: com 11 colunas a tabela estoura a largura no celular —
+              o container arrasta pro lado e nada (nem o botão do PDF) fica cortado. */}
+          <div className="overflow-x-auto">
+            <table className="data-table whitespace-nowrap">
             <thead className="border-b border-cc-hairline bg-cc-surface-2">
               <tr>
                 <th>Médico</th>
@@ -312,7 +315,8 @@ export function RecebiveisManager() {
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       )}
 
