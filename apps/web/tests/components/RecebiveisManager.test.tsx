@@ -80,6 +80,33 @@ describe('RecebiveisManager', () => {
     );
   });
 
+  // Coluna "Pago em" (data da baixa) + destaque do valor pago quando difere do emitido.
+  it('mostra a coluna "Pago em" e destaca o valor pago quando difere do emitido', async () => {
+    const divergente = {
+      ...recebivelPago,
+      boletoId: 'b3',
+      nome: 'Dr. Diferente',
+      valor: 1000,
+      valorPago: 1080, // pagou a mais (multa/juros) → destaque
+      pagoEm: '2026-07-05T12:00:00Z',
+    };
+    mockListar.mockResolvedValue([recebivelPago, divergente, recebivelVencido]);
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Dr. Diferente')).toBeInTheDocument());
+
+    const tabela = screen.getByRole('table');
+    // Coluna nova existe.
+    expect(within(tabela).getByText('Pago em')).toBeInTheDocument();
+
+    // Valor pago divergente vem destacado (âmbar) e com tooltip explicando a diferença.
+    const destacado = within(tabela).getByTitle(/pago/i);
+    expect(destacado).toHaveClass('text-cc-warning');
+    expect(destacado.textContent).toContain('1.080');
+
+    // Valor pago igual ao emitido (Dr. Pago: 1500/1500) NÃO é destacado.
+    expect(within(tabela).queryByTitle(/Emitido.*1\.500/)).not.toBeInTheDocument();
+  });
+
   it('mostra empty state quando não há recebíveis', async () => {
     mockListar.mockResolvedValue([]);
     renderComProviders();

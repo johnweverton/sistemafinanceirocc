@@ -213,7 +213,7 @@ export function RecebiveisManager() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={10} />
+        <TableSkeleton rows={6} cols={11} />
       ) : recebiveis.length === 0 ? (
         <EmptyState
           icon={
@@ -236,6 +236,7 @@ export function RecebiveisManager() {
                 <th className="text-right">Valor</th>
                 <th>Emitido em</th>
                 <th>Vencimento</th>
+                <th>Pago em</th>
                 <th>Status</th>
                 <th>Envios</th>
                 <th className="text-right">Valor pago</th>
@@ -243,7 +244,15 @@ export function RecebiveisManager() {
               </tr>
             </thead>
             <tbody>
-              {recebiveis.map((r) => (
+              {recebiveis.map((r) => {
+                // Valor pago difere do emitido quando houve desconto (pagou antes),
+                // multa/juros (pagou depois) ou pagamento parcial — destaca pra revisão.
+                const difereValorPago =
+                  r.pagoEm != null &&
+                  r.valorPago != null &&
+                  r.valor != null &&
+                  Math.abs(r.valorPago - r.valor) >= 0.01;
+                return (
                 <tr key={r.boletoId}>
                   <td className="font-medium">{r.nome}</td>
                   <td>
@@ -255,12 +264,26 @@ export function RecebiveisManager() {
                   <td className="text-right tabular font-medium">{brl(r.valor)}</td>
                   <td className="font-mono tabular text-cc-ink-2">{dataHora(r.emitidoEm)}</td>
                   <td className="font-mono tabular text-cc-ink-2">{r.vencimento ?? '—'}</td>
+                  <td className="font-mono tabular text-cc-ink-2">{r.pagoEm ? dataHora(r.pagoEm) : '—'}</td>
                   <td><StatusBadge status={r.statusDerivado} /></td>
                   <td>
                     <DisparoBadges disparos={r.disparos} />
                   </td>
-                  <td className="text-right tabular text-cc-muted">
-                    {r.pagoEm ? brl(r.valorPago) : '—'}
+                  <td className="text-right tabular">
+                    {!r.pagoEm ? (
+                      <span className="text-cc-muted">—</span>
+                    ) : difereValorPago ? (
+                      <span
+                        className="font-semibold text-cc-warning"
+                        title={`Emitido ${brl(r.valor)} · pago ${brl(r.valorPago)} (${
+                          (r.valorPago ?? 0) > (r.valor ?? 0) ? 'a mais' : 'a menos'
+                        } ${brl(Math.abs((r.valorPago ?? 0) - (r.valor ?? 0)))})`}
+                      >
+                        {brl(r.valorPago)}
+                      </span>
+                    ) : (
+                      <span className="text-cc-muted">{brl(r.valorPago)}</span>
+                    )}
                   </td>
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -286,7 +309,8 @@ export function RecebiveisManager() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
