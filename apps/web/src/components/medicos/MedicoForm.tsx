@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
-import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora } from '@cobranca/shared';
+import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora, RegraPreco, RegraPrecoForma } from '@cobranca/shared';
 import { tipoDoMedico, combinacaoClasseValida, CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import type { NovoMedicoPayload } from '@/services/medicos';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
@@ -39,9 +39,18 @@ const VAZIO: FormState = {
   modoMudancaData: 'nao',
   modoCobranca: 'faixa_guias',
   percentualProducao: null,
+  regraPreco: null,
   contaEmissora: '', // escolha explícita obrigatória em médicos novos (Story 7.3)
   colaboradorResponsavel: null,
   ativo: true,
+};
+
+const REGRA_PRECO_VAZIA: RegraPreco = {
+  forma: 'base_excedente',
+  base: null,
+  limiar: null,
+  taxa: null,
+  valorFixo: null,
 };
 
 /** True se o usuário digitou algo em qualquer campo de cobrança (define se enviamos o bloco). */
@@ -86,6 +95,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           modoMudancaData: inicial.modoMudancaData,
           modoCobranca: inicial.modoCobranca,
           percentualProducao: inicial.percentualProducao,
+          regraPreco: inicial.regraPreco,
           contaEmissora: inicial.contaEmissora, // existentes exibem o backfill ('mc')
           colaboradorResponsavel: inicial.colaboradorResponsavel,
           ativo: inicial.ativo,
@@ -106,13 +116,29 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const percentualOk =
     form.modoCobranca !== 'percentual_producao' ||
     (form.percentualProducao != null && form.percentualProducao > 0);
+  // Modo preço próprio exige a regra coerente com a forma (Story 10.1 — espelho da CHECK 0025).
+  const regraPrecoOk =
+    form.modoCobranca !== 'preco_proprio' ||
+    (form.regraPreco != null &&
+      (form.regraPreco.forma === 'base_excedente'
+        ? form.regraPreco.base != null && form.regraPreco.limiar != null && form.regraPreco.taxa != null
+        : form.regraPreco.valorFixo != null));
   // Empresa emissora é obrigatória (Story 7.3): boleto pela empresa errada = contestação.
   const contaOk = form.contaEmissora !== '';
   const podeSalvar =
-    combinacaoValida && motivoOk && cpfOk && percentualOk && contaOk && form.nome.trim().length > 0;
+    combinacaoValida && motivoOk && cpfOk && percentualOk && regraPrecoOk && contaOk && form.nome.trim().length > 0;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
+  }
+
+  function setRegra<K extends keyof RegraPreco>(campo: K, valor: RegraPreco[K]) {
+    setForm((f) => ({ ...f, regraPreco: { ...(f.regraPreco ?? REGRA_PRECO_VAZIA), [campo]: valor } }));
+  }
+
+  /** Campo numérico da regra de preço: '' vira null. */
+  function setRegraNum(campo: keyof Omit<RegraPreco, 'forma'>, valor: string) {
+    setRegra(campo, valor === '' ? null : Number(valor));
   }
 
   function setCob<K extends keyof DadosCobranca>(campo: K, valor: DadosCobranca[K]) {
@@ -280,6 +306,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           >
             <option value="faixa_guias">Tabela de faixas (padrão)</option>
             <option value="percentual_producao">Percentual da produção (auxiliar)</option>
+            <option value="preco_proprio">Preço próprio (fora de faixa)</option>
           </select>
         </Field>
 
@@ -307,6 +334,79 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           </Field>
         )}
       </div>
+
+      {form.modoCobranca === 'preco_proprio' && (
+        <div className="rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4 space-y-4">
+          <p className="text-sm font-semibold text-cc-ink">Regra de preço própria</p>
+
+          <Field label="Forma da regra">
+            <select
+              value={form.regraPreco?.forma ?? 'base_excedente'}
+              onChange={(e) => setRegra('forma', e.target.value as RegraPrecoForma)}
+              className="input"
+            >
+              <option value="base_excedente">Base + excedente com limiar (ex.: Dr. Jansen)</option>
+              <option value="fixo">Valor fixo mensal (ex.: Nelson, Carlos Batista, Jefferson)</option>
+            </select>
+          </Field>
+
+          {(form.regraPreco?.forma ?? 'base_excedente') === 'base_excedente' ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Base (R$)">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={form.regraPreco?.base ?? ''}
+                  onChange={(e) => setRegraNum('base', e.target.value)}
+                  className="input tabular"
+                  placeholder="935.62"
+                />
+              </Field>
+              <Field label="Limiar (guias)">
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.regraPreco?.limiar ?? ''}
+                  onChange={(e) => setRegraNum('limiar', e.target.value)}
+                  className="input tabular"
+                  placeholder="144"
+                />
+              </Field>
+              <Field label="Taxa por guia excedente (R$)">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={form.regraPreco?.taxa ?? ''}
+                  onChange={(e) => setRegraNum('taxa', e.target.value)}
+                  className="input tabular"
+                  placeholder="6.50"
+                />
+              </Field>
+            </div>
+          ) : (
+            <Field label="Valor fixo mensal (R$)">
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={form.regraPreco?.valorFixo ?? ''}
+                onChange={(e) => setRegraNum('valorFixo', e.target.value)}
+                className="input tabular"
+                placeholder="591.22"
+              />
+            </Field>
+          )}
+
+          {!regraPrecoOk && (
+            <p className="text-xs text-cc-danger" role="alert">
+              Preencha todos os campos da regra de preço própria.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Checkboxes */}
       <div className="flex flex-wrap gap-6">

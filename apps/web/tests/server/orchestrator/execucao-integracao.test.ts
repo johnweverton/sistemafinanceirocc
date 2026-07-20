@@ -135,4 +135,51 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     const draA = state.resultados.get(exec.id)!.map((x) => x.r).find((r) => r.cpf === '00000000001')!;
     expect(draA.alertas.some((a) => a.includes('VARIAÇÃO ALTA'))).toBe(true);
   });
+
+  it('Story 10.2 — pediatra com produção de consultas separada: soma ao valor de guias, fim a fim', async () => {
+    const pediatra = medicoFake({
+      id: 'm-pediatra',
+      cpf: '33344455566',
+      nome: 'Dra. Alessandra',
+      especialidade: 'Pediatria',
+      statusHapvida: 'credenciado',
+    });
+    const state = novoEstado([pediatra]);
+    // 3 guias credenciado (até 30 → R$263,59) em produção separada da de consultas.
+    state.itensPorProducao['p-guias'] = [
+      { data: '2026-06-01', pacienteNome: 'G1', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+      { data: '2026-06-02', pacienteNome: 'G2', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+      { data: '2026-06-03', pacienteNome: 'G3', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+    ];
+    // 10 consultas × R$3,00 (default) = R$30,00 — lote SEPARADO, nunca somado às guias.
+    state.itensPorProducao['p-consultas'] = Array.from({ length: 10 }, (_, i) => ({
+      data: '2026-06-10', pacienteNome: `Consulta ${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30721033', descricaoProcedimento: 'Consulta em consultório',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 150, valorPagoOrigem: 130,
+    }));
+
+    const selecoes = [
+      {
+        medicoId: 'm-pediatra',
+        producaoExternaId: 'p-guias',
+        producaoNome: 'Junho 2026',
+        producaoConsultasExternaId: 'p-consultas',
+        producaoConsultasNome: 'Consultas Junho 2026',
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    expect(resultado.guias).toBe(3);
+    expect(resultado.totalValor).toBeCloseTo(263.59 + 30, 2);
+    expect(resultado.subtotais.find((s) => s.classe === 'CONSULTA_PEDIATRIA')).toMatchObject({
+      guias: 10,
+      valor: 30,
+    });
+    expect(resultado.status).toBe('ok');
+  });
 });

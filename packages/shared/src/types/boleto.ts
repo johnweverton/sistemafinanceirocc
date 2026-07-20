@@ -67,6 +67,8 @@ export interface ConfigCobranca {
   jurosMesPercent: number | null;
   descontoPercent: number | null;
   descontoDias: number | null;
+  /** Valor unitário da consulta ambulatorial de pediatria (Story 10.2), ex.: 3.00 = R$3,00. */
+  valorConsultaPediatria: number;
 }
 
 /**

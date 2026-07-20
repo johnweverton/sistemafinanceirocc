@@ -32,6 +32,12 @@ export interface MedicoRow {
   /** Modo de cobrança (migration 0018) — opcional em bancos sem a migration aplicada. */
   modo_cobranca?: Medico['modoCobranca'] | null;
   percentual_producao?: number | null;
+  /** Regra de preço própria (migration 0025) — opcional em bancos sem a migration aplicada. */
+  regra_preco_forma?: NonNullable<Medico['regraPreco']>['forma'] | null;
+  regra_preco_base?: number | null;
+  regra_preco_limiar?: number | null;
+  regra_preco_taxa?: number | null;
+  regra_preco_valor_fixo?: number | null;
   /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
   conta_emissora?: Medico['contaEmissora'] | null;
   colaborador_responsavel: string | null;
@@ -81,6 +87,18 @@ function toDadosCobranca(row: MedicoRow): Medico['cobranca'] {
   };
 }
 
+/** Regra de preço própria; null se não configurada (médico segue faixa_guias/percentual). */
+function toRegraPreco(row: MedicoRow): Medico['regraPreco'] {
+  if (!row.regra_preco_forma) return null;
+  return {
+    forma: row.regra_preco_forma,
+    base: row.regra_preco_base ?? null,
+    limiar: row.regra_preco_limiar ?? null,
+    taxa: row.regra_preco_taxa ?? null,
+    valorFixo: row.regra_preco_valor_fixo ?? null,
+  };
+}
+
 /** Overrides comerciais; null se nenhum campo definido (todos herdam o global). */
 function toCondicoes(row: MedicoRow): Medico['condicoes'] {
   const algum =
@@ -111,6 +129,7 @@ export function toMedico(row: MedicoRow): Medico {
     modoMudancaData: row.modo_mudanca_data,
     modoCobranca: row.modo_cobranca ?? 'faixa_guias', // default seguro pré-migration 0018
     percentualProducao: row.percentual_producao ?? null,
+    regraPreco: toRegraPreco(row), // default seguro pré-migration 0025 (colunas ausentes = null)
     contaEmissora: row.conta_emissora ?? 'mc', // default seguro pré-migration 0021 (backfill)
     colaboradorResponsavel: row.colaborador_responsavel,
     ativo: row.ativo,
@@ -167,7 +186,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
   const row: Partial<MedicoRow> = {};
   for (const [campo, valor] of Object.entries(dados)) {
     // Blocos aninhados são achatados separadamente abaixo.
-    if (campo === 'cobranca' || campo === 'condicoes') continue;
+    if (campo === 'cobranca' || campo === 'condicoes' || campo === 'regraPreco') continue;
     const col = map[campo];
     if (col) (row as Record<string, unknown>)[col] = valor === '' ? null : valor;
   }
@@ -189,6 +208,29 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
       cidade: c.cidade || null,
       uf: c.uf || null,
     } satisfies Partial<MedicoRow>);
+  }
+
+  // Achata a regra de preço própria (Story 10.1). `undefined` = campo não enviado (não mexe);
+  // `null` explícito = remove o override (volta pra faixa_guias/percentual); objeto = grava.
+  if (dados.regraPreco !== undefined) {
+    if (dados.regraPreco === null) {
+      Object.assign(row, {
+        regra_preco_forma: null,
+        regra_preco_base: null,
+        regra_preco_limiar: null,
+        regra_preco_taxa: null,
+        regra_preco_valor_fixo: null,
+      } satisfies Partial<MedicoRow>);
+    } else {
+      const rp = dados.regraPreco;
+      Object.assign(row, {
+        regra_preco_forma: rp.forma,
+        regra_preco_base: rp.base ?? null,
+        regra_preco_limiar: rp.limiar ?? null,
+        regra_preco_taxa: rp.taxa ?? null,
+        regra_preco_valor_fixo: rp.valorFixo ?? null,
+      } satisfies Partial<MedicoRow>);
+    }
   }
 
   // Achata os overrides comerciais.
@@ -247,14 +289,26 @@ export interface ExecucaoSelecaoRow {
   medico_id: string;
   producao_externa_id: string;
   producao_nome: string;
+  /** Produção de consultas de pediatria (migration 0026) — opcional em bancos sem a migration. */
+  producao_consultas_externa_id?: string | null;
+  producao_consultas_nome?: string | null;
 }
 
-export function toExecucaoSelecaoRow(selecao: { execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }): ExecucaoSelecaoRow {
+export function toExecucaoSelecaoRow(selecao: {
+  execucaoId: string;
+  medicoId: string;
+  producaoExternaId: string;
+  producaoNome: string;
+  producaoConsultasExternaId?: string | null;
+  producaoConsultasNome?: string | null;
+}): ExecucaoSelecaoRow {
   return {
     execucao_id: selecao.execucaoId,
     medico_id: selecao.medicoId,
     producao_externa_id: selecao.producaoExternaId,
     producao_nome: selecao.producaoNome,
+    producao_consultas_externa_id: selecao.producaoConsultasExternaId ?? null,
+    producao_consultas_nome: selecao.producaoConsultasNome ?? null,
   };
 }
 
@@ -264,6 +318,8 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     medicoId: row.medico_id,
     producaoExternaId: row.producao_externa_id,
     producaoNome: row.producao_nome,
+    producaoConsultasExternaId: row.producao_consultas_externa_id ?? null,
+    producaoConsultasNome: row.producao_consultas_nome ?? null,
   };
 }
 

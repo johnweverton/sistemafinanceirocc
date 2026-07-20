@@ -5,7 +5,14 @@ export interface FakeState {
   execucoes: Map<string, Execucao>;
   resultados: Map<string, { medicoId: string | null; r: ResultadoMedico }[]>;
   medicos: Map<string, Medico>;
-  selecoes: { execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }[];
+  selecoes: {
+    execucaoId: string;
+    medicoId: string;
+    producaoExternaId: string;
+    producaoNome: string;
+    producaoConsultasExternaId?: string | null;
+    producaoConsultasNome?: string | null;
+  }[];
   itensPorProducao: Record<string, ItemProducao[]>;
   guiasAnterioresPorMedicoId: Record<string, number | null>;
   chamadasProximoLote: number;
@@ -38,6 +45,7 @@ export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; no
     modoMudancaData: 'nao',
     modoCobranca: 'faixa_guias',
     percentualProducao: null,
+    regraPreco: null,
     contaEmissora: 'mc',
     colaboradorResponsavel: null,
     ativo: true,
@@ -59,11 +67,12 @@ export function fakeDeps(
   state: FakeState,
   batchSize: number,
   processarProximoLote: (id: string, deps: OrchestratorDeps) => Promise<unknown>,
-  opts: { autoEncadear?: boolean } = {},
+  opts: { autoEncadear?: boolean; valorConsultaPediatria?: number } = {},
 ): OrchestratorDeps {
   let proximoId = 1;
   const deps: OrchestratorDeps = {
     batchSize,
+    lerValorConsultaPediatria: async () => opts.valorConsultaPediatria ?? 3.0,
     listarSelecoes: async (execucaoId) => state.selecoes.filter(s => s.execucaoId === execucaoId),
     buscarMedico: async (id) => state.medicos.get(id) ?? null,
     listarMedicosPorIds: async (ids) =>

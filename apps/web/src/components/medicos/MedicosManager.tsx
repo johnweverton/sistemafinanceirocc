@@ -568,10 +568,15 @@ export function MedicosManager() {
                       </td>
                       <td className="font-mono text-cc-ink-2 tabular">{m.cpf ? formatCpf(m.cpf) : '—'}</td>
                       <td>
-                        {/* Modo percentual (Story 6.2): o TIPO/classe não define o preço — badge do modo no lugar. */}
+                        {/* Modo percentual (Story 6.2) / preço próprio (Story 10.1): o TIPO/classe
+                            não define o preço nesses modos — badge do modo no lugar. */}
                         {m.modoCobranca === 'percentual_producao' ? (
                           <span className="badge-amber" title={`Cobrança por percentual da produção (${m.percentualProducao ?? '?'}%)`}>
                             {m.percentualProducao ?? '?'}% produção
+                          </span>
+                        ) : m.modoCobranca === 'preco_proprio' ? (
+                          <span className="badge-amber" title="Regra de preço própria, fora da tabela de faixas">
+                            Preço próprio
                           </span>
                         ) : m.necessitaConfiguracao ? (
                           <span className="text-cc-muted">—</span>

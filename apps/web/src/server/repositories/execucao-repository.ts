@@ -28,7 +28,13 @@ import {
 export async function criarExecucao(
   competencia: string,
   iniciadoPor: string,
-  selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[],
+  selecoes: {
+    medicoId: string;
+    producaoExternaId: string;
+    producaoNome: string;
+    producaoConsultasExternaId?: string | null;
+    producaoConsultasNome?: string | null;
+  }[],
 ): Promise<Execucao> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -51,6 +57,8 @@ export async function criarExecucao(
       medico_id: s.medicoId,
       producao_externa_id: s.producaoExternaId,
       producao_nome: s.producaoNome,
+      producao_consultas_externa_id: s.producaoConsultasExternaId ?? null,
+      producao_consultas_nome: s.producaoConsultasNome ?? null,
     }))
   );
   if (selecoesError) {

@@ -12,11 +12,14 @@ export type Classe =
 
 export interface Subtotal {
   /**
-   * Classe de preço, ou o marcador sintético 'PERCENTUAL_PRODUCAO' (Story 6.2) quando o
-   * médico é cobrado por percentual da produção — nesse modo há UM subtotal com a memória
-   * de cálculo (percentual × base) em `faixa`. Não entra em `TabelaPreco`.
+   * Classe de preço, ou um marcador sintético que não entra em `TabelaPreco`:
+   *   - 'PERCENTUAL_PRODUCAO' (Story 6.2): médico cobrado por percentual da produção.
+   *   - 'PRECO_PROPRIO' (Story 10.1): médico com regra de preço própria fora de faixa.
+   *   - 'CONSULTA_PEDIATRIA' (Story 10.2): componente ADITIVO de consultas ambulatoriais do
+   *     pediatra — soma ao(s) subtotal(is) de guias, não os substitui (diferente dos dois acima).
+   * Em todos os casos há um subtotal com a memória de cálculo em `faixa`.
    */
-  classe: Classe | 'PERCENTUAL_PRODUCAO';
+  classe: Classe | 'PERCENTUAL_PRODUCAO' | 'PRECO_PROPRIO' | 'CONSULTA_PEDIATRIA';
   guias: number;
   valor: number;
   faixa: string;
@@ -73,6 +76,13 @@ export interface ExecucaoSelecao {
   medicoId: string;
   producaoExternaId: string;
   producaoNome: string;
+  /**
+   * Produção separada com as consultas ambulatoriais do pediatra (Story 10.2) — opcional,
+   * só relevante para médicos pediatras que têm um lote de consultas distinto do de guias
+   * hospitalares no mês. Null/ausente = médico sem componente de consultas nesta execução.
+   */
+  producaoConsultasExternaId?: string | null;
+  producaoConsultasNome?: string | null;
 }
 
 /** Um médico por linha: ocorrência mais recente em qualquer execução (visão "Por médico"). */

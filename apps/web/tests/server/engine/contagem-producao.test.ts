@@ -5,6 +5,7 @@ import {
   contarGuiasProducao,
   detectarModoProducao,
   consolidarProducao,
+  contarConsultasProducao,
 } from '../../../src/server/engine/contagem-producao';
 
 describe('Engine: Contagem de Produção', () => {
@@ -170,6 +171,35 @@ describe('Engine: Contagem de Produção', () => {
         { ...baseItem(), atendimentoExternoId: 'at-2', data: '2026-07-02' },
       ];
       expect(detectarModoProducao(itens)).toBe('nao');
+    });
+  });
+
+  describe('contarConsultasProducao (Story 10.2 — lote separado de consultas de pediatria)', () => {
+    it('conta 1 consulta por item válido, sem agrupamento (diferente da regra teto(n/3) das guias)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1' },
+        { ...baseItem(), pacienteNome: 'P2' },
+        { ...baseItem(), pacienteNome: 'P3' },
+      ];
+      expect(contarConsultasProducao(itens)).toBe(3);
+    });
+
+    it('mesmo paciente/data repetido conta cada item — não agrupa como guia (159 consultas → 159)', () => {
+      const itens: ItemProducao[] = Array.from({ length: 159 }, () => baseItem());
+      expect(contarConsultasProducao(itens)).toBe(159);
+    });
+
+    it('exclui itens inválidos (sem paciente/data), mesma regra de itensValidos', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem() },
+        { ...baseItem(), data: '' },
+        { ...baseItem(), pacienteNome: '' },
+      ];
+      expect(contarConsultasProducao(itens)).toBe(1);
+    });
+
+    it('lote vazio → 0 consultas', () => {
+      expect(contarConsultasProducao([])).toBe(0);
     });
   });
 

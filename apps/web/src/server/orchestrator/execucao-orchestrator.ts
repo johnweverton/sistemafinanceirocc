@@ -23,17 +23,38 @@ import {
   listarResultados,
   listarSelecoes,
 } from '@/server/repositories/execucao-repository';
+import { lerValorConsultaPediatria } from '@/server/repositories/config-cobranca-repository';
 import { getServerEnv } from '@/lib/env';
 import { ApiError } from '@/lib/api-error';
 
 /** Médicos por lote — pior caso ~30s, dentro do maxDuration de 60s (architecture). */
 export const BATCH_SIZE = 20;
 
+export interface SelecaoDeps {
+  execucaoId: string;
+  medicoId: string;
+  producaoExternaId: string;
+  producaoNome: string;
+  /** Produção de consultas de pediatria (Story 10.2) — opcional. */
+  producaoConsultasExternaId?: string | null;
+  producaoConsultasNome?: string | null;
+}
+
 export interface OrchestratorDeps {
-  listarSelecoes: (execucaoId: string) => Promise<{ execucaoId: string; medicoId: string; producaoExternaId: string; producaoNome: string }[]>;
+  listarSelecoes: (execucaoId: string) => Promise<SelecaoDeps[]>;
   buscarMedico: (id: string) => Promise<Medico | null>;
   listarMedicosPorIds: (ids: string[]) => Promise<Medico[]>;
-  criarExecucao: (competencia: string, iniciadoPor: string, selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[]) => Promise<Execucao>;
+  criarExecucao: (
+    competencia: string,
+    iniciadoPor: string,
+    selecoes: {
+      medicoId: string;
+      producaoExternaId: string;
+      producaoNome: string;
+      producaoConsultasExternaId?: string | null;
+      producaoConsultasNome?: string | null;
+    }[],
+  ) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
   gravarResultado: (execucaoId: string, medicoId: string | null, r: ResultadoMedico) => Promise<void>;
@@ -45,6 +66,8 @@ export interface OrchestratorDeps {
   marcarErro: (execucaoId: string) => Promise<void>;
   guiasExecucaoAnterior: (medicoId: string, competenciaAtual: string) => Promise<number | null>;
   buscarItens: (producaoExternaId: string) => Promise<ItemProducao[]>;
+  /** Valor unitário global da consulta pediátrica (Story 10.2), lido de config_cobranca. */
+  lerValorConsultaPediatria: () => Promise<number>;
   /** Resultados já gravados — usado para agregar os totais ao concluir. */
   listarResultados: (execucaoId: string) => Promise<ResultadoMedico[]>;
   /** Encadeia o próximo lote (HTTP interno). Pode ser no-op em teste. */
@@ -67,6 +90,7 @@ export function depsPadrao(): OrchestratorDeps {
     marcarErro,
     guiasExecucaoAnterior,
     buscarItens,
+    lerValorConsultaPediatria,
     listarResultados: async (id) =>
       (await listarResultados(id)).map((r) => ({
         cpf: r.cpf,
@@ -106,7 +130,13 @@ export function calcularProgresso(processados: number, total: number): number {
  */
 export async function iniciarExecucao(
   competencia: string,
-  selecoes: { medicoId: string; producaoExternaId: string; producaoNome: string }[],
+  selecoes: {
+    medicoId: string;
+    producaoExternaId: string;
+    producaoNome: string;
+    producaoConsultasExternaId?: string | null;
+    producaoConsultasNome?: string | null;
+  }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
 ): Promise<Execucao> {
@@ -168,8 +198,11 @@ export async function processarProximoLote(
   const todasSelecoes = await deps.listarSelecoes(execucaoId);
   const selecoesLote = todasSelecoes.slice(jaProcessados, jaProcessados + deps.batchSize);
 
+  // Lido uma vez por lote (não por médico) — config global, singleton (Story 10.2).
+  const valorConsultaPediatria = await deps.lerValorConsultaPediatria();
+
   for (const selecao of selecoesLote) {
-    await processarUmMedico(execucaoId, execucao.competencia, selecao, deps);
+    await processarUmMedico(execucaoId, execucao.competencia, selecao, deps, valorConsultaPediatria);
   }
 
   const processadosAgora = jaProcessados + selecoesLote.length;
@@ -191,8 +224,9 @@ export async function processarProximoLote(
 async function processarUmMedico(
   execucaoId: string,
   competencia: string,
-  selecao: { medicoId: string; producaoExternaId: string; producaoNome: string },
+  selecao: SelecaoDeps,
   deps: OrchestratorDeps,
+  valorConsultaPediatria: number,
 ): Promise<void> {
   let medico: Medico | null = null;
   try {
@@ -200,10 +234,19 @@ async function processarUmMedico(
     if (!medico) throw new Error('Médico não encontrado na base');
 
     const itens = await deps.buscarItens(selecao.producaoExternaId);
-    
+    // Story 10.2: lote separado de consultas ambulatoriais (pediatria) — opcional, produção
+    // distinta da de guias. NUNCA reaproveita `itens` (anti-dupla-contagem).
+    const itensConsultas = selecao.producaoConsultasExternaId
+      ? await deps.buscarItens(selecao.producaoConsultasExternaId)
+      : undefined;
+
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
-    const resultado = processarMedico({ medico, itens, historicoGuias });
+    const resultado = processarMedico(
+      { medico, itens, historicoGuias, itensConsultas },
+      undefined,
+      valorConsultaPediatria,
+    );
     await deps.gravarResultado(execucaoId, medico.id, resultado);
   } catch (e) {
     // Falha de infraestrutura ao buscar dados — médico vira alerta, competência segue.

@@ -7,9 +7,16 @@ import type {
   TabelaPreco,
   Subtotal,
 } from '@cobranca/shared';
-import { itensValidos, contarGuiasProducao, consolidarProducao, detectarModoProducao } from './contagem-producao';
+import {
+  itensValidos,
+  contarGuiasProducao,
+  consolidarProducao,
+  detectarModoProducao,
+  contarConsultasProducao,
+  isPediatra,
+} from './contagem-producao';
 import { checar } from './conferencia';
-import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO } from './precos';
+import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO, VALOR_CONSULTA_PEDIATRIA_PADRAO } from './precos';
 
 /**
  * Processa um médico de ponta a ponta (PRD §8.3):
@@ -24,11 +31,39 @@ import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO } from './precos';
 export function processarMedico(
   entrada: EntradaProcessamentoMedico,
   tabela: TabelaPreco = TABELA_PRECO_PADRAO,
+  valorConsultaPediatria: number = VALOR_CONSULTA_PEDIATRIA_PADRAO,
 ): ResultadoMedico {
-  const { medico, itens, historicoGuias } = entrada;
+  const { medico, itens, historicoGuias, itensConsultas } = entrada;
   const { validos } = itensValidos(itens);
+  const consultasValidas = itensConsultas ? itensValidos(itensConsultas).validos : [];
 
   if (validos.length === 0) {
+    // Story 10.2: pediatra sem guias hospitalares na competência, mas COM consultas
+    // ambulatoriais (lote separado) — cobra só o componente de consultas, em vez de cair em
+    // 'sem_dados' e perder o valor silenciosamente (PRD §2, nunca chuta E nunca perde valor).
+    if (isPediatra(medico.especialidade) && consultasValidas.length > 0) {
+      const nConsultas = consultasValidas.length;
+      const valorConsultas = nConsultas * valorConsultaPediatria;
+      return {
+        cpf: medico.cpf ?? '',
+        nome: medico.nome,
+        procedimentos: 0,
+        cirurgias: 0,
+        guias: 0,
+        guiasConsolidado: 0,
+        subtotais: [
+          {
+            classe: 'CONSULTA_PEDIATRIA',
+            guias: nConsultas,
+            valor: valorConsultas,
+            faixa: `${nConsultas} consultas × R$${valorConsultaPediatria.toFixed(2)}`,
+          },
+        ],
+        totalValor: valorConsultas,
+        status: 'ok',
+        alertas: [],
+      };
+    }
     return {
       cpf: medico.cpf ?? '', // snapshot informativo — médico importado pode não ter CPF (Épico 5 §3.4)
       nome: medico.nome,
@@ -86,6 +121,46 @@ export function processarMedico(
       valor: totalValor,
       faixa: `${percentual}% × R$${base.toFixed(2)} (produção cobrada)`,
     });
+  } else if (medico.modoCobranca === 'preco_proprio') {
+    // Story 10.1 — GATE do dono (2026-07-20): preço negociado fora da tabela de faixas
+    // (Dr. Jansen, Nelson, Carlos Batista, Jefferson). Contagem e trava de conferência acima
+    // seguem rodando: são diagnóstico, não preço. Regra ausente ou incompleta NUNCA chuta
+    // valor (PRD §2) — vira alerta e o subtotal correspondente fica com valor 0.
+    const r = medico.regraPreco;
+    if (!r) {
+      alertas.push(
+        'Modo preço próprio sem regra configurada — valor zerado, corrigir cadastro do médico.',
+      );
+    } else if (r.forma === 'base_excedente') {
+      if (r.base == null || r.limiar == null || r.taxa == null) {
+        alertas.push(
+          'Regra de preço "base + excedente" incompleta (falta base, limiar ou taxa) — valor zerado, corrigir cadastro.',
+        );
+      } else {
+        const excedente = Math.max(0, guias - r.limiar);
+        totalValor = r.base + excedente * r.taxa;
+        subtotais.push({
+          classe: 'PRECO_PROPRIO',
+          guias,
+          valor: totalValor,
+          faixa: `base R$${r.base.toFixed(2)} + ${excedente} × R$${r.taxa.toFixed(2)} (limiar ${r.limiar} guias)`,
+        });
+      }
+    } else if (r.forma === 'fixo') {
+      if (r.valorFixo == null) {
+        alertas.push(
+          'Regra de preço "fixo" sem valor configurado — valor zerado, corrigir cadastro do médico.',
+        );
+      } else {
+        totalValor = r.valorFixo;
+        subtotais.push({
+          classe: 'PRECO_PROPRIO',
+          guias,
+          valor: totalValor,
+          faixa: `valor fixo R$${r.valorFixo.toFixed(2)} (independe de guias)`,
+        });
+      }
+    }
   } else {
     for (const classe of classesDoMedico(medico)) {
       const { valor, faixa } = valorDaFaixa(tabela[classe], guias);
@@ -98,6 +173,21 @@ export function processarMedico(
         );
       }
     }
+  }
+
+  // Story 10.2: componente ADITIVO de consultas ambulatoriais do pediatra — soma ao valor de
+  // guias já calculado acima (qualquer que seja o modo), nunca substitui. Lote separado
+  // (`itensConsultas`) nunca é o mesmo array de `itens` — anti-dupla-contagem por construção.
+  if (isPediatra(medico.especialidade) && consultasValidas.length > 0) {
+    const nConsultas = consultasValidas.length;
+    const valorConsultas = nConsultas * valorConsultaPediatria;
+    totalValor += valorConsultas;
+    subtotais.push({
+      classe: 'CONSULTA_PEDIATRIA',
+      guias: nConsultas,
+      valor: valorConsultas,
+      faixa: `${nConsultas} consultas × R$${valorConsultaPediatria.toFixed(2)}`,
+    });
   }
 
   return {

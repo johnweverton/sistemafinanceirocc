@@ -11,6 +11,9 @@ export interface ExecucaoSelecaoPayload {
   medicoId: string;
   producaoExternaId: string;
   producaoNome: string;
+  /** Produção de consultas de pediatria (Story 10.2) — opcional. */
+  producaoConsultasExternaId?: string | null;
+  producaoConsultasNome?: string | null;
 }
 
 export interface ApoioData {

@@ -32,10 +32,17 @@ export interface EntradaProcessamentoMedico {
     | 'especialidade'
     | 'modoCobranca'
     | 'percentualProducao'
+    | 'regraPreco'
   >;
   itens: ItemProducao[];
   /** Guias da execução anterior do mesmo médico, p/ detecção de variação anômala (PRD §8.5). */
   historicoGuias?: number | null;
+  /**
+   * Itens do lote separado de consultas ambulatoriais do pediatra (Story 10.2) — vem de uma
+   * produção distinta da de `itens` (guias hospitalares), NUNCA a mesma (anti-dupla-contagem).
+   * Ausente/vazio = médico sem componente de consultas nesta execução (comportamento atual).
+   */
+  itensConsultas?: ItemProducao[];
 }
 
 /** Resultado puro do Engine — sem ids de banco (preenchidos pelo orquestrador ao persistir). */

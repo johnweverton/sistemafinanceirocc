@@ -91,6 +91,16 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
   return { guias, cirurgias };
 }
 
+/**
+ * Conta as consultas ambulatoriais de pediatria (Story 10.2) — itens de um LOTE SEPARADO
+ * (produção distinta na origem, GATE do dono 2026-07-20), nunca o mesmo array de `itens` das
+ * guias hospitalares (anti-dupla-contagem). Cada item válido = 1 consulta; sem agrupamento por
+ * atendimento/data (diferente da regra teto(n/3) das guias — são conceitos distintos).
+ */
+export function contarConsultasProducao(itens: ItemProducao[]): number {
+  return itensValidos(itens).validos.length;
+}
+
 export function isPediatra(especialidade?: string | null): boolean {
   if (!especialidade) return false;
   const esp = especialidade.toLowerCase();

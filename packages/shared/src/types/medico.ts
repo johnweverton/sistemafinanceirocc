@@ -6,12 +6,38 @@ export type StatusHapvida = 'credenciado' | 'nao_credenciado' | 'nenhum';
 export type ModoMudancaData = 'sim' | 'nao';
 
 /**
- * Modo de cálculo da cobrança (Story 6.2, Épico 6):
+ * Modo de cálculo da cobrança (Story 6.2, Épico 6; Story 10.1, Épico 10):
  *   - 'faixa_guias' (padrão): tabela de faixas por classe (PRD §5.1) — comportamento original.
  *   - 'percentual_producao': percentual × valor COBRADO da produção do mês (médicos auxiliares;
  *     GATE do dono 2026-07-08: base = charged_val, glosados entram, percentual por médico).
+ *   - 'preco_proprio': regra de preço negociada fora da tabela de faixas (Story 10.1 — Dr. Jansen,
+ *     Nelson, Carlos Batista, Jefferson). Exige `regraPreco` preenchida.
  */
-export type ModoCobranca = 'faixa_guias' | 'percentual_producao';
+export type ModoCobranca = 'faixa_guias' | 'percentual_producao' | 'preco_proprio';
+
+/**
+ * Forma da regra de preço própria (Story 10.1, GATE do dono 2026-07-20):
+ *   - 'base_excedente': `valor = base + max(0, guias − limiar) × taxa` (Dr. Jansen: base ~935,62,
+ *     limiar 144, taxa 6,50).
+ *   - 'fixo': valor mensal fixo, independe da quantidade de guias (Nelson, Carlos Batista,
+ *     R$591,22; Jefferson, R$130,53).
+ * Nefrologia/"guias cardíacas" NÃO entram aqui — são agrupamento de produção por empresa
+ * (MEDISA), tratado na Story 10.4, não um override de médico individual.
+ */
+export type RegraPrecoForma = 'base_excedente' | 'fixo';
+
+/** Regra de preço própria por médico — editável sem deploy (linha, não código). */
+export interface RegraPreco {
+  forma: RegraPrecoForma;
+  /** Valor base antes do excedente. Obrigatório na forma 'base_excedente'. */
+  base: number | null;
+  /** Guias a partir das quais o excedente por guia incide. Obrigatório na forma 'base_excedente'. */
+  limiar: number | null;
+  /** Valor por guia acima do limiar. Obrigatório na forma 'base_excedente'. */
+  taxa: number | null;
+  /** Valor fixo mensal, independe de guias. Obrigatório na forma 'fixo'. */
+  valorFixo: number | null;
+}
 
 /** Tipo de pessoa do pagador do boleto — independente do CPF-chave do médico. */
 export type PagadorTipo = 'PF' | 'PJ';
@@ -66,6 +92,8 @@ export interface Medico {
   modoCobranca: ModoCobranca;
   /** Percentual sobre o valor cobrado da produção (ex.: 5 = 5%). Obrigatório no modo percentual. */
   percentualProducao: number | null;
+  /** Regra de preço própria (Story 10.1). Obrigatória quando modoCobranca = 'preco_proprio'. */
+  regraPreco: RegraPreco | null;
   /** Conta Cora que emite os boletos deste médico (Épico 7). Backfill: 'mc'. */
   contaEmissora: ContaEmissora;
   colaboradorResponsavel: string | null;

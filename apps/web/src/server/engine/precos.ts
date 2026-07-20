@@ -7,8 +7,10 @@ import type { Classe, TabelaPreco, TabelaPrecoClasse, ResultadoFaixa } from '@co
  * Em produção, esta tabela vem da tabela `precos` do Supabase (editável sem deploy).
  * Mantida aqui como default/seed e para os testes de regressão do Engine.
  *
- * NOTA (PRD §11): OUTROS_HOSPITAIS acima de 80 guias NÃO tem faixa definida —
- * `excedente` undefined → valor_da_faixa devolve null + "FORA DA TABELA" (nunca extrapola).
+ * NOTA (PRD §11 — revisado pelo dono em 2026-07-14, Story 10.3): OUTROS_HOSPITAIS acima de
+ * 80 guias cobra o teto da faixa (R$367,36) fixo, sem excedente por guia. Antes disso o motor
+ * devolvia null + "FORA DA TABELA"; a planilha manual da coordenação sempre capou no teto
+ * (evidência: Dr. Anderson Ferreira, abr/2026 — 118 outros hospitais → R$367,36).
  */
 export const TABELA_PRECO_PADRAO: TabelaPreco = {
   HAPVIDA_NAO_CRED: {
@@ -37,7 +39,8 @@ export const TABELA_PRECO_PADRAO: TabelaPreco = {
       { teto: 50, valor: 258.3 },
       { teto: 80, valor: 367.36 },
     ],
-    // PRD §11: acima de 80 não definido — sem excedente → "FORA DA TABELA".
+    // Story 10.3: acima de 80, cobra o teto fixo (não extrapola por guia).
+    excedente: { tipo: 'fixo', valorFixo: 367.36 },
   },
   IMOBILIZACOES: {
     faixas: [
@@ -48,6 +51,14 @@ export const TABELA_PRECO_PADRAO: TabelaPreco = {
     excedente: { tipo: 'fixo', valorFixo: 387.78 }, // acima de 150 = valor fixo
   },
 };
+
+/**
+ * Valor unitário padrão da consulta ambulatorial de pediatria (Story 10.2). GATE do dono
+ * (2026-07-20): R$3,00, global, editável sem deploy — em produção viria de
+ * `config_cobranca.valor_consulta_pediatria` (a orquestração injeta o valor lido do banco;
+ * o Engine continua puro, recebendo-o como parâmetro, mesmo padrão de `tabela`).
+ */
+export const VALOR_CONSULTA_PEDIATRIA_PADRAO = 3.0;
 
 /**
  * Aplica a faixa de preço para uma quantidade de guias numa classe.

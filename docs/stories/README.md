@@ -342,3 +342,38 @@ Stories 9.1/9.2 fechadas (gates PASS, `docs/qa/gates/9.1-dre-fundacao.yml` e
 `9.2-dre-motor-rotas.yml`), branches locais (`feat/9.1-dre-fundacao`,
 `feat/9.2-dre-motor-rotas`) — aguardam push do @devops. Próxima: @sm rascunha a 9.3 (UI)
 a partir da arquitetura §4/§7 — última story do Épico 9.
+
+---
+
+# Épico 10 — Correções do motor de cálculo (conferência da planilha da coordenação)
+
+**Fonte:** conferência da planilha manual da coordenação vs. motor (2026-07-14) —
+artifact do relatório + `memory/conferencia-calculo-guias.md`.
+**Objetivo:** fechar as lacunas em que o motor calcularia o valor errado por não modelar regras
+que a coordenação aplica na mão. A conferência **validou a base do motor** (faixas Hapvida,
+mapeamento credenciado/não-credenciado, contagem, e a regra acima de 180 guias = teto + R$6/guia,
+confirmada pelo dono); estas stories cobrem só o que sobrou.
+
+## Definições do dono já fechadas (2026-07-14)
+- **Acima de 180 guias (Hapvida):** teto + R$6/guia — o motor **já está correto**, nada a mudar
+  (a planilha manual é que subcobrava ao capar no teto).
+- **Preços de dez/2025 ~8% menores:** reajuste anual esperado, não é bug.
+
+## Stories
+
+| # | Story | Divergência | Status | Foco |
+|---|-------|-------------|--------|------|
+| 10.1 | Regras de preço próprias por médico/rubrica | D2 | **InReview** — implementado 2026-07-20, aguardando @qa (Nefrologia saiu para a 10.4) | override base+excedente+limiar / fixo no engine + cadastro (Jansen, Nelson, Carlos Batista, Jefferson) |
+| 10.2 | Pediatria: consultas × valor unitário | D3 | **InReview** — implementado 2026-07-20, aguardando @qa | somar consultas ambulatoriais (produção separada na API) às guias, sem dupla contagem |
+| 10.3 | Outros hospitais > 80 guias: cobrar o teto | D4 | **InReview** — implementado 2026-07-20, aguardando @qa | regra na tabela `precos` + revisão consciente do PRD §11 |
+| 10.4 | Emissão por empresa (MEDISA): agrupar produção de vários médicos em 1 boleto | D2 (Nefrologia/guias cardíacas) | Draft — aguarda avaliação de complexidade do @architect | novo agregado "empresa emissora"; quebra a premissa 1 médico = 1 boleto |
+
+10.1–10.3 estão prontas para @dev (GATE de negócio fechada pelo dono em 2026-07-20). A 10.4 nasceu
+durante a GATE da 10.1: Nefrologia/guias cardíacas não são override de médico, são produção de
+vários médicos agrupada e faturada para a empresa MEDISA — isso é maior que uma regra de preço e
+precisa de avaliação de complexidade do @architect antes de virar story implementável. D6 (conta
+emissora por médico varia por mês) é validação de cadastro, não código — tratada fora do épico.
+
+## Fora de escopo
+- D1 (>180 guias) e D5 (reajuste dez/2025): resolvidos, sem trabalho.
+- Override de preço por competência (Ezequiel, instável) — avaliar em story futura se necessário.

@@ -8,6 +8,11 @@ import { RelatorioGrupos } from './RelatorioGrupos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
 import { useToast } from '@/components/ui/Toast';
 
+/** Mesmo critério usado em MedicoForm.tsx e no Engine (isPediatra) — checagem local, sem I/O. */
+function isPediatraEspecialidade(especialidade: string | null | undefined): boolean {
+  return especialidade?.toLowerCase().includes('pediat') ?? false;
+}
+
 function normalizeName(name: string) {
   return name
     .toLowerCase()
@@ -28,10 +33,14 @@ export function NovaExecucao() {
 
   // Custom manual selections (modo "Por competência")
   const [manualSelections, setManualSelections] = useState<Record<string, string>>({});
+  // Produção de consultas de pediatria (Story 10.2) — sempre manual, nunca auto-match
+  // (evita heurística arriscada sobre nome de produção numa mudança que afeta valor cobrado).
+  const [consultaSelections, setConsultaSelections] = useState<Record<string, string>>({});
 
   // Seleção do modo "Por médico"
   const [medicoId, setMedicoId] = useState('');
   const [producaoId, setProducaoId] = useState('');
+  const [consultaProducaoId, setConsultaProducaoId] = useState('');
 
   const { data: apoio, isLoading: isApoioLoading } = useQuery({
     queryKey: execucaoQueryKeys.apoio(),
@@ -96,10 +105,19 @@ export function NovaExecucao() {
 
       if (match) {
         matched.push({ medico: med, producao: match });
+        // Story 10.2: produção de consultas é sempre escolha manual do operador (nunca
+        // auto-match) — só entra no payload se o pediatra tiver uma selecionada.
+        const consultaProdId = consultaSelections[med.id];
+        const consultaProd = consultaProdId
+          ? producoesDoMedico.find((p) => p.id === consultaProdId)
+          : undefined;
         finalPayload.push({
           medicoId: med.id,
           producaoExternaId: match.id,
           producaoNome: match.nome,
+          ...(consultaProd
+            ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
+            : {}),
         });
       } else {
         unmatched.push({ medico: med, producoesDisponiveis: producoesDoMedico });
@@ -107,7 +125,7 @@ export function NovaExecucao() {
     }
 
     return { matched, unmatched, finalPayload };
-  }, [validMedicos, producoes, manualSelections, competencia]);
+  }, [validMedicos, producoes, manualSelections, consultaSelections, competencia]);
 
   const disparar = useMutation({
     mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[] }) =>
@@ -171,6 +189,7 @@ export function NovaExecucao() {
                   onChange={(e) => {
                     setMedicoId(e.target.value);
                     setProducaoId('');
+                    setConsultaProducaoId('');
                   }}
                   disabled={isApoioLoading}
                 >
@@ -210,6 +229,32 @@ export function NovaExecucao() {
                 )}
               </div>
 
+              {medicoId && isPediatraEspecialidade(validMedicos.find((m) => m.id === medicoId)?.especialidade) && (
+                <div>
+                  <label htmlFor="producao-consultas-select" className="field-label mb-1.5">
+                    Produção de consultas <span className="font-normal normal-case text-cc-muted">(opcional)</span>
+                  </label>
+                  <select
+                    id="producao-consultas-select"
+                    className="input"
+                    value={consultaProducaoId}
+                    onChange={(e) => setConsultaProducaoId(e.target.value)}
+                  >
+                    <option value="">-- Sem componente de consultas --</option>
+                    {producoesDoMedicoSelecionado
+                      .filter((p) => p.id !== producaoId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-cc-muted">
+                    Se este pediatra tem um lote separado de consultas ambulatoriais (Story 10.2), selecione aqui para somar ao valor de guias.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label htmlFor="competencia-medico" className="field-label mb-1.5">
                   Competência
@@ -230,6 +275,7 @@ export function NovaExecucao() {
               <button
                 onClick={() => {
                   if (!producaoSelecionada) return;
+                  const consultaProd = producoesDoMedicoSelecionado.find((p) => p.id === consultaProducaoId);
                   disparar.mutate({
                     competencia,
                     selecoes: [
@@ -237,6 +283,9 @@ export function NovaExecucao() {
                         medicoId,
                         producaoExternaId: producaoSelecionada.id,
                         producaoNome: producaoSelecionada.nome,
+                        ...(consultaProd
+                          ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
+                          : {}),
                       },
                     ],
                   });
@@ -327,23 +376,48 @@ export function NovaExecucao() {
                       <p className="text-sm text-cc-muted italic">Nenhum médico pareado para esta competência.</p>
                     ) : (
                       <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-                        {selecoesInfo.matched.map(({ medico, producao }) => (
-                          <div key={medico.id} className="flex justify-between items-center text-sm p-2 bg-cc-surface rounded border border-cc-border">
-                            <span className="font-medium">{medico.nome}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-cc-muted text-xs bg-cc-border/30 px-2 py-0.5 rounded truncate max-w-[200px]">
-                                {producao.nome}
-                              </span>
-                              <button
-                                onClick={() => setManualSelections(prev => ({ ...prev, [medico.id]: 'IGNORE' }))}
-                                className="text-red-500 hover:text-red-700 p-1"
-                                title="Remover desta execução"
-                              >
-                                &times;
-                              </button>
+                        {selecoesInfo.matched.map(({ medico, producao }) => {
+                          const producoesDoMedico = producoes.filter((p) => p.clienteId === medico.externalId);
+                          const outrasProducoes = producoesDoMedico.filter((p) => p.id !== producao.id);
+                          const pediatra = isPediatraEspecialidade(medico.especialidade);
+                          return (
+                            <div key={medico.id} className="p-2 bg-cc-surface rounded border border-cc-border space-y-1.5">
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="font-medium">{medico.nome}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-cc-muted text-xs bg-cc-border/30 px-2 py-0.5 rounded truncate max-w-[200px]">
+                                    {producao.nome}
+                                  </span>
+                                  <button
+                                    onClick={() => setManualSelections(prev => ({ ...prev, [medico.id]: 'IGNORE' }))}
+                                    className="text-red-500 hover:text-red-700 p-1"
+                                    title="Remover desta execução"
+                                  >
+                                    &times;
+                                  </button>
+                                </div>
+                              </div>
+                              {/* Story 10.2: produção de consultas de pediatria — sempre manual */}
+                              {pediatra && outrasProducoes.length > 0 && (
+                                <select
+                                  className="input text-xs py-1 h-auto w-full"
+                                  value={consultaSelections[medico.id] ?? ''}
+                                  onChange={(e) =>
+                                    setConsultaSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
+                                  }
+                                  aria-label={`Produção de consultas de ${medico.nome} (opcional)`}
+                                >
+                                  <option value="">+ Produção de consultas (opcional)</option>
+                                  {outrasProducoes.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.nome}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

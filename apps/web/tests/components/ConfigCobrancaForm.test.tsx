@@ -36,6 +36,7 @@ describe('ConfigCobrancaForm', () => {
       jurosMesPercent: null,
       descontoPercent: null,
       descontoDias: null,
+      valorConsultaPediatria: 3,
     });
   });
 
@@ -45,5 +46,14 @@ describe('ConfigCobrancaForm', () => {
       expect((screen.getByRole('spinbutton', { name: /Dias para vencimento/i }) as HTMLInputElement).value).toBe('30');
     });
     expect(screen.getByRole('button', { name: /Salvar configurações/i })).toBeInTheDocument();
+  });
+
+  it('carrega e popula o valor da consulta pediátrica (Story 10.2)', async () => {
+    renderComProviders();
+    await waitFor(() => {
+      expect(
+        (screen.getByRole('spinbutton', { name: /Valor da consulta pediátrica/i }) as HTMLInputElement).value,
+      ).toBe('3');
+    });
   });
 });

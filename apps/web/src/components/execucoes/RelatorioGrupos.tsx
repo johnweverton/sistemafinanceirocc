@@ -14,6 +14,20 @@ function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** Label amigável para classes sintéticas de subtotal (Story 6.2, 10.1, 10.2). */
+function classeLabel(classe: string): string {
+  switch (classe) {
+    case 'PERCENTUAL_PRODUCAO':
+      return '% da produção';
+    case 'PRECO_PROPRIO':
+      return 'Preço próprio';
+    case 'CONSULTA_PEDIATRIA':
+      return 'Consultas (pediatria)';
+    default:
+      return classe;
+  }
+}
+
 function normalizarBusca(s: string): string {
   return s
     .normalize('NFD')
@@ -319,13 +333,15 @@ function Grupo({
                   <tbody>
                     {r.subtotais.map((s, i) => (
                       <tr key={i} className="border-t border-cc-hairline">
-                        {/* Subtotal sintético do modo percentual (Story 6.2): label amigável;
-                            a memória de cálculo (percentual × base) vem em `faixa`. */}
-                        <td className="py-1.5 text-cc-ink-2">
-                          {s.classe === 'PERCENTUAL_PRODUCAO' ? '% da produção' : s.classe}
-                        </td>
+                        {/* Subtotais sintéticos (Story 6.2 percentual, 10.1 preço próprio, 10.2
+                            consultas pediatria): label amigável; a memória de cálculo vem em `faixa`. */}
+                        <td className="py-1.5 text-cc-ink-2">{classeLabel(s.classe)}</td>
                         <td className="py-1.5 tabular text-cc-ink-2">
-                          {s.classe === 'PERCENTUAL_PRODUCAO' ? '—' : `${s.guias} guias`}
+                          {s.classe === 'PERCENTUAL_PRODUCAO'
+                            ? '—'
+                            : s.classe === 'CONSULTA_PEDIATRIA'
+                              ? `${s.guias} consultas`
+                              : `${s.guias} guias`}
                         </td>
                         <td className="py-1.5 text-cc-muted">{s.faixa}</td>
                         <td className="py-1.5 text-right tabular text-cc-ink">{brl(s.valor)}</td>

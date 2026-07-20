@@ -7,6 +7,9 @@ export const dispararExecucaoSchema = z.object({
       medicoId: z.string().uuid(),
       producaoExternaId: z.string().min(1),
       producaoNome: z.string().min(1),
+      // Produção de consultas de pediatria (Story 10.2) — opcional.
+      producaoConsultasExternaId: z.string().min(1).nullable().optional(),
+      producaoConsultasNome: z.string().min(1).nullable().optional(),
     })
   ).min(1, 'Selecione pelo menos um médico'),
 });

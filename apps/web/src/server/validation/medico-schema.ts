@@ -4,7 +4,10 @@ import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 
 export const statusHapvidaSchema = z.enum(['credenciado', 'nao_credenciado', 'nenhum']);
 export const modoMudancaDataSchema = z.enum(['sim', 'nao']);
-export const modoCobrancaSchema = z.enum(['faixa_guias', 'percentual_producao']);
+export const modoCobrancaSchema = z.enum(['faixa_guias', 'percentual_producao', 'preco_proprio']);
+// Regra de preço própria (Story 10.1) — GATE do dono 2026-07-20: só duas formas ficaram
+// (Nefrologia/guias cardíacas saíram para a Story 10.4, agrupamento por empresa).
+export const regraPrecoFormaSchema = z.enum(['base_excedente', 'fixo']);
 // Conta emissora (Story 7.1, QA-711-2) — espelha a CHECK da migration 0021.
 export const contaEmissoraSchema = z.enum(CONTAS_EMISSORAS_VALIDAS);
 export const pagadorTipoSchema = z.enum(['PF', 'PJ']);
@@ -19,6 +22,35 @@ function percentualCoerente(d: { modoCobranca?: ModoCobrancaInput; percentualPro
 }
 type ModoCobrancaInput = z.infer<typeof modoCobrancaSchema>;
 const MSG_PERCENTUAL = 'Modo percentual exige percentual de produção maior que zero';
+
+/**
+ * Regra de preço própria (Story 10.1). Coerência interna por forma já é validada pelo
+ * `.refine` do próprio `regraPrecoSchema`; esta função só checa que o modo 'preco_proprio'
+ * veio acompanhado de alguma regra (espelho da CHECK `chk_medicos_regra_preco_coerente`).
+ */
+export const regraPrecoSchema = z
+  .object({
+    forma: regraPrecoFormaSchema,
+    base: z.number().min(0).nullable().optional().default(null),
+    limiar: z.number().int().min(0).nullable().optional().default(null),
+    taxa: z.number().min(0).nullable().optional().default(null),
+    valorFixo: z.number().min(0).nullable().optional().default(null),
+  })
+  .refine((r) => r.forma !== 'base_excedente' || (r.base != null && r.limiar != null && r.taxa != null), {
+    message: 'Forma "base + excedente" exige base, limiar e taxa',
+    path: ['forma'],
+  })
+  .refine((r) => r.forma !== 'fixo' || r.valorFixo != null, {
+    message: 'Forma "fixo" exige valor fixo',
+    path: ['valorFixo'],
+  });
+type RegraPrecoInput = z.infer<typeof regraPrecoSchema>;
+
+function regraPrecoCoerente(d: { modoCobranca?: ModoCobrancaInput; regraPreco?: RegraPrecoInput | null }): boolean {
+  if (d.modoCobranca !== 'preco_proprio') return true;
+  return d.regraPreco != null;
+}
+const MSG_REGRA_PRECO = 'Modo preço próprio exige a regra de preço (forma + parâmetros)';
 
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB',
@@ -68,6 +100,8 @@ export const configCobrancaSchema = z.object({
   jurosMesPercent: z.number().min(0).max(100).nullable(),
   descontoPercent: z.number().min(0).max(100).nullable(),
   descontoDias: z.number().int().min(0).max(365).nullable(),
+  // Valor unitário da consulta ambulatorial de pediatria (Story 10.2) — global, > 0.
+  valorConsultaPediatria: z.number().min(0.01),
 });
 
 export const novoMedicoSchema = z
@@ -82,6 +116,8 @@ export const novoMedicoSchema = z
     // Modo de cobrança (Story 6.2) — percentual 0.01–100 com 2 casas (numeric(5,2) no banco).
     modoCobranca: modoCobrancaSchema.default('faixa_guias'),
     percentualProducao: z.number().min(0.01).max(100).nullable().optional().default(null),
+    // Regra de preço própria (Story 10.1) — obrigatória quando modoCobranca = 'preco_proprio'.
+    regraPreco: regraPrecoSchema.nullable().optional().default(null),
     // Opcional SEM default: ausente → default 'mc' do banco (insert sem a coluna funciona
     // inclusive pré-migration 0021, mesmo padrão do criarBoleto).
     contaEmissora: contaEmissoraSchema.optional(),
@@ -91,7 +127,8 @@ export const novoMedicoSchema = z
     cobranca: dadosCobrancaSchema.nullable().optional(),
     condicoes: condicoesCobrancaSchema.nullable().optional(),
   })
-  .refine(percentualCoerente, { message: MSG_PERCENTUAL, path: ['percentualProducao'] });
+  .refine(percentualCoerente, { message: MSG_PERCENTUAL, path: ['percentualProducao'] })
+  .refine(regraPrecoCoerente, { message: MSG_REGRA_PRECO, path: ['regraPreco'] });
 
 export const atualizarMedicoSchema = z
   .object({
@@ -104,6 +141,7 @@ export const atualizarMedicoSchema = z
     modoMudancaData: modoMudancaDataSchema.optional(),
     modoCobranca: modoCobrancaSchema.optional(),
     percentualProducao: z.number().min(0.01).max(100).nullable().optional(),
+    regraPreco: regraPrecoSchema.nullable().optional(),
     contaEmissora: contaEmissoraSchema.optional(),
     colaboradorResponsavel: z.string().nullable().optional(),
     ativo: z.boolean().optional(),
@@ -113,9 +151,10 @@ export const atualizarMedicoSchema = z
     motivo: z.string().min(1, 'Motivo é obrigatório para alterar um médico'),
   })
   .strict()
-  // Ao MUDAR para percentual, o percentual deve vir junto (a CHECK do banco é a defesa final
-  // para o caso de update parcial sobre médico que já está no modo percentual).
-  .refine(percentualCoerente, { message: MSG_PERCENTUAL, path: ['percentualProducao'] });
+  // Ao MUDAR para percentual/preço próprio, o campo correspondente deve vir junto (a CHECK do
+  // banco é a defesa final para o caso de update parcial sobre médico já nesse modo).
+  .refine(percentualCoerente, { message: MSG_PERCENTUAL, path: ['percentualProducao'] })
+  .refine(regraPrecoCoerente, { message: MSG_REGRA_PRECO, path: ['regraPreco'] });
 
 // Sincronização com a origem (Épico 5) — vínculo confirmado pelo usuário.
 // externalId NÃO é UUID: a API real da Carmem usa IDs numéricos serializados

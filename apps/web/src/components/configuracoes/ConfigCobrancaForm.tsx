@@ -12,6 +12,7 @@ const VAZIO: ConfigCobranca = {
   jurosMesPercent: null,
   descontoPercent: null,
   descontoDias: null,
+  valorConsultaPediatria: 3.0,
 };
 
 /** Formulário dos defaults comerciais globais (config_cobranca). */
@@ -66,6 +67,17 @@ export function ConfigCobrancaForm() {
           max={365}
           value={form.diasVencimento}
           onChange={(e) => setNum('diasVencimento', e.target.value, true)}
+          className="input font-mono"
+        />
+      </Campo>
+
+      <Campo label="Valor da consulta pediátrica (R$)" hint="Story 10.2 — somado às guias hospitalares do pediatra">
+        <input
+          type="number"
+          min={0.01}
+          step="0.01"
+          value={form.valorConsultaPediatria}
+          onChange={(e) => setNum('valorConsultaPediatria', e.target.value, true)}
           className="input font-mono"
         />
       </Campo>

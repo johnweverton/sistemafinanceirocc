@@ -3,10 +3,13 @@ import { describe, it, expect } from 'vitest';
 import {
   toExecucao,
   toExecucaoResultado,
+  toExecucaoSelecao,
+  toExecucaoSelecaoRow,
   toBoleto,
   toBoletoEvento,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
+  type ExecucaoSelecaoRow,
   type BoletoRow,
   type BoletoEventoRow,
 } from '../../../src/server/repositories/mappers';
@@ -77,6 +80,45 @@ describe('toExecucaoResultado', () => {
     expect(r.statusOriginal).toBe('alerta');
     expect(r.revisadoPor).toBe('u1');
     expect(r.motivoRevisao).toBe('Confirmado com o médico, aumento real de produção.');
+  });
+});
+
+describe('toExecucaoSelecao / toExecucaoSelecaoRow (Story 10.2 — produção de consultas)', () => {
+  it('mapeia a produção de consultas quando presente', () => {
+    const row: ExecucaoSelecaoRow = {
+      execucao_id: 'e1',
+      medico_id: 'm1',
+      producao_externa_id: 'p-guias',
+      producao_nome: 'Junho 2026',
+      producao_consultas_externa_id: 'p-consultas',
+      producao_consultas_nome: 'Consultas Junho 2026',
+    };
+    const s = toExecucaoSelecao(row);
+    expect(s.producaoConsultasExternaId).toBe('p-consultas');
+    expect(s.producaoConsultasNome).toBe('Consultas Junho 2026');
+  });
+
+  it('normaliza ausência (undefined) para null — médico sem componente de consultas', () => {
+    const row: ExecucaoSelecaoRow = {
+      execucao_id: 'e1',
+      medico_id: 'm1',
+      producao_externa_id: 'p-guias',
+      producao_nome: 'Junho 2026',
+    };
+    const s = toExecucaoSelecao(row);
+    expect(s.producaoConsultasExternaId).toBeNull();
+    expect(s.producaoConsultasNome).toBeNull();
+  });
+
+  it('toExecucaoSelecaoRow achata de volta para snake_case, com default null', () => {
+    const row = toExecucaoSelecaoRow({
+      execucaoId: 'e1',
+      medicoId: 'm1',
+      producaoExternaId: 'p-guias',
+      producaoNome: 'Junho 2026',
+    });
+    expect(row.producao_consultas_externa_id).toBeNull();
+    expect(row.producao_consultas_nome).toBeNull();
   });
 });
 

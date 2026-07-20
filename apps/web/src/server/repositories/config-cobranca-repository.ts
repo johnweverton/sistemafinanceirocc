@@ -12,6 +12,8 @@ interface ConfigCobrancaRow {
   juros_mes_percent: number | null;
   desconto_percent: number | null;
   desconto_dias: number | null;
+  /** Valor da consulta pediátrica (migration 0026) — opcional em bancos sem a migration. */
+  valor_consulta_pediatria?: number | null;
 }
 
 function toConfig(row: ConfigCobrancaRow): ConfigCobranca {
@@ -21,6 +23,7 @@ function toConfig(row: ConfigCobrancaRow): ConfigCobranca {
     jurosMesPercent: row.juros_mes_percent,
     descontoPercent: row.desconto_percent,
     descontoDias: row.desconto_dias,
+    valorConsultaPediatria: row.valor_consulta_pediatria ?? 3.0, // default seguro pré-migration 0026
   };
 }
 
@@ -33,7 +36,14 @@ export async function lerConfig(): Promise<ConfigCobranca> {
   }
   if (!data) {
     // Fallback: o seed da migration 0006 cria a linha; se faltar, não travar a emissão.
-    return { diasVencimento: 30, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null };
+    return {
+      diasVencimento: 30,
+      multaPercent: null,
+      jurosMesPercent: null,
+      descontoPercent: null,
+      descontoDias: null,
+      valorConsultaPediatria: 3.0,
+    };
   }
   return toConfig(data as ConfigCobrancaRow);
 }
@@ -50,6 +60,7 @@ export async function atualizarConfig(config: ConfigCobranca): Promise<ConfigCob
       juros_mes_percent: config.jurosMesPercent,
       desconto_percent: config.descontoPercent,
       desconto_dias: config.descontoDias,
+      valor_consulta_pediatria: config.valorConsultaPediatria,
       updated_at: new Date().toISOString(),
     })
     .select('*')
@@ -58,6 +69,12 @@ export async function atualizarConfig(config: ConfigCobranca): Promise<ConfigCob
     throw new ApiError(500, 'Falha ao salvar config de cobrança', 'DB_ERROR', { error: error.message });
   }
   return toConfig(data as ConfigCobrancaRow);
+}
+
+/** Lê só o valor unitário da consulta pediátrica — usado pelo orquestrador (Story 10.2). */
+export async function lerValorConsultaPediatria(): Promise<number> {
+  const config = await lerConfig();
+  return config.valorConsultaPediatria;
 }
 
 /**
