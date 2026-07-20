@@ -1,13 +1,19 @@
 'use client';
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora, RegraPreco, RegraPrecoForma } from '@cobranca/shared';
 import { tipoDoMedico, combinacaoClasseValida, CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import type { NovoMedicoPayload } from '@/services/medicos';
+import { empresasService, empresaQueryKeys } from '@/services/empresas';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
 
 // contaEmissora admite '' no ESTADO (novo médico começa sem escolha — decisão consciente,
 // Story 7.3); o submit só habilita com empresa selecionada, e o payload sai tipado.
-type FormState = Omit<NovoMedicoPayload, 'contaEmissora'> & { contaEmissora: ContaEmissora | '' };
+// empresaGrupoId (Story 10.4a) usa '' como sentinela de "sem vínculo" no SELECT — vira null no submit.
+type FormState = Omit<NovoMedicoPayload, 'contaEmissora' | 'empresaGrupoId'> & {
+  contaEmissora: ContaEmissora | '';
+  empresaGrupoId: string;
+};
 
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB',
@@ -43,6 +49,7 @@ const VAZIO: FormState = {
   contaEmissora: '', // escolha explícita obrigatória em médicos novos (Story 7.3)
   colaboradorResponsavel: null,
   ativo: true,
+  empresaGrupoId: '', // sem vínculo — produção 100% individual (Story 10.4a)
 };
 
 const REGRA_PRECO_VAZIA: RegraPreco = {
@@ -99,6 +106,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           contaEmissora: inicial.contaEmissora, // existentes exibem o backfill ('mc')
           colaboradorResponsavel: inicial.colaboradorResponsavel,
           ativo: inicial.ativo,
+          empresaGrupoId: inicial.empresaGrupoId ?? '',
         }
       : VAZIO,
   );
@@ -106,6 +114,13 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const [cobranca, setCobranca] = useState<DadosCobranca>(inicial?.cobranca ?? COBRANCA_VAZIA);
   const [condicoes, setCondicoes] = useState<CondicoesCobranca>(inicial?.condicoes ?? CONDICOES_VAZIAS);
   const [cepBuscando, setCepBuscando] = useState(false);
+
+  // Empresas ativas para o vínculo de agrupamento (Story 10.4a) — lista pequena, sem paginação.
+  const { data: empresas } = useQuery({
+    queryKey: empresaQueryKeys.empresas(),
+    queryFn: () => empresasService.listar(),
+  });
+  const empresasAtivas = (empresas ?? []).filter((e) => e.ativo);
 
   const combinacaoValida = useMemo(() => combinacaoClasseValida(form), [form]);
   const tipo = useMemo(() => (combinacaoValida ? tipoDoMedico(form) : null), [combinacaoValida, form]);
@@ -183,6 +198,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
       modoMudancaData: isPediatra ? form.modoMudancaData : 'nao',
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
       condicoes: temAlgumaCondicao(condicoes) ? condicoes : null,
+      empresaGrupoId: form.empresaGrupoId === '' ? null : form.empresaGrupoId,
     };
     // O servidor sempre exige motivo não-vazio (histórico é requisito não-opcional);
     // quando o campo não é exibido (1ª configuração), manda um motivo padrão em vez de ''.
@@ -297,6 +313,26 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
               Escolha a empresa que emitirá os boletos deste médico.
             </p>
           )}
+        </Field>
+
+        <Field label="Empresa de agrupamento (guias cardíacas)" optional>
+          <select
+            name="empresaGrupoId"
+            value={form.empresaGrupoId}
+            onChange={(e) => set('empresaGrupoId', e.target.value)}
+            className="input"
+          >
+            <option value="">— Sem vínculo (produção 100% individual) —</option>
+            {empresasAtivas.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.nome}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-2xs text-cc-muted">
+            Se este médico tem produção agregada a uma empresa (ex.: MEDISA — Story 10.4), vincule
+            aqui. Não afeta a produção individual dele, que continua neste cadastro normalmente.
+          </p>
         </Field>
 
         <Field label="Modo de cobrança">

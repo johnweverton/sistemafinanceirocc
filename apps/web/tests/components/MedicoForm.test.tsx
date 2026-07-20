@@ -1,12 +1,32 @@
 // Teste de componente — o formulário bloqueia combinação inválida (PRD §8.2, architecture).
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MedicoForm } from '../../src/components/medicos/MedicoForm';
+import { empresasService } from '../../src/services/empresas';
+
+// Story 10.4a: MedicoForm busca a lista de empresas para o vínculo de agrupamento — mocka o
+// service (sem I/O) e sempre envolve com QueryClientProvider (useQuery exige o contexto).
+vi.mock('../../src/services/empresas', () => ({
+  empresasService: { listar: vi.fn() },
+  empresaQueryKeys: { empresas: () => ['empresas'] as const },
+}));
+
+// `vi.restoreAllMocks()` (usado no describe de cobrança) reseta a implementação de vi.fn() —
+// reaplica a cada teste para o useQuery de empresas nunca resolver undefined.
+beforeEach(() => {
+  vi.mocked(empresasService.listar).mockResolvedValue([]);
+});
+
+function renderForm(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 describe('MedicoForm', () => {
   it('bloqueia salvar quando a combinação é inválida (nenhum Hapvida + sem outros)', () => {
     const onSubmit = vi.fn();
-    render(<MedicoForm onSubmit={onSubmit} />);
+    renderForm(<MedicoForm onSubmit={onSubmit} />);
 
     // Preenche CPF e nome válidos para isolar a regra de combinação.
     fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
@@ -28,7 +48,7 @@ describe('MedicoForm', () => {
 
   it('mostra o TIPO calculado para combinação válida e habilita salvar', () => {
     const onSubmit = vi.fn();
-    render(<MedicoForm onSubmit={onSubmit} />);
+    renderForm(<MedicoForm onSubmit={onSubmit} />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
       target: { value: '12345678901' },
@@ -48,7 +68,7 @@ describe('MedicoForm', () => {
   // Story 7.3 (AC 1): médico novo exige a escolha explícita da empresa emissora.
   it('bloqueia salvar em médico NOVO até escolher a empresa emissora', () => {
     const onSubmit = vi.fn();
-    render(<MedicoForm onSubmit={onSubmit} />);
+    renderForm(<MedicoForm onSubmit={onSubmit} />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
       target: { value: '12345678901' },
@@ -71,7 +91,7 @@ describe('MedicoForm', () => {
 
   it('quando exigeMotivo é false, envia um motivo padrão em vez de string vazia (o servidor sempre exige motivo)', () => {
     const onSubmit = vi.fn();
-    render(<MedicoForm onSubmit={onSubmit} exigeMotivo={false} />);
+    renderForm(<MedicoForm onSubmit={onSubmit} exigeMotivo={false} />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
       target: { value: '12345678901' },
@@ -99,7 +119,7 @@ describe('MedicoForm — seção de cobrança (Story 3.3)', () => {
   });
 
   it('renderiza a seção de dados de cobrança', () => {
-    render(<MedicoForm onSubmit={vi.fn()} />);
+    renderForm(<MedicoForm onSubmit={vi.fn()} />);
     expect(screen.getByText(/Dados de cobrança/i)).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Tipo de pagador/i })).toBeInTheDocument();
   });
@@ -116,7 +136,7 @@ describe('MedicoForm — seção de cobrança (Story 3.3)', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<MedicoForm onSubmit={vi.fn()} />);
+    renderForm(<MedicoForm onSubmit={vi.fn()} />);
     fireEvent.change(screen.getByRole('textbox', { name: /^CEP/i }), {
       target: { value: '60000000' },
     });

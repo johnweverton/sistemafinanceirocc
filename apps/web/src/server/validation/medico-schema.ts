@@ -131,6 +131,8 @@ export const novoMedicoSchema = z
     // Bloco de cobrança é opcional — médico pode ser salvo e completado depois.
     cobranca: dadosCobrancaSchema.nullable().optional(),
     condicoes: condicoesCobrancaSchema.nullable().optional(),
+    // Vínculo com empresa de agrupamento (Story 10.4a) — opcional, null = sem vínculo.
+    empresaGrupoId: z.string().uuid().nullable().optional().default(null),
   })
   .refine(percentualCoerente, { message: MSG_PERCENTUAL, path: ['percentualProducao'] })
   .refine(regraPrecoCoerente, { message: MSG_REGRA_PRECO, path: ['regraPreco'] });
@@ -153,6 +155,7 @@ export const atualizarMedicoSchema = z
     necessitaConfiguracao: z.boolean().optional(),
     cobranca: dadosCobrancaSchema.nullable().optional(),
     condicoes: condicoesCobrancaSchema.nullable().optional(),
+    empresaGrupoId: z.string().uuid().nullable().optional(),
     motivo: z.string().min(1, 'Motivo é obrigatório para alterar um médico'),
   })
   .strict()

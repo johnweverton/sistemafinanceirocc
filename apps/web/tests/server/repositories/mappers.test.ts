@@ -5,11 +5,14 @@ import {
   toExecucaoResultado,
   toExecucaoSelecao,
   toExecucaoSelecaoRow,
+  toEmpresa,
+  empresaUpdateToRow,
   toBoleto,
   toBoletoEvento,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
   type ExecucaoSelecaoRow,
+  type EmpresaRow,
   type BoletoRow,
   type BoletoEventoRow,
 } from '../../../src/server/repositories/mappers';
@@ -119,6 +122,70 @@ describe('toExecucaoSelecao / toExecucaoSelecaoRow (Story 10.2 — produção de
     });
     expect(row.producao_consultas_externa_id).toBeNull();
     expect(row.producao_consultas_nome).toBeNull();
+  });
+});
+
+describe('toEmpresa / empresaUpdateToRow (Story 10.4a)', () => {
+  const rowBase: EmpresaRow = {
+    id: 'emp-1',
+    nome: 'MEDISA',
+    pagador_tipo: 'PJ',
+    pagador_documento: '12345678000199',
+    pagador_nome: 'MEDISA Ltda',
+    email: null,
+    whatsapp: null,
+    cep: null,
+    logradouro: null,
+    numero: null,
+    complemento: null,
+    bairro: null,
+    cidade: null,
+    uf: null,
+    conta_emissora: 'mc',
+    dias_vencimento: null,
+    multa_percent: null,
+    juros_mes_percent: null,
+    desconto_percent: null,
+    desconto_dias: null,
+    regra_preco_forma: 'por_guia',
+    regra_preco_base: null,
+    regra_preco_limiar: null,
+    regra_preco_taxa: 6.41,
+    regra_preco_valor_fixo: null,
+    ativo: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('toEmpresa mapeia cobrança PJ e regra de preço (mesmos helpers de médico)', () => {
+    const e = toEmpresa(rowBase);
+    expect(e.nome).toBe('MEDISA');
+    expect(e.cobranca).toMatchObject({ pagadorTipo: 'PJ', pagadorDocumento: '12345678000199' });
+    expect(e.regraPreco).toMatchObject({ forma: 'por_guia', taxa: 6.41 });
+    expect(e.condicoes).toBeNull(); // nenhum override comercial preenchido
+  });
+
+  it('toEmpresa devolve cobranca/regraPreco null quando colunas ausentes', () => {
+    const e = toEmpresa({ ...rowBase, pagador_tipo: null, regra_preco_forma: null });
+    expect(e.cobranca).toBeNull();
+    expect(e.regraPreco).toBeNull();
+  });
+
+  it('empresaUpdateToRow achata cobrança e regra de preço', () => {
+    const row = empresaUpdateToRow({
+      nome: 'MEDISA',
+      cobranca: { pagadorTipo: 'PJ', pagadorDocumento: '12345678000199', pagadorNome: 'MEDISA Ltda', email: '', whatsapp: null, cep: '', logradouro: '', numero: '', complemento: null, bairro: '', cidade: '', uf: '' },
+      regraPreco: { forma: 'por_guia', base: null, limiar: null, taxa: 6.41, valorFixo: null },
+    });
+    expect(row.pagador_documento).toBe('12345678000199');
+    expect(row.regra_preco_forma).toBe('por_guia');
+    expect(row.regra_preco_taxa).toBe(6.41);
+  });
+
+  it('empresaUpdateToRow com regraPreco null limpa as colunas', () => {
+    const row = empresaUpdateToRow({ regraPreco: null });
+    expect(row.regra_preco_forma).toBeNull();
+    expect(row.regra_preco_taxa).toBeNull();
   });
 });
 

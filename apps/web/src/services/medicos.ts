@@ -54,6 +54,8 @@ export interface NovoMedicoPayload {
   // Cobrança (Fase 3) — opcional; médico pode ser salvo e completado depois.
   cobranca?: DadosCobranca | null;
   condicoes?: CondicoesCobranca | null;
+  /** Empresa de agrupamento (Story 10.4a) — opcional, null = produção 100% individual. */
+  empresaGrupoId?: string | null;
 }
 
 export type AtualizarMedicoPayload = Partial<NovoMedicoPayload> & {

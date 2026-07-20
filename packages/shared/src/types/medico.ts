@@ -108,6 +108,13 @@ export interface Medico {
   cobranca?: DadosCobranca | null;
   /** Overrides comerciais; null/campos nulos herdam config_cobranca global. */
   condicoes?: CondicoesCobranca | null;
+  /**
+   * Empresa para a qual a produção de guias cardíacas (ou análoga) deste médico é agregada
+   * (Story 10.4). Null/ausente = médico sem vínculo, produção 100% individual (comportamento
+   * atual). Ortogonal a `contaEmissora`: aquela é o banco do boleto INDIVIDUAL deste médico;
+   * esta é o agrupamento multi-médico de uma produção específica.
+   */
+  empresaGrupoId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

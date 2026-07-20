@@ -2,6 +2,11 @@
 import type {
   Medico,
   MedicoHistorico,
+  Empresa,
+  EmpresaHistorico,
+  DadosCobranca,
+  CondicoesCobranca,
+  RegraPreco,
   Execucao,
   ExecucaoResultado,
   ExecucaoResumoMedico,
@@ -19,6 +24,40 @@ import type {
   RegraCategorizacao,
   LancamentoManual,
 } from '@cobranca/shared';
+
+/** Colunas de cobrança compartilhadas por `medicos` e `empresas` (mesmo formato, migration 0006/0028). */
+interface CobrancaRowFields {
+  pagador_tipo: 'PF' | 'PJ' | null;
+  pagador_documento: string | null;
+  pagador_nome: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+}
+
+/** Colunas de condições comerciais compartilhadas por `medicos` e `empresas`. */
+interface CondicoesRowFields {
+  dias_vencimento: number | null;
+  multa_percent: number | null;
+  juros_mes_percent: number | null;
+  desconto_percent: number | null;
+  desconto_dias: number | null;
+}
+
+/** Colunas de regra de preço própria compartilhadas por `medicos` e `empresas` (migration 0025/0027/0028). */
+interface RegraPrecoRowFields {
+  regra_preco_forma?: RegraPreco['forma'] | null;
+  regra_preco_base?: number | null;
+  regra_preco_limiar?: number | null;
+  regra_preco_taxa?: number | null;
+  regra_preco_valor_fixo?: number | null;
+}
 
 export interface MedicoRow {
   id: string;
@@ -40,6 +79,8 @@ export interface MedicoRow {
   regra_preco_valor_fixo?: number | null;
   /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
   conta_emissora?: Medico['contaEmissora'] | null;
+  /** Vínculo com empresa de agrupamento (migration 0028, Story 10.4a) — opcional pré-migration. */
+  empresa_grupo_id?: string | null;
   colaborador_responsavel: string | null;
   ativo: boolean;
   necessita_configuracao: boolean;
@@ -69,7 +110,7 @@ export interface MedicoRow {
 }
 
 /** Monta o bloco de cobrança; null se não há sinal de configuração (pagador_tipo ausente). */
-function toDadosCobranca(row: MedicoRow): Medico['cobranca'] {
+function toDadosCobranca(row: CobrancaRowFields): DadosCobranca | null {
   if (!row.pagador_tipo) return null;
   return {
     pagadorTipo: row.pagador_tipo,
@@ -88,7 +129,7 @@ function toDadosCobranca(row: MedicoRow): Medico['cobranca'] {
 }
 
 /** Regra de preço própria; null se não configurada (médico segue faixa_guias/percentual). */
-function toRegraPreco(row: MedicoRow): Medico['regraPreco'] {
+function toRegraPreco(row: RegraPrecoRowFields): RegraPreco | null {
   if (!row.regra_preco_forma) return null;
   return {
     forma: row.regra_preco_forma,
@@ -100,7 +141,7 @@ function toRegraPreco(row: MedicoRow): Medico['regraPreco'] {
 }
 
 /** Overrides comerciais; null se nenhum campo definido (todos herdam o global). */
-function toCondicoes(row: MedicoRow): Medico['condicoes'] {
+function toCondicoes(row: CondicoesRowFields): CondicoesCobranca | null {
   const algum =
     row.dias_vencimento != null ||
     row.multa_percent != null ||
@@ -137,6 +178,7 @@ export function toMedico(row: MedicoRow): Medico {
     externalId: row.external_id ?? null,
     cobranca: toDadosCobranca(row),
     condicoes: toCondicoes(row),
+    empresaGrupoId: row.empresa_grupo_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -182,6 +224,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     colaboradorResponsavel: 'colaborador_responsavel',
     ativo: 'ativo',
     necessitaConfiguracao: 'necessita_configuracao',
+    empresaGrupoId: 'empresa_grupo_id',
   };
   const row: Partial<MedicoRow> = {};
   for (const [campo, valor] of Object.entries(dados)) {
@@ -246,6 +289,137 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
   }
 
   return row;
+}
+
+// ---------------------------------------------------------------------------
+// Empresa (Story 10.4a) — mesmo padrão de médico, reaproveitando os helpers de
+// cobrança/condições/regra de preço acima (CobrancaRowFields/CondicoesRowFields/RegraPrecoRowFields).
+// ---------------------------------------------------------------------------
+
+export interface EmpresaRow extends CobrancaRowFields, CondicoesRowFields, RegraPrecoRowFields {
+  id: string;
+  nome: string;
+  conta_emissora: Empresa['contaEmissora'];
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export function toEmpresa(row: EmpresaRow): Empresa {
+  return {
+    id: row.id,
+    nome: row.nome,
+    cobranca: toDadosCobranca(row),
+    contaEmissora: row.conta_emissora,
+    condicoes: toCondicoes(row),
+    regraPreco: toRegraPreco(row),
+    ativo: row.ativo,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Campos de domínio (camelCase) → colunas do banco (snake_case), só os presentes. */
+export function empresaUpdateToRow(dados: Partial<Empresa>): Partial<EmpresaRow> {
+  const map: Record<string, keyof EmpresaRow> = {
+    nome: 'nome',
+    contaEmissora: 'conta_emissora',
+    ativo: 'ativo',
+  };
+  const row: Partial<EmpresaRow> = {};
+  for (const [campo, valor] of Object.entries(dados)) {
+    if (campo === 'cobranca' || campo === 'condicoes' || campo === 'regraPreco') continue;
+    const col = map[campo];
+    if (col) (row as Record<string, unknown>)[col] = valor === '' ? null : valor;
+  }
+
+  if (dados.cobranca !== undefined) {
+    if (dados.cobranca === null) {
+      Object.assign(row, {
+        pagador_tipo: null, pagador_documento: null, pagador_nome: null, email: null,
+        whatsapp: null, cep: null, logradouro: null, numero: null, complemento: null,
+        bairro: null, cidade: null, uf: null,
+      } satisfies Partial<EmpresaRow>);
+    } else {
+      const c = dados.cobranca;
+      Object.assign(row, {
+        pagador_tipo: c.pagadorTipo,
+        pagador_documento: c.pagadorDocumento,
+        pagador_nome: c.pagadorNome,
+        email: c.email || null,
+        whatsapp: c.whatsapp || null,
+        cep: c.cep || null,
+        logradouro: c.logradouro || null,
+        numero: c.numero || null,
+        complemento: c.complemento || null,
+        bairro: c.bairro || null,
+        cidade: c.cidade || null,
+        uf: c.uf || null,
+      } satisfies Partial<EmpresaRow>);
+    }
+  }
+
+  if (dados.regraPreco !== undefined) {
+    if (dados.regraPreco === null) {
+      Object.assign(row, {
+        regra_preco_forma: null, regra_preco_base: null, regra_preco_limiar: null,
+        regra_preco_taxa: null, regra_preco_valor_fixo: null,
+      } satisfies Partial<EmpresaRow>);
+    } else {
+      const rp = dados.regraPreco;
+      Object.assign(row, {
+        regra_preco_forma: rp.forma,
+        regra_preco_base: rp.base ?? null,
+        regra_preco_limiar: rp.limiar ?? null,
+        regra_preco_taxa: rp.taxa ?? null,
+        regra_preco_valor_fixo: rp.valorFixo ?? null,
+      } satisfies Partial<EmpresaRow>);
+    }
+  }
+
+  if (dados.condicoes !== undefined) {
+    if (dados.condicoes === null) {
+      Object.assign(row, {
+        dias_vencimento: null, multa_percent: null, juros_mes_percent: null,
+        desconto_percent: null, desconto_dias: null,
+      } satisfies Partial<EmpresaRow>);
+    } else {
+      const o = dados.condicoes;
+      Object.assign(row, {
+        dias_vencimento: o.diasVencimento,
+        multa_percent: o.multaPercent,
+        juros_mes_percent: o.jurosMesPercent,
+        desconto_percent: o.descontoPercent,
+        desconto_dias: o.descontoDias,
+      } satisfies Partial<EmpresaRow>);
+    }
+  }
+
+  return row;
+}
+
+export interface EmpresaHistoricoRow {
+  id: string;
+  empresa_id: string;
+  campo_alterado: string;
+  valor_anterior: string | null;
+  valor_novo: string | null;
+  alterado_por: string;
+  motivo: string | null;
+  alterado_em: string;
+}
+
+export function toEmpresaHistorico(row: EmpresaHistoricoRow): EmpresaHistorico {
+  return {
+    id: row.id,
+    empresaId: row.empresa_id,
+    campoAlterado: row.campo_alterado,
+    valorAnterior: row.valor_anterior,
+    valorNovo: row.valor_novo,
+    alteradoPor: row.alterado_por,
+    motivo: row.motivo,
+    alteradoEm: row.alterado_em,
+  };
 }
 
 // ---------------------------------------------------------------------------
