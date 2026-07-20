@@ -16,7 +16,9 @@ export type ModoMudancaData = 'sim' | 'nao';
 export type ModoCobranca = 'faixa_guias' | 'percentual_producao' | 'preco_proprio';
 
 /**
- * Forma da regra de preço própria (Story 10.1, GATE do dono 2026-07-20):
+ * Forma da regra de preço própria (Story 10.1, GATE do dono 2026-07-20; Ezequiel reincluído
+ * 2026-07-20 — confirmado R$4,00/guia estável, deixa de ser caso manual):
+ *   - 'por_guia': `valor = guias × taxa` (Dr. Ezequiel: R$4,00/guia).
  *   - 'base_excedente': `valor = base + max(0, guias − limiar) × taxa` (Dr. Jansen: base ~935,62,
  *     limiar 144, taxa 6,50).
  *   - 'fixo': valor mensal fixo, independe da quantidade de guias (Nelson, Carlos Batista,
@@ -24,7 +26,7 @@ export type ModoCobranca = 'faixa_guias' | 'percentual_producao' | 'preco_propri
  * Nefrologia/"guias cardíacas" NÃO entram aqui — são agrupamento de produção por empresa
  * (MEDISA), tratado na Story 10.4, não um override de médico individual.
  */
-export type RegraPrecoForma = 'base_excedente' | 'fixo';
+export type RegraPrecoForma = 'por_guia' | 'base_excedente' | 'fixo';
 
 /** Regra de preço própria por médico — editável sem deploy (linha, não código). */
 export interface RegraPreco {
@@ -33,7 +35,7 @@ export interface RegraPreco {
   base: number | null;
   /** Guias a partir das quais o excedente por guia incide. Obrigatório na forma 'base_excedente'. */
   limiar: number | null;
-  /** Valor por guia acima do limiar. Obrigatório na forma 'base_excedente'. */
+  /** Valor por guia. Obrigatório nas formas 'por_guia' e 'base_excedente'. */
   taxa: number | null;
   /** Valor fixo mensal, independe de guias. Obrigatório na forma 'fixo'. */
   valorFixo: number | null;

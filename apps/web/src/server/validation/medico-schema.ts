@@ -5,9 +5,10 @@ import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 export const statusHapvidaSchema = z.enum(['credenciado', 'nao_credenciado', 'nenhum']);
 export const modoMudancaDataSchema = z.enum(['sim', 'nao']);
 export const modoCobrancaSchema = z.enum(['faixa_guias', 'percentual_producao', 'preco_proprio']);
-// Regra de preço própria (Story 10.1) — GATE do dono 2026-07-20: só duas formas ficaram
-// (Nefrologia/guias cardíacas saíram para a Story 10.4, agrupamento por empresa).
-export const regraPrecoFormaSchema = z.enum(['base_excedente', 'fixo']);
+// Regra de preço própria (Story 10.1) — GATE do dono 2026-07-20. Nefrologia/guias cardíacas
+// saíram para a Story 10.4 (agrupamento por empresa). Ezequiel (por_guia, R$4,00) reincluído
+// no automático em 2026-07-20 — confirmado estável, deixou de ser caso manual.
+export const regraPrecoFormaSchema = z.enum(['por_guia', 'base_excedente', 'fixo']);
 // Conta emissora (Story 7.1, QA-711-2) — espelha a CHECK da migration 0021.
 export const contaEmissoraSchema = z.enum(CONTAS_EMISSORAS_VALIDAS);
 export const pagadorTipoSchema = z.enum(['PF', 'PJ']);
@@ -35,6 +36,10 @@ export const regraPrecoSchema = z
     limiar: z.number().int().min(0).nullable().optional().default(null),
     taxa: z.number().min(0).nullable().optional().default(null),
     valorFixo: z.number().min(0).nullable().optional().default(null),
+  })
+  .refine((r) => r.forma !== 'por_guia' || r.taxa != null, {
+    message: 'Forma "por guia" exige taxa',
+    path: ['taxa'],
   })
   .refine((r) => r.forma !== 'base_excedente' || (r.base != null && r.limiar != null && r.taxa != null), {
     message: 'Forma "base + excedente" exige base, limiar e taxa',

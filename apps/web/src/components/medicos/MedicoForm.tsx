@@ -46,7 +46,7 @@ const VAZIO: FormState = {
 };
 
 const REGRA_PRECO_VAZIA: RegraPreco = {
-  forma: 'base_excedente',
+  forma: 'por_guia',
   base: null,
   limiar: null,
   taxa: null,
@@ -116,13 +116,15 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const percentualOk =
     form.modoCobranca !== 'percentual_producao' ||
     (form.percentualProducao != null && form.percentualProducao > 0);
-  // Modo preço próprio exige a regra coerente com a forma (Story 10.1 — espelho da CHECK 0025).
+  // Modo preço próprio exige a regra coerente com a forma (Story 10.1 — espelho das CHECKs 0025/0027).
   const regraPrecoOk =
     form.modoCobranca !== 'preco_proprio' ||
     (form.regraPreco != null &&
-      (form.regraPreco.forma === 'base_excedente'
-        ? form.regraPreco.base != null && form.regraPreco.limiar != null && form.regraPreco.taxa != null
-        : form.regraPreco.valorFixo != null));
+      (form.regraPreco.forma === 'por_guia'
+        ? form.regraPreco.taxa != null
+        : form.regraPreco.forma === 'base_excedente'
+          ? form.regraPreco.base != null && form.regraPreco.limiar != null && form.regraPreco.taxa != null
+          : form.regraPreco.valorFixo != null));
   // Empresa emissora é obrigatória (Story 7.3): boleto pela empresa errada = contestação.
   const contaOk = form.contaEmissora !== '';
   const podeSalvar =
@@ -341,16 +343,29 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
 
           <Field label="Forma da regra">
             <select
-              value={form.regraPreco?.forma ?? 'base_excedente'}
+              value={form.regraPreco?.forma ?? 'por_guia'}
               onChange={(e) => setRegra('forma', e.target.value as RegraPrecoForma)}
               className="input"
             >
+              <option value="por_guia">Por guia linear (ex.: Dr. Ezequiel)</option>
               <option value="base_excedente">Base + excedente com limiar (ex.: Dr. Jansen)</option>
               <option value="fixo">Valor fixo mensal (ex.: Nelson, Carlos Batista, Jefferson)</option>
             </select>
           </Field>
 
-          {(form.regraPreco?.forma ?? 'base_excedente') === 'base_excedente' ? (
+          {(form.regraPreco?.forma ?? 'por_guia') === 'por_guia' ? (
+            <Field label="Taxa por guia (R$)">
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={form.regraPreco?.taxa ?? ''}
+                onChange={(e) => setRegraNum('taxa', e.target.value)}
+                className="input tabular"
+                placeholder="4.00"
+              />
+            </Field>
+          ) : form.regraPreco?.forma === 'base_excedente' ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field label="Base (R$)">
                 <input

@@ -1,5 +1,6 @@
-// Validação Zod da regra de preço própria (Story 10.1) — espelho da CHECK 0025:
-// modo preco_proprio exige regraPreco; base_excedente exige base+limiar+taxa; fixo exige valorFixo.
+// Validação Zod da regra de preço própria (Story 10.1) — espelho das CHECKs 0025/0027:
+// modo preco_proprio exige regraPreco; por_guia exige taxa; base_excedente exige
+// base+limiar+taxa; fixo exige valorFixo.
 import { describe, it, expect } from 'vitest';
 import { novoMedicoSchema, atualizarMedicoSchema } from '../../../src/server/validation/medico-schema';
 
@@ -14,6 +15,24 @@ describe('novoMedicoSchema — regraPreco (Story 10.1)', () => {
     const r = novoMedicoSchema.parse(basePayload);
     expect(r.modoCobranca).toBe('faixa_guias');
     expect(r.regraPreco).toBeNull();
+  });
+
+  it('preco_proprio com forma por_guia completa passa (Dr. Ezequiel)', () => {
+    const r = novoMedicoSchema.parse({
+      ...basePayload,
+      modoCobranca: 'preco_proprio',
+      regraPreco: { forma: 'por_guia', taxa: 4.0 },
+    });
+    expect(r.regraPreco).toMatchObject({ forma: 'por_guia', taxa: 4.0 });
+  });
+
+  it('por_guia sem taxa → rejeita', () => {
+    const r = novoMedicoSchema.safeParse({
+      ...basePayload,
+      modoCobranca: 'preco_proprio',
+      regraPreco: { forma: 'por_guia' },
+    });
+    expect(r.success).toBe(false);
   });
 
   it('preco_proprio com forma base_excedente completa passa', () => {

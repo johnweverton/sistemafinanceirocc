@@ -1,7 +1,8 @@
 // Casos de ouro do modo preço próprio (Story 10.1, Épico 10). Função pura, sem I/O.
-// GATE do dono (2026-07-20): duas formas — base+excedente+limiar (Dr. Jansen) e fixo
-// (Nelson, Carlos Batista, Jefferson). Nefrologia/guias cardíacas saíram para a Story 10.4
-// (agrupamento por empresa, não override de médico individual).
+// GATE do dono (2026-07-20): três formas — por_guia (Dr. Ezequiel, reincluído no automático
+// após confirmar R$4,00/guia estável), base+excedente+limiar (Dr. Jansen) e fixo (Nelson,
+// Carlos Batista, Jefferson). Nefrologia/guias cardíacas saíram para a Story 10.4 (agrupamento
+// por empresa, não override de médico individual).
 import { describe, it, expect } from 'vitest';
 import type { EntradaProcessamentoMedico, ItemProducao, RegraPreco } from '@cobranca/shared';
 import { processarMedico } from '../../../src/server/engine/processar-medico';
@@ -44,6 +45,39 @@ function medicoPrecoProprio(
 function itens(n: number): ItemProducao[] {
   return Array.from({ length: n }, (_, i) => item({ pacienteNome: `Paciente ${i}` }));
 }
+
+describe('processarMedico — modo preco_proprio, forma por_guia (Story 10.1, Dr. Ezequiel)', () => {
+  it('caso de ouro: 90 guias × R$4,00 = R$360,00', () => {
+    const r = processarMedico({
+      medico: medicoPrecoProprio({ forma: 'por_guia', base: null, limiar: null, taxa: 4.0, valorFixo: null }),
+      itens: itens(90),
+    });
+    expect(r.guias).toBe(90);
+    expect(r.totalValor).toBe(360);
+    expect(r.status).toBe('ok');
+    expect(r.subtotais).toHaveLength(1);
+    expect(r.subtotais[0]).toMatchObject({ classe: 'PRECO_PROPRIO', guias: 90, valor: 360 });
+  });
+
+  it('linear desde a 1ª guia — sem limiar, diferente de base_excedente', () => {
+    const r = processarMedico({
+      medico: medicoPrecoProprio({ forma: 'por_guia', base: null, limiar: null, taxa: 4.0, valorFixo: null }),
+      itens: itens(1),
+    });
+    expect(r.totalValor).toBe(4);
+  });
+
+  it('regra incompleta (sem taxa) → alerta, valor zerado, nunca chuta (PRD §2)', () => {
+    const r = processarMedico({
+      medico: medicoPrecoProprio({ forma: 'por_guia', base: null, limiar: null, taxa: null, valorFixo: null }),
+      itens: itens(90),
+    });
+    expect(r.totalValor).toBe(0);
+    expect(r.status).toBe('alerta');
+    expect(r.alertas.some((a) => a.includes('por guia'))).toBe(true);
+    expect(r.subtotais).toHaveLength(0);
+  });
+});
 
 describe('processarMedico — modo preco_proprio, forma base_excedente (Story 10.1, Dr. Jansen)', () => {
   it('caso de ouro: base 935,62 + (173−144) × 6,50 = 1123,12', () => {

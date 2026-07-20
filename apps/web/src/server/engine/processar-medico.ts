@@ -123,14 +123,28 @@ export function processarMedico(
     });
   } else if (medico.modoCobranca === 'preco_proprio') {
     // Story 10.1 — GATE do dono (2026-07-20): preço negociado fora da tabela de faixas
-    // (Dr. Jansen, Nelson, Carlos Batista, Jefferson). Contagem e trava de conferência acima
-    // seguem rodando: são diagnóstico, não preço. Regra ausente ou incompleta NUNCA chuta
-    // valor (PRD §2) — vira alerta e o subtotal correspondente fica com valor 0.
+    // (Dr. Ezequiel, Jansen, Nelson, Carlos Batista, Jefferson). Contagem e trava de
+    // conferência acima seguem rodando: são diagnóstico, não preço. Regra ausente ou
+    // incompleta NUNCA chuta valor (PRD §2) — vira alerta e o subtotal fica com valor 0.
     const r = medico.regraPreco;
     if (!r) {
       alertas.push(
         'Modo preço próprio sem regra configurada — valor zerado, corrigir cadastro do médico.',
       );
+    } else if (r.forma === 'por_guia') {
+      if (r.taxa == null) {
+        alertas.push(
+          'Regra de preço "por guia" sem taxa configurada — valor zerado, corrigir cadastro do médico.',
+        );
+      } else {
+        totalValor = guias * r.taxa;
+        subtotais.push({
+          classe: 'PRECO_PROPRIO',
+          guias,
+          valor: totalValor,
+          faixa: `${guias} × R$${r.taxa.toFixed(2)} (por guia)`,
+        });
+      }
     } else if (r.forma === 'base_excedente') {
       if (r.base == null || r.limiar == null || r.taxa == null) {
         alertas.push(
