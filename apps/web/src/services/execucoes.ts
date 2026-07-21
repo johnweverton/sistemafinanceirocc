@@ -1,6 +1,7 @@
 import type {
   Execucao,
   ExecucaoResultado,
+  ExecucaoResultadoContribuicao,
   ExecucaoResumoMedico,
   ExecucaoHistoricoMedicoItem,
   Medico,
@@ -27,14 +28,18 @@ export interface ApoioData {
 
 export const execucoesService = {
   apoio: () => apiFetch<ApoioData>('/execucoes/apoio'),
-  disparar: (competencia: string, selecoes: ExecucaoSelecaoPayload[]) =>
+  /** `empresaId` (Story 10.4c) marca a execução como agregada por empresa — opcional. */
+  disparar: (competencia: string, selecoes: ExecucaoSelecaoPayload[], empresaId?: string) =>
     apiFetch<{ execucaoId: string }>('/execucoes', {
       method: 'POST',
-      body: JSON.stringify({ competencia, selecoes }),
+      body: JSON.stringify({ competencia, selecoes, ...(empresaId ? { empresaId } : {}) }),
     }),
   listar: () => apiFetch<Execucao[]>('/execucoes'),
   detalhe: (id: string) => apiFetch<Execucao>(`/execucoes/${id}`),
   resultados: (id: string) => apiFetch<ExecucaoResultado[]>(`/execucoes/${id}/resultados`),
+  /** Auditoria "qual médico contribuiu quanto" de um resultado agregado (Story 10.4c). */
+  contribuicoes: (resultadoId: string) =>
+    apiFetch<ExecucaoResultadoContribuicao[]>(`/execucoes/resultados/${resultadoId}/contribuicoes`),
   revisarResultado: (execucaoId: string, resultadoId: string, motivo: string) =>
     apiFetch<{ resultado: ExecucaoResultado }>(
       `/execucoes/${execucaoId}/resultados/${resultadoId}/revisar`,
@@ -53,6 +58,7 @@ export const execucaoQueryKeys = {
   execucoes: () => ['execucoes'] as const,
   execucao: (id: string) => ['execucoes', id] as const,
   resultados: (id: string) => ['execucoes', id, 'resultados'] as const,
+  contribuicoes: (resultadoId: string) => ['execucoes', 'resultados', resultadoId, 'contribuicoes'] as const,
   apoio: () => ['execucoes', 'apoio'] as const,
   resumoPorMedico: () => ['execucoes', 'por-medico'] as const,
   historicoMedico: (chave: string) => ['execucoes', 'por-medico', 'historico', chave] as const,

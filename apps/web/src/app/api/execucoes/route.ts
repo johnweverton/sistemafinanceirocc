@@ -25,7 +25,13 @@ export const POST = withErrorHandler(async (req) => {
     throw new ApiError(422, 'Payload inválido', 'VALIDATION', { issues: parsed.error.issues });
   }
 
-  const execucao = await iniciarExecucao(parsed.data.competencia, parsed.data.selecoes, sessao.userId);
+  const execucao = await iniciarExecucao(
+    parsed.data.competencia,
+    parsed.data.selecoes,
+    sessao.userId,
+    undefined,
+    parsed.data.empresaId,
+  );
 
   // Fire-and-forget: dispara o primeiro lote sem aguardar (responde 202 já).
   void dispararPrimeiroLote(execucao.id);

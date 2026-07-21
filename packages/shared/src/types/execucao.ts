@@ -40,6 +40,11 @@ export interface Execucao {
   totalAlerta: number | null;
   totalSemDados: number | null;
   totalGeralValor: number | null;
+  /**
+   * Marca esta execução como agregada por empresa (Story 10.4b) — soma a produção de vários
+   * médicos num único resultado. Null/ausente = execução normal por médico (comportamento atual).
+   */
+  empresaId?: string | null;
 }
 
 export interface ExecucaoResultado {
@@ -69,6 +74,25 @@ export interface ExecucaoResultado {
     mensagemErro: string | null;
     enviadoEm: string;
   }[];
+  /**
+   * Resultado AGREGADO de uma empresa (Story 10.4b) — soma da produção de vários médicos.
+   * Mutuamente exclusivo com `medicoId` (nunca os dois setados), mas ambos podem ser null
+   * (médico legado sem vínculo, identificado por `cpf`).
+   */
+  empresaId?: string | null;
+}
+
+/**
+ * Uma linha de auditoria "qual médico contribuiu quanto" para um resultado AGREGADO por
+ * empresa (Story 10.4b) — não existe para resultados normais por médico.
+ */
+export interface ExecucaoResultadoContribuicao {
+  id: string;
+  execucaoResultadoId: string;
+  medicoId: string;
+  guias: number;
+  valor: number;
+  criadoEm: string;
 }
 
 export interface ExecucaoSelecao {

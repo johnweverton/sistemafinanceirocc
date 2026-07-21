@@ -7,7 +7,7 @@
 //   5. Idempotente: se já existe boleto emitido, retorna 409.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { cobrancaMinimaEmissao } from '@cobranca/shared';
+import { cobrancaMinimaEmissao, type DadosCobranca, type CondicoesCobranca, type ContaEmissora } from '@cobranca/shared';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { getServerEnv } from '@/lib/env';
 import { requireRole } from '@/server/auth/require-role';
@@ -18,6 +18,7 @@ import { calcularVencimento } from '@/server/gateway/vencimento';
 import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { registrarDisparo } from '@/server/repositories/boleto-disparo-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
+import { buscarEmpresa } from '@/server/repositories/empresa-repository';
 import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
@@ -32,8 +33,9 @@ export const maxDuration = 60;
 const emitirLimiter = createRateLimiter('boletos-emitir', { limit: 10, windowMs: 60_000 });
 
 /** Lista os campos MÍNIMOS de cobrança ainda vazios (para mensagem do 422). Endereço e
- *  e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. */
-function camposFaltantesCobranca(cobranca: NonNullable<Awaited<ReturnType<typeof buscarMedico>>>['cobranca']): string[] {
+ *  e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. Mesmo tipo pra médico
+ *  e empresa (Story 10.4c) — `DadosCobranca` é compartilhado entre os dois domínios. */
+function camposFaltantesCobranca(cobranca: DadosCobranca | null): string[] {
   if (!cobranca) return ['dados de cobrança'];
   const req: Record<string, unknown> = {
     pagadorTipo: cobranca.pagadorTipo,
@@ -47,7 +49,7 @@ function camposFaltantesCobranca(cobranca: NonNullable<Awaited<ReturnType<typeof
 
 /** Endereço só é enviado à Cora se TODOS os subcampos estiverem preenchidos — a API trata
  *  o endereço como tudo-ou-nada (se enviado, todo subcampo vira obrigatório). */
-function enderecoCompletoOuAusente(cobranca: NonNullable<Awaited<ReturnType<typeof buscarMedico>>>['cobranca']) {
+function enderecoCompletoOuAusente(cobranca: DadosCobranca | null) {
   if (!cobranca) return undefined;
   const { cep, logradouro, numero, bairro, cidade, uf, complemento } = cobranca;
   if (![cep, logradouro, numero, bairro, cidade, uf].every((v) => v && String(v).trim() !== '')) {
@@ -118,30 +120,51 @@ export const POST = withErrorHandler(async (req) => {
     );
   }
 
-  // 5. Carregar o médico do resultado — o pagador do boleto vem do bloco de cobrança dele
-  //    (não do CPF do resultado, que é só a chave de cruzamento com a API da Carmem).
-  if (!resultadoRow.medico_id) {
-    throw new ApiError(422, 'Resultado sem médico vinculado — não é possível cobrar', 'SEM_MEDICO');
-  }
-  const medico = await buscarMedico(resultadoRow.medico_id);
-  if (!medico) {
-    throw new ApiError(404, 'Médico do resultado não encontrado', 'MEDICO_NAO_ENCONTRADO');
+  // 5. Carregar o PAGADOR do resultado — médico OU empresa (Story 10.4c), nunca os dois
+  //    (CHECK chk_execucao_resultados_nao_ambos_medico_empresa, migration 0029). O pagador do
+  //    boleto vem do bloco de cobrança dele (não do CPF/nome do resultado, que é só a chave de
+  //    cruzamento/exibição).
+  let pagadorNomenclatura: string; // "médico" ou "empresa" — só para as mensagens de erro
+  let cobrancaPagador: DadosCobranca | null;
+  let condicoesPagador: CondicoesCobranca | null;
+  let contaEmissora: ContaEmissora;
+
+  if (resultadoRow.empresa_id) {
+    const empresa = await buscarEmpresa(resultadoRow.empresa_id);
+    if (!empresa) {
+      throw new ApiError(404, 'Empresa do resultado não encontrada', 'EMPRESA_NAO_ENCONTRADA');
+    }
+    pagadorNomenclatura = 'empresa';
+    cobrancaPagador = empresa.cobranca;
+    condicoesPagador = empresa.condicoes;
+    contaEmissora = empresa.contaEmissora;
+  } else if (resultadoRow.medico_id) {
+    const medico = await buscarMedico(resultadoRow.medico_id);
+    if (!medico) {
+      throw new ApiError(404, 'Médico do resultado não encontrado', 'MEDICO_NAO_ENCONTRADO');
+    }
+    pagadorNomenclatura = 'médico';
+    cobrancaPagador = medico.cobranca ?? null;
+    condicoesPagador = medico.condicoes ?? null;
+    contaEmissora = medico.contaEmissora;
+  } else {
+    throw new ApiError(422, 'Resultado sem médico nem empresa vinculado — não é possível cobrar', 'SEM_MEDICO');
   }
 
   // 6. Guard: falhar cedo (aqui, não no Cora) se faltar o mínimo pra emitir (documento+nome).
-  if (!cobrancaMinimaEmissao(medico)) {
+  if (!cobrancaMinimaEmissao({ cobranca: cobrancaPagador })) {
     throw new ApiError(
       422,
-      'Dados de cobrança do médico incompletos — complete antes de emitir o boleto.',
+      `Dados de cobrança d${pagadorNomenclatura === 'empresa' ? 'a' : 'o'} ${pagadorNomenclatura} incompletos — complete antes de emitir o boleto.`,
       'COBRANCA_INCOMPLETA',
-      { faltantes: camposFaltantesCobranca(medico.cobranca) },
+      { faltantes: camposFaltantesCobranca(cobrancaPagador) },
     );
   }
-  const cobranca = medico.cobranca!; // garantido por cobrancaMinimaEmissao
+  const cobranca = cobrancaPagador!; // garantido por cobrancaMinimaEmissao
 
-  // 7. Resolver as condições comerciais efetivas (override do médico ?? default global).
+  // 7. Resolver as condições comerciais efetivas (override do pagador ?? default global).
   const config = await lerConfig();
-  const condicoes = resolverCondicoes(config, medico.condicoes);
+  const condicoes = resolverCondicoes(config, condicoesPagador);
 
   // 8. Idempotência: verificar se já existe boleto emitido.
   const boletoExistente = await buscarBoletoEmitido(body.execucaoResultadoId);
@@ -158,11 +181,10 @@ export const POST = withErrorHandler(async (req) => {
     );
   }
 
-  // 9. Emitir via gateway com o pagador completo, pela CONTA EMISSORA do médico (Story 7.2):
-  //    o beneficiário do boleto é a empresa com quem o médico tem contrato (MC/Cavalcante Viana).
-  //    Débito D-721 (gate 7.2): conta sem credenciais configuradas não pode virar 500 mudo —
-  //    o operador precisa saber O QUE falta (cenário real enquanto a CV não assina o Cora Pro).
-  const contaEmissora = medico.contaEmissora;
+  // 9. Emitir via gateway com o pagador completo, pela CONTA EMISSORA do pagador (Story 7.2/10.4c):
+  //    o beneficiário do boleto é a empresa (MC/Cavalcante Viana) com quem o médico OU a empresa
+  //    do resultado tem contrato. Débito D-721 (gate 7.2): conta sem credenciais configuradas
+  //    não pode virar 500 mudo — o operador precisa saber O QUE falta.
   let gateway, nomeGateway;
   try {
     ({ gateway, nome: nomeGateway } = criarBoletoGateway(contaEmissora));

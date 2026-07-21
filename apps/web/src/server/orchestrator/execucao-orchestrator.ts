@@ -7,15 +7,19 @@
 //
 // As dependências de I/O (banco, rede, encadeamento HTTP) são injetáveis para permitir
 // teste unitário com mocks sem tocar Supabase nem a API da Carmem.
-import type { Execucao, Medico, ItemProducao, ResultadoMedico } from '@cobranca/shared';
+import type { Execucao, Empresa, Medico, ItemProducao, ResultadoMedico, ExecucaoResultado } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
+import { processarEmpresa, type ProducaoMedico } from '@/server/engine/processar-empresa';
 import { buscarItens } from '@/server/integration/fin-api-client';
 import { buscarMedico, listarMedicosPorIds } from '@/server/repositories/medico-repository';
+import { buscarEmpresa } from '@/server/repositories/empresa-repository';
 import {
   criarExecucao,
   buscarExecucao,
   contarResultados,
   gravarResultado,
+  gravarResultadoEmpresa,
+  gravarContribuicoes,
   atualizarProgresso,
   concluirExecucao,
   marcarErro,
@@ -44,6 +48,8 @@ export interface OrchestratorDeps {
   listarSelecoes: (execucaoId: string) => Promise<SelecaoDeps[]>;
   buscarMedico: (id: string) => Promise<Medico | null>;
   listarMedicosPorIds: (ids: string[]) => Promise<Medico[]>;
+  /** Empresa de um resultado agregado (Story 10.4b). */
+  buscarEmpresa: (id: string) => Promise<Empresa | null>;
   criarExecucao: (
     competencia: string,
     iniciadoPor: string,
@@ -54,10 +60,22 @@ export interface OrchestratorDeps {
       producaoConsultasExternaId?: string | null;
       producaoConsultasNome?: string | null;
     }[],
+    empresaId?: string | null,
   ) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
   gravarResultado: (execucaoId: string, medicoId: string | null, r: ResultadoMedico) => Promise<void>;
+  /** Grava o resultado AGREGADO de uma empresa (Story 10.4b) — devolve o id do resultado. */
+  gravarResultadoEmpresa: (
+    execucaoId: string,
+    empresaId: string,
+    r: { nome: string; guias: number; totalValor: number; status: ExecucaoResultado['status']; alertas: string[]; subtotalFaixa: string },
+  ) => Promise<string>;
+  /** Grava a auditoria "qual médico contribuiu quanto" de um resultado agregado (Story 10.4b). */
+  gravarContribuicoes: (
+    execucaoResultadoId: string,
+    contribuicoes: { medicoId: string; guias: number; valor: number }[],
+  ) => Promise<void>;
   atualizarProgresso: (execucaoId: string, progresso: number) => Promise<void>;
   concluirExecucao: (
     execucaoId: string,
@@ -81,10 +99,13 @@ export function depsPadrao(): OrchestratorDeps {
     listarSelecoes,
     buscarMedico,
     listarMedicosPorIds,
+    buscarEmpresa,
     criarExecucao,
     buscarExecucao,
     contarResultados,
     gravarResultado,
+    gravarResultadoEmpresa,
+    gravarContribuicoes,
     atualizarProgresso,
     concluirExecucao,
     marcarErro,
@@ -139,6 +160,8 @@ export async function iniciarExecucao(
   }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
+  /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
+  empresaId?: string | null,
 ): Promise<Execucao> {
   // QA M-1: validação server-side das seleções (defesa em profundidade — a UI já filtra,
   // mas o invariante da 0005 não pode depender só dela). Médico precisa existir, estar
@@ -165,7 +188,27 @@ export async function iniciarExecucao(
     throw new ApiError(422, 'Seleções inválidas para execução', 'SELECAO_INVALIDA', { invalidos });
   }
 
-  return deps.criarExecucao(competencia, usuarioId, selecoes);
+  if (empresaId) {
+    const empresa = await deps.buscarEmpresa(empresaId);
+    if (!empresa) throw new ApiError(422, 'Empresa não encontrada', 'EMPRESA_NAO_ENCONTRADA');
+    if (!empresa.ativo) throw new ApiError(422, 'Empresa inativa', 'EMPRESA_INATIVA');
+
+    // QA 10.4c-1 (mesma defesa em profundidade do QA M-1 acima): a UI só lista médicos vinculados
+    // à empresa selecionada, mas o servidor não pode confiar só nisso — sem esta checagem, um
+    // médico de fora do grupo entraria no agregado da empresa errada (dinheiro atribuído ao
+    // pagador errado).
+    const foraDoGrupo = selecoes
+      .map((s) => porId.get(s.medicoId))
+      .filter((m): m is Medico => m != null && m.empresaGrupoId !== empresaId)
+      .map((m) => m.nome);
+    if (foraDoGrupo.length > 0) {
+      throw new ApiError(422, 'Seleções inválidas para execução por empresa', 'SELECAO_INVALIDA', {
+        invalidos: foraDoGrupo.map((nome) => `${nome}: não vinculado a esta empresa`),
+      });
+    }
+  }
+
+  return deps.criarExecucao(competencia, usuarioId, selecoes, empresaId ?? null);
 }
 
 export interface ResultadoLote {
@@ -185,6 +228,14 @@ export async function processarProximoLote(
 ): Promise<ResultadoLote> {
   const execucao = await deps.buscarExecucao(execucaoId);
   if (!execucao) throw new Error(`Execução ${execucaoId} não encontrada`);
+
+  // Story 10.4b: execução agregada por empresa é um caminho totalmente separado do fluxo
+  // por-médico abaixo — sem lotes/encadeamento (grupos de empresa são pequenos, poucos
+  // médicos), processada e concluída de uma vez só. Zero risco de regressão ao fluxo normal:
+  // esta é a ÚNICA leitura de `execucao.empresaId` em todo o orquestrador.
+  if (execucao.empresaId) {
+    return processarExecucaoEmpresa(execucaoId, execucao.empresaId, deps);
+  }
 
   const total = execucao.totalMedicos ?? 0;
   const jaProcessados = await deps.contarResultados(execucaoId);
@@ -263,6 +314,53 @@ async function processarUmMedico(
       alertas: [`Falha ao buscar dados — tentar novamente. (${String(e)})`],
     });
   }
+}
+
+/**
+ * Processa uma execução AGREGADA por empresa (Story 10.4b) de ponta a ponta, sem lotes: busca
+ * a empresa e a produção de guias cardíacas de cada médico do grupo, roda o cálculo agregado
+ * (Engine puro `processarEmpresa`), grava 1 resultado + N contribuições, e conclui a execução.
+ * Falha de infraestrutura propaga (o chamador — `dispararPrimeiroLote` — converte em 'erro');
+ * diferente do fluxo por-médico, aqui não há "isolar falha de 1 médico e seguir", porque o
+ * resultado é um só para o grupo inteiro.
+ */
+async function processarExecucaoEmpresa(
+  execucaoId: string,
+  empresaId: string,
+  deps: OrchestratorDeps,
+): Promise<ResultadoLote> {
+  const empresa = await deps.buscarEmpresa(empresaId);
+  if (!empresa) throw new Error(`Empresa ${empresaId} não encontrada`);
+
+  const selecoes = await deps.listarSelecoes(execucaoId);
+  const medicos: ProducaoMedico[] = [];
+  for (const selecao of selecoes) {
+    const medico = await deps.buscarMedico(selecao.medicoId);
+    const itens = await deps.buscarItens(selecao.producaoExternaId);
+    medicos.push({ medicoId: selecao.medicoId, itens, especialidade: medico?.especialidade });
+  }
+
+  const resultado = processarEmpresa({ regraPreco: empresa.regraPreco, medicos });
+
+  const resultadoId = await deps.gravarResultadoEmpresa(execucaoId, empresa.id, {
+    nome: empresa.nome,
+    guias: resultado.guias,
+    totalValor: resultado.totalValor,
+    status: resultado.status,
+    alertas: resultado.alertas,
+    subtotalFaixa: resultado.subtotalFaixa,
+  });
+  await deps.gravarContribuicoes(resultadoId, resultado.contribuicoes);
+
+  await deps.atualizarProgresso(execucaoId, 100);
+  await deps.concluirExecucao(execucaoId, {
+    totalOk: resultado.status === 'ok' ? 1 : 0,
+    totalAlerta: resultado.status === 'alerta' ? 1 : 0,
+    totalSemDados: 0,
+    totalGeralValor: resultado.totalValor,
+  });
+
+  return { concluido: true, processadosNoLote: selecoes.length, progresso: 100 };
 }
 
 async function finalizar(execucaoId: string, deps: OrchestratorDeps): Promise<void> {

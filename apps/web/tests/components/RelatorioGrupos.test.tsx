@@ -8,12 +8,17 @@ import { ApiClientError } from '../../src/lib/api-client';
 
 const mockResultados = vi.fn();
 const mockRevisarResultado = vi.fn();
+const mockContribuicoes = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     resultados: (...a: unknown[]) => mockResultados(...a),
     revisarResultado: (...a: unknown[]) => mockRevisarResultado(...a),
+    contribuicoes: (...a: unknown[]) => mockContribuicoes(...a),
   },
-  execucaoQueryKeys: { resultados: (id: string) => ['execucoes', id, 'resultados'] },
+  execucaoQueryKeys: {
+    resultados: (id: string) => ['execucoes', id, 'resultados'],
+    contribuicoes: (id: string) => ['execucoes', 'resultados', id, 'contribuicoes'],
+  },
 }));
 
 const mockEmitir = vi.fn();
@@ -223,5 +228,60 @@ describe('RelatorioGrupos — revisão de alerta', () => {
 
     expect(screen.getByRole('button', { name: 'Revisar e liberar' })).toBeInTheDocument();
     expect(mockRevisarResultado).not.toHaveBeenCalled();
+  });
+});
+
+describe('RelatorioGrupos — contribuições por médico de resultado agregado (Story 10.4c)', () => {
+  const resultadoEmpresa = {
+    ...resultadoOk,
+    id: 'r-empresa-1',
+    medicoId: null,
+    empresaId: 'empresa-1',
+    nome: 'MEDISA',
+    cpf: '',
+    totalValor: 2955.01,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoEmpresa]);
+    mockListarMedicos.mockResolvedValue([
+      { id: 'm1', nome: 'Dr. Alfa' },
+      { id: 'm2', nome: 'Dr. Beta' },
+    ]);
+    mockContribuicoes.mockResolvedValue([
+      { id: 'c1', execucaoResultadoId: 'r-empresa-1', medicoId: 'm1', guias: 150, valor: 961.5, criadoEm: '2026-06-01T00:00:00Z' },
+      { id: 'c2', execucaoResultadoId: 'r-empresa-1', medicoId: 'm2', guias: 311, valor: 1993.51, criadoEm: '2026-06-01T00:00:00Z' },
+    ]);
+  });
+
+  it('não busca contribuições até o operador abrir o detalhe (busca sob demanda)', async () => {
+    renderComProviders();
+    await screen.findByText('MEDISA');
+
+    expect(screen.getByText('Ver contribuições por médico')).toBeInTheDocument();
+    expect(mockContribuicoes).not.toHaveBeenCalled();
+  });
+
+  it('ao abrir, busca e exibe as contribuições com o nome do médico resolvido', async () => {
+    renderComProviders();
+    await screen.findByText('MEDISA');
+
+    fireEvent.click(screen.getByText('Ver contribuições por médico'));
+
+    await waitFor(() => expect(mockContribuicoes).toHaveBeenCalledWith('r-empresa-1'));
+    await screen.findByText('Dr. Alfa');
+    expect(screen.getByText('Dr. Beta')).toBeInTheDocument();
+    expect(screen.getByText('150')).toBeInTheDocument();
+    expect(screen.getByText('R$ 961,50')).toBeInTheDocument();
+    expect(screen.getByText('R$ 1.993,51')).toBeInTheDocument();
+  });
+
+  it('não mostra o detalhe de contribuições para resultado de médico individual (sem empresaId)', async () => {
+    mockResultados.mockResolvedValue([resultadoOk]);
+    renderComProviders();
+    await screen.findByText('Dr. Teste');
+
+    expect(screen.queryByText('Ver contribuições por médico')).not.toBeInTheDocument();
   });
 });

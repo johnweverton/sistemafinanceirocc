@@ -1,10 +1,27 @@
-import type { Execucao, Medico, ItemProducao, ResultadoMedico } from '@cobranca/shared';
+import type { Execucao, Empresa, Medico, ItemProducao, ResultadoMedico, ExecucaoResultado } from '@cobranca/shared';
 import type { OrchestratorDeps } from '../../../src/server/orchestrator/execucao-orchestrator';
+
+export interface ResultadoEmpresaFake {
+  id: string;
+  empresaId: string;
+  nome: string;
+  guias: number;
+  totalValor: number;
+  status: ExecucaoResultado['status'];
+  alertas: string[];
+  subtotalFaixa: string;
+}
 
 export interface FakeState {
   execucoes: Map<string, Execucao>;
   resultados: Map<string, { medicoId: string | null; r: ResultadoMedico }[]>;
   medicos: Map<string, Medico>;
+  /** Empresas cadastradas (Story 10.4a/b) — para execuções agregadas. */
+  empresas: Map<string, Empresa>;
+  /** Resultado agregado por execução (Story 10.4b) — 1 por execução de empresa. */
+  resultadosEmpresa: Map<string, ResultadoEmpresaFake>;
+  /** Contribuições por médico, chaveadas pelo id do resultado agregado (Story 10.4b). */
+  contribuicoes: Map<string, { medicoId: string; guias: number; valor: number }[]>;
   selecoes: {
     execucaoId: string;
     medicoId: string;
@@ -20,19 +37,37 @@ export interface FakeState {
   producoesComFalha: Set<string>;
 }
 
-export function novoEstado(medicos: Medico[]): FakeState {
+export function novoEstado(medicos: Medico[], empresas: Empresa[] = []): FakeState {
   const medicosMap = new Map<string, Medico>();
   for (const m of medicos) medicosMap.set(m.id, m);
-  
+  const empresasMap = new Map<string, Empresa>();
+  for (const e of empresas) empresasMap.set(e.id, e);
+
   return {
     execucoes: new Map(),
     resultados: new Map(),
     medicos: medicosMap,
+    empresas: empresasMap,
+    resultadosEmpresa: new Map(),
+    contribuicoes: new Map(),
     selecoes: [],
     itensPorProducao: {},
     guiasAnterioresPorMedicoId: {},
     chamadasProximoLote: 0,
     producoesComFalha: new Set(),
+  };
+}
+
+export function empresaFake(over: Partial<Empresa> & { id: string; nome: string }): Empresa {
+  return {
+    cobranca: null,
+    contaEmissora: 'mc',
+    condicoes: null,
+    regraPreco: null,
+    ativo: true,
+    createdAt: '2026-06-01T00:00:00Z',
+    updatedAt: '2026-06-01T00:00:00Z',
+    ...over,
   };
 }
 
@@ -77,7 +112,8 @@ export function fakeDeps(
     buscarMedico: async (id) => state.medicos.get(id) ?? null,
     listarMedicosPorIds: async (ids) =>
       ids.map((id) => state.medicos.get(id)).filter((m): m is Medico => m != null),
-    criarExecucao: async (competencia, iniciadoPor, selecoes) => {
+    buscarEmpresa: async (id) => state.empresas.get(id) ?? null,
+    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId) => {
       const id = `exec-${proximoId++}`;
       const exec: Execucao = {
         id,
@@ -92,21 +128,30 @@ export function fakeDeps(
         totalAlerta: null,
         totalSemDados: null,
         totalGeralValor: null,
+        empresaId: empresaId ?? null,
       };
       state.execucoes.set(id, exec);
       state.resultados.set(id, []);
-      
+
       // Store selecoes for this execution
       for (const s of selecoes) {
         state.selecoes.push({ ...s, execucaoId: id });
       }
-      
+
       return exec;
     },
     buscarExecucao: async (id) => state.execucoes.get(id) ?? null,
     contarResultados: async (id) => state.resultados.get(id)?.length ?? 0,
     gravarResultado: async (id, medicoId, r) => {
       state.resultados.get(id)!.push({ medicoId, r });
+    },
+    gravarResultadoEmpresa: async (execucaoId, empresaId, r) => {
+      const resultadoId = `resultado-empresa-${proximoId++}`;
+      state.resultadosEmpresa.set(execucaoId, { id: resultadoId, empresaId, ...r });
+      return resultadoId;
+    },
+    gravarContribuicoes: async (resultadoId, contribuicoes) => {
+      state.contribuicoes.set(resultadoId, contribuicoes);
     },
     atualizarProgresso: async (id, progresso) => {
       const e = state.execucoes.get(id)!;

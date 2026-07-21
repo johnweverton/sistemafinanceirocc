@@ -17,6 +17,7 @@ import {
 } from './contagem-producao';
 import { checar } from './conferencia';
 import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO, VALOR_CONSULTA_PEDIATRIA_PADRAO } from './precos';
+import { aplicarRegraPreco } from './regra-preco';
 
 /**
  * Processa um médico de ponta a ponta (PRD §8.3):
@@ -124,56 +125,13 @@ export function processarMedico(
   } else if (medico.modoCobranca === 'preco_proprio') {
     // Story 10.1 — GATE do dono (2026-07-20): preço negociado fora da tabela de faixas
     // (Dr. Ezequiel, Jansen, Nelson, Carlos Batista, Jefferson). Contagem e trava de
-    // conferência acima seguem rodando: são diagnóstico, não preço. Regra ausente ou
-    // incompleta NUNCA chuta valor (PRD §2) — vira alerta e o subtotal fica com valor 0.
-    const r = medico.regraPreco;
-    if (!r) {
-      alertas.push(
-        'Modo preço próprio sem regra configurada — valor zerado, corrigir cadastro do médico.',
-      );
-    } else if (r.forma === 'por_guia') {
-      if (r.taxa == null) {
-        alertas.push(
-          'Regra de preço "por guia" sem taxa configurada — valor zerado, corrigir cadastro do médico.',
-        );
-      } else {
-        totalValor = guias * r.taxa;
-        subtotais.push({
-          classe: 'PRECO_PROPRIO',
-          guias,
-          valor: totalValor,
-          faixa: `${guias} × R$${r.taxa.toFixed(2)} (por guia)`,
-        });
-      }
-    } else if (r.forma === 'base_excedente') {
-      if (r.base == null || r.limiar == null || r.taxa == null) {
-        alertas.push(
-          'Regra de preço "base + excedente" incompleta (falta base, limiar ou taxa) — valor zerado, corrigir cadastro.',
-        );
-      } else {
-        const excedente = Math.max(0, guias - r.limiar);
-        totalValor = r.base + excedente * r.taxa;
-        subtotais.push({
-          classe: 'PRECO_PROPRIO',
-          guias,
-          valor: totalValor,
-          faixa: `base R$${r.base.toFixed(2)} + ${excedente} × R$${r.taxa.toFixed(2)} (limiar ${r.limiar} guias)`,
-        });
-      }
-    } else if (r.forma === 'fixo') {
-      if (r.valorFixo == null) {
-        alertas.push(
-          'Regra de preço "fixo" sem valor configurado — valor zerado, corrigir cadastro do médico.',
-        );
-      } else {
-        totalValor = r.valorFixo;
-        subtotais.push({
-          classe: 'PRECO_PROPRIO',
-          guias,
-          valor: totalValor,
-          faixa: `valor fixo R$${r.valorFixo.toFixed(2)} (independe de guias)`,
-        });
-      }
+    // conferência acima seguem rodando: são diagnóstico, não preço. `aplicarRegraPreco`
+    // (extraída na Story 10.4b) nunca chuta valor — regra ausente/incompleta vira alerta.
+    const resultado = aplicarRegraPreco(medico.regraPreco, guias);
+    totalValor = resultado.valor;
+    alertas.push(...resultado.alertas);
+    if (resultado.alertas.length === 0) {
+      subtotais.push({ classe: 'PRECO_PROPRIO', guias, valor: resultado.valor, faixa: resultado.subtotalFaixa });
     }
   } else {
     for (const classe of classesDoMedico(medico)) {

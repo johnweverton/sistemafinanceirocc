@@ -12,6 +12,8 @@ export const dispararExecucaoSchema = z.object({
       producaoConsultasNome: z.string().min(1).nullable().optional(),
     })
   ).min(1, 'Selecione pelo menos um médico'),
+  // Marca a execução como agregada por empresa (Story 10.4c) — opcional.
+  empresaId: z.string().uuid().optional(),
 });
 
 export type DispararExecucaoInput = z.infer<typeof dispararExecucaoSchema>;

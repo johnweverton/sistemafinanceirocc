@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { ApiClientError } from '@/lib/api-client';
 import { execucoesService, execucaoQueryKeys, type ExecucaoSelecaoPayload } from '@/services/execucoes';
+import { empresasService, empresaQueryKeys } from '@/services/empresas';
 import { ProgressoExecucao } from './ProgressoExecucao';
 import { RelatorioGrupos } from './RelatorioGrupos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
@@ -21,7 +22,7 @@ function normalizeName(name: string) {
     .trim();
 }
 
-type Modo = 'competencia' | 'medico';
+type Modo = 'competencia' | 'medico' | 'empresa';
 
 export function NovaExecucao() {
   const qc = useQueryClient();
@@ -42,10 +43,21 @@ export function NovaExecucao() {
   const [producaoId, setProducaoId] = useState('');
   const [consultaProducaoId, setConsultaProducaoId] = useState('');
 
+  // Seleção do modo "Por empresa" (Story 10.4c) — empresa + produção de guias cardíacas de
+  // cada médico vinculado, sempre manual (mesmo padrão da 10.2 — nunca auto-match).
+  const [empresaId, setEmpresaId] = useState('');
+  const [empresaProducaoSelecoes, setEmpresaProducaoSelecoes] = useState<Record<string, string>>({});
+
   const { data: apoio, isLoading: isApoioLoading } = useQuery({
     queryKey: execucaoQueryKeys.apoio(),
     queryFn: execucoesService.apoio,
   });
+
+  const { data: empresas, isLoading: isEmpresasLoading } = useQuery({
+    queryKey: empresaQueryKeys.empresas(),
+    queryFn: () => empresasService.listar(),
+  });
+  const empresasAtivas = (empresas ?? []).filter((e) => e.ativo);
 
   const { medicos, producoes } = useMemo(() => {
     if (!apoio) return { medicos: [], producoes: [] };
@@ -128,8 +140,8 @@ export function NovaExecucao() {
   }, [validMedicos, producoes, manualSelections, consultaSelections, competencia]);
 
   const disparar = useMutation({
-    mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[] }) =>
-      execucoesService.disparar(vars.competencia, vars.selecoes),
+    mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[]; empresaId?: string }) =>
+      execucoesService.disparar(vars.competencia, vars.selecoes, vars.empresaId),
     onSuccess: ({ execucaoId }) => {
       setExecucaoId(execucaoId);
       setErro(null);
@@ -153,6 +165,23 @@ export function NovaExecucao() {
   const producaoSelecionada = producoesDoMedicoSelecionado.find(p => p.id === producaoId);
   const canDispararMedico = Boolean(medicoId && producaoSelecionada && competenciaValida) && !disparar.isPending;
 
+  // Story 10.4c: médicos vinculados à empresa selecionada (Story 10.4a — empresaGrupoId).
+  const medicosDaEmpresa = validMedicos.filter((m) => m.empresaGrupoId === empresaId);
+  const empresaSelecoesPayload: ExecucaoSelecaoPayload[] = medicosDaEmpresa
+    .map((m) => {
+      const producoesDoMedico = producoes.filter((p) => p.clienteId === m.externalId);
+      const prodId = empresaProducaoSelecoes[m.id];
+      const prod = prodId ? producoesDoMedico.find((p) => p.id === prodId) : undefined;
+      return prod ? { medicoId: m.id, producaoExternaId: prod.id, producaoNome: prod.nome } : null;
+    })
+    .filter((s): s is ExecucaoSelecaoPayload => s != null);
+  const canDispararEmpresa =
+    Boolean(empresaId) &&
+    empresaSelecoesPayload.length > 0 &&
+    empresaSelecoesPayload.length === medicosDaEmpresa.length &&
+    competenciaValida &&
+    !disparar.isPending;
+
   return (
     <section className="space-y-6">
       <div className="page-header">
@@ -172,9 +201,113 @@ export function NovaExecucao() {
         >
           Por médico
         </button>
+        <button
+          onClick={() => setModo('empresa')}
+          className={`btn btn-sm ${modo === 'empresa' ? 'btn-primary' : 'btn-ghost'}`}
+        >
+          Por empresa
+        </button>
       </div>
 
-      {modo === 'medico' ? (
+      {modo === 'empresa' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <div className="card p-6 space-y-4">
+              <div>
+                <label htmlFor="empresa-select" className="field-label mb-1.5">
+                  Empresa
+                </label>
+                <select
+                  id="empresa-select"
+                  className="input"
+                  value={empresaId}
+                  onChange={(e) => {
+                    setEmpresaId(e.target.value);
+                    setEmpresaProducaoSelecoes({});
+                  }}
+                  disabled={isEmpresasLoading}
+                >
+                  <option value="">-- Selecione uma empresa --</option>
+                  {empresasAtivas.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.nome}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-cc-muted">
+                  Agrupa a produção de guias cardíacas (ou análoga) dos médicos vinculados a esta empresa (Story 10.4) num único boleto.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="competencia-empresa" className="field-label mb-1.5">
+                  Competência
+                </label>
+                <input
+                  id="competencia-empresa"
+                  value={competencia}
+                  onChange={(e) => setCompetencia(e.target.value)}
+                  placeholder="2026-06"
+                  className="input font-mono"
+                  maxLength={7}
+                />
+                <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM (Ex: 2026-05)</p>
+              </div>
+
+              {erro && <p role="alert" className="alert-error">{erro}</p>}
+
+              <button
+                onClick={() =>
+                  disparar.mutate({ competencia, selecoes: empresaSelecoesPayload, empresaId })
+                }
+                disabled={!canDispararEmpresa}
+                className="btn-primary w-full py-2.5"
+              >
+                {disparar.isPending ? 'Disparando...' : `Processar empresa (${empresaSelecoesPayload.length}/${medicosDaEmpresa.length} médicos)`}
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2">
+            <div className="card p-6">
+              <h2 className="text-lg font-semibold mb-4">Médicos vinculados</h2>
+              {!empresaId ? (
+                <p className="text-sm text-cc-muted italic">Selecione uma empresa para ver os médicos vinculados.</p>
+              ) : medicosDaEmpresa.length === 0 ? (
+                <p className="text-sm text-cc-muted italic">Nenhum médico vinculado a esta empresa (cadastro em Médicos → Empresa de agrupamento).</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                  {medicosDaEmpresa.map((m) => {
+                    const producoesDoMedico = producoes.filter((p) => p.clienteId === m.externalId);
+                    return (
+                      <div key={m.id} className="p-2 bg-cc-surface rounded border border-cc-border space-y-1.5">
+                        <span className="text-sm font-medium">{m.nome}</span>
+                        <select
+                          className="input text-xs py-1 h-auto w-full"
+                          value={empresaProducaoSelecoes[m.id] ?? ''}
+                          onChange={(e) =>
+                            setEmpresaProducaoSelecoes((prev) => ({ ...prev, [m.id]: e.target.value }))
+                          }
+                          aria-label={`Produção de guias cardíacas de ${m.nome}`}
+                        >
+                          <option value="">
+                            {producoesDoMedico.length === 0 ? '-- Sem produções na origem --' : '-- Selecione a produção --'}
+                          </option>
+                          {producoesDoMedico.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : modo === 'medico' ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
             <div className="card p-6 space-y-4">

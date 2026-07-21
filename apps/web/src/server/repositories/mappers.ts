@@ -9,6 +9,7 @@ import type {
   RegraPreco,
   Execucao,
   ExecucaoResultado,
+  ExecucaoResultadoContribuicao,
   ExecucaoResumoMedico,
   ExecucaoHistoricoMedicoItem,
   Subtotal,
@@ -439,6 +440,8 @@ export interface ExecucaoRow {
   total_alerta: number | null;
   total_sem_dados: number | null;
   total_geral_valor: number | null;
+  /** Execução agregada por empresa (migration 0029) — opcional em bancos sem a migration. */
+  empresa_id?: string | null;
 }
 
 export function toExecucao(row: ExecucaoRow): Execucao {
@@ -455,6 +458,7 @@ export function toExecucao(row: ExecucaoRow): Execucao {
     totalAlerta: row.total_alerta,
     totalSemDados: row.total_sem_dados,
     totalGeralValor: row.total_geral_valor,
+    empresaId: row.empresa_id ?? null,
   };
 }
 
@@ -515,6 +519,8 @@ export interface ExecucaoResultadoRow {
   revisado_por: string | null;
   revisado_em: string | null;
   motivo_revisao: string | null;
+  /** Resultado agregado por empresa (migration 0029) — opcional em bancos sem a migration. */
+  empresa_id?: string | null;
 }
 
 export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultado {
@@ -536,6 +542,29 @@ export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultad
     revisadoPor: row.revisado_por ?? null,
     revisadoEm: row.revisado_em ?? null,
     motivoRevisao: row.motivo_revisao ?? null,
+    empresaId: row.empresa_id ?? null,
+  };
+}
+
+export interface ExecucaoResultadoContribuicaoRow {
+  id: string;
+  execucao_resultado_id: string;
+  medico_id: string;
+  guias: number;
+  valor: number;
+  criado_em: string;
+}
+
+export function toExecucaoResultadoContribuicao(
+  row: ExecucaoResultadoContribuicaoRow,
+): ExecucaoResultadoContribuicao {
+  return {
+    id: row.id,
+    execucaoResultadoId: row.execucao_resultado_id,
+    medicoId: row.medico_id,
+    guias: row.guias,
+    valor: row.valor,
+    criadoEm: row.criado_em,
   };
 }
 

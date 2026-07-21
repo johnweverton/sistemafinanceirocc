@@ -5,6 +5,7 @@
 import type {
   Execucao,
   ExecucaoResultado,
+  ExecucaoResultadoContribuicao,
   ExecucaoResumoMedico,
   ExecucaoHistoricoMedicoItem,
   ResultadoMedico,
@@ -15,11 +16,13 @@ import { resolverEmailPorId, resolverEmailsPorIds } from '@/server/auth/resolver
 import {
   toExecucao,
   toExecucaoResultado,
+  toExecucaoResultadoContribuicao,
   toExecucaoSelecao,
   toExecucaoResumoMedico,
   toExecucaoHistoricoMedicoItem,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
+  type ExecucaoResultadoContribuicaoRow,
   type ExecucaoSelecaoRow,
   type ExecucaoResumoMedicoRow,
   type ExecucaoHistoricoMedicoItemRow,
@@ -35,6 +38,8 @@ export async function criarExecucao(
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
   }[],
+  /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
+  empresaId?: string | null,
 ): Promise<Execucao> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -45,6 +50,7 @@ export async function criarExecucao(
       status: 'processando',
       progresso: 0,
       total_medicos: selecoes.length,
+      empresa_id: empresaId ?? null,
     })
     .select('*')
     .single();
@@ -159,6 +165,77 @@ export async function gravarResultado(
     alertas: r.alertas,
   });
   if (error) throw new ApiError(500, 'Falha ao gravar resultado', 'DB_ERROR', { error: error.message });
+}
+
+/**
+ * Grava o resultado AGREGADO de uma empresa (Story 10.4b) — `medico_id` fica null, `empresa_id`
+ * setado (CHECK `chk_execucao_resultados_nao_ambos_medico_empresa`, migration 0029). Devolve o
+ * id do resultado criado para gravar as contribuições por médico em seguida.
+ */
+export async function gravarResultadoEmpresa(
+  execucaoId: string,
+  empresaId: string,
+  r: { nome: string; guias: number; totalValor: number; status: ExecucaoResultado['status']; alertas: string[]; subtotalFaixa: string },
+): Promise<string> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .insert({
+      execucao_id: execucaoId,
+      empresa_id: empresaId,
+      medico_id: null,
+      cpf: '',
+      nome: r.nome,
+      procedimentos: null,
+      cirurgias: null,
+      guias: r.guias,
+      guias_consolidado: null,
+      subtotais:
+        r.status === 'ok'
+          ? [{ classe: 'PRECO_PROPRIO', guias: r.guias, valor: r.totalValor, faixa: r.subtotalFaixa }]
+          : [],
+      total_valor: r.totalValor,
+      status: r.status,
+      alertas: r.alertas,
+    })
+    .select('id')
+    .single();
+  if (error) throw new ApiError(500, 'Falha ao gravar resultado da empresa', 'DB_ERROR', { error: error.message });
+  return (data as { id: string }).id;
+}
+
+/** Grava a auditoria "qual médico contribuiu quanto" de um resultado agregado (Story 10.4b). */
+export async function gravarContribuicoes(
+  execucaoResultadoId: string,
+  contribuicoes: { medicoId: string; guias: number; valor: number }[],
+): Promise<void> {
+  if (contribuicoes.length === 0) return;
+  const db = getSupabaseAdmin();
+  const { error } = await db.from('execucao_resultado_contribuicoes').insert(
+    contribuicoes.map((c) => ({
+      execucao_resultado_id: execucaoResultadoId,
+      medico_id: c.medicoId,
+      guias: c.guias,
+      valor: c.valor,
+    })),
+  );
+  if (error) {
+    throw new ApiError(500, 'Resultado da empresa gravado mas contribuições falharam — verificar', 'CONTRIBUICOES_ERROR', {
+      error: error.message,
+    });
+  }
+}
+
+/** Contribuições por médico de um resultado agregado (Story 10.4b) — auditoria/detalhe na UI. */
+export async function listarContribuicoes(execucaoResultadoId: string): Promise<ExecucaoResultadoContribuicao[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultado_contribuicoes')
+    .select('*')
+    .eq('execucao_resultado_id', execucaoResultadoId)
+    .order('guias', { ascending: false });
+  if (error) throw new ApiError(500, 'Falha ao buscar contribuições', 'DB_ERROR', { error: error.message });
+  return (data as ExecucaoResultadoContribuicaoRow[]).map(toExecucaoResultadoContribuicao);
 }
 
 /**

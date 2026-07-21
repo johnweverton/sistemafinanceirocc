@@ -1,0 +1,35 @@
+# QA Gate — Story 10.4b (Execução e resultado agregado por empresa) — iteração 1 (final)
+storyId: "10.4b"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-20"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [QA-104C-1 (medium, encontrada durante a revisão conjunta de 10.4b/10.4c, corrigida na mesma iteração)]
+notes: >
+  AC 1-5 verificados. `aplicarRegraPreco` extraída de `processar-medico.ts` sem alterar
+  comportamento — confirmado rodando `processar-medico-preco-proprio.test.ts` (11/11) sem
+  editar o teste, prova de regressão zero na extração. `processarEmpresa` (novo, Engine puro
+  sem I/O) soma guias por médico via `contarGuiasProducao` reaproveitada sem mudança, aplica
+  a regra UMA vez sobre o total; forma diferente de `por_guia` vira alerta explícito (nunca
+  chuta rateio entre médicos — PRD §2), coerente com o MVP acordado no `*validate-story-draft`.
+  Migration 0029: idempotente (`add column if not exists`, `drop constraint if exists` antes
+  de `add constraint`, `create table if not exists`), RLS no padrão `has_profile()` das
+  tabelas irmãs. Desvio consciente do CHECK documentado (XOR estrito → `not (a and b)`) foi
+  verificado como correto: `execucao_resultados.medico_id` é nullable desde a 0011 para
+  médico legado sem vínculo (identificado por `cpf`), que quebraria um XOR estrito. Orquestrador:
+  `processarExecucaoEmpresa` é um caminho totalmente separado do lote por-médico, ativado por
+  um único `if (execucao.empresaId)` — risco de regressão ao fluxo normal é mínimo por
+  construção (o campo só é lido nesse ponto). Teste de integração fim a fim confirma o golden
+  case da conferência original (150+150+161=461 guias × R$6,41 = R$2.955,01) E que nenhum
+  resultado por-médico foi gravado nessa execução (regressão explícita). Suíte completa:
+  624 testes (era 610 antes da 10.4b) — zero regressões. typecheck/lint/build verdes.
+  Achado real (QA-104C-1, ver gate 10.4c): falta de validação server-side de que os médicos
+  selecionados pertencem à empresa era um gap que atravessava 10.4b (schema/orquestrador) e
+  10.4c (UI/rota) — corrigido em `iniciarExecucao` (fundação desta story) e documentado no
+  gate da 10.4c, que é onde o fluxo de disparo é exercitado ponta a ponta pela UI.
+  Anti-self-review: mesma sessão do @dev (personas distintas) — revisão ativa incluindo release
+  de dependências entre as duas sub-stories, não confirmação passiva.
+issues: []

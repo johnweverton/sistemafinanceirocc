@@ -8,7 +8,7 @@ import {
   iniciarExecucao,
   processarProximoLote,
 } from '../../../src/server/orchestrator/execucao-orchestrator';
-import { novoEstado, medicoFake, fakeDeps, type FakeState } from './fake-deps';
+import { novoEstado, medicoFake, empresaFake, fakeDeps, type FakeState } from './fake-deps';
 import { procedimentosDraA } from '../engine/fixtures';
 
 // Médico OK: poucos procedimentos, modo bate, todos com valor → status ok.
@@ -181,5 +181,122 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
       valor: 30,
     });
     expect(resultado.status).toBe('ok');
+  });
+});
+
+describe('Integração — execução agregada por empresa (Story 10.4b)', () => {
+  function guiasCardiacas(n: number, prefixo: string): ItemProducao[] {
+    return Array.from({ length: n }, (_, i) => ({
+      data: '2026-06-01',
+      pacienteNome: `${prefixo}-${i}`,
+      atendimentoExternoId: null,
+      codigoProcedimento: '30715040',
+      descricaoProcedimento: 'Guia cardíaca',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    }));
+  }
+
+  it('3 médicos + empresa MEDISA (por_guia R$6,41): 1 resultado agregado + 3 contribuições, fim a fim', async () => {
+    const empresa = empresaFake({
+      id: 'emp-1',
+      nome: 'MEDISA',
+      regraPreco: { forma: 'por_guia', base: null, limiar: null, taxa: 6.41, valorFixo: null },
+    });
+    const medicos = [
+      medicoFake({ id: 'm1', cpf: '11111111111', nome: 'Dr. 1', empresaGrupoId: 'emp-1' }),
+      medicoFake({ id: 'm2', cpf: '22222222222', nome: 'Dr. 2', empresaGrupoId: 'emp-1' }),
+      medicoFake({ id: 'm3', cpf: '33333333333', nome: 'Dr. 3', empresaGrupoId: 'emp-1' }),
+    ];
+    const state = novoEstado(medicos, [empresa]);
+    state.itensPorProducao['p1'] = guiasCardiacas(150, 'm1');
+    state.itensPorProducao['p2'] = guiasCardiacas(150, 'm2');
+    state.itensPorProducao['p3'] = guiasCardiacas(161, 'm3');
+
+    const selecoes = [
+      { medicoId: 'm1', producaoExternaId: 'p1', producaoNome: 'Guias Cardíacas Junho' },
+      { medicoId: 'm2', producaoExternaId: 'p2', producaoNome: 'Guias Cardíacas Junho' },
+      { medicoId: 'm3', producaoExternaId: 'p3', producaoNome: 'Guias Cardíacas Junho' },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps, 'emp-1');
+    expect(exec.empresaId).toBe('emp-1');
+
+    await processarProximoLote(exec.id, deps);
+
+    const final = state.execucoes.get(exec.id)!;
+    expect(final.status).toBe('concluido');
+    expect(final.progresso).toBe(100);
+    expect(final.totalGeralValor).toBeCloseTo(2955.01, 2);
+    expect(final.totalOk).toBe(1); // 1 resultado agregado, não 3
+
+    const resultado = state.resultadosEmpresa.get(exec.id)!;
+    expect(resultado.guias).toBe(461);
+    expect(resultado.totalValor).toBeCloseTo(2955.01, 2);
+    expect(resultado.status).toBe('ok');
+    expect(resultado.nome).toBe('MEDISA');
+
+    const contribuicoes = state.contribuicoes.get(resultado.id)!;
+    expect(contribuicoes).toHaveLength(3);
+    const soma = contribuicoes.reduce((acc, c) => acc + c.valor, 0);
+    expect(soma).toBeCloseTo(2955.01, 2);
+
+    // Regressão: nenhum resultado por-médico foi gravado (fluxo normal não foi tocado).
+    expect(state.resultados.get(exec.id)).toEqual([]);
+  });
+
+  it('empresa com regra ausente → resultado agregado em alerta, valor 0, sem contribuições', async () => {
+    const empresa = empresaFake({ id: 'emp-2', nome: 'MEDISA Sem Regra', regraPreco: null });
+    const medicos = [medicoFake({ id: 'm1', cpf: '44444444444', nome: 'Dr. 1', empresaGrupoId: 'emp-2' })];
+    const state = novoEstado(medicos, [empresa]);
+    state.itensPorProducao['p1'] = guiasCardiacas(50, 'm1');
+
+    const selecoes = [{ medicoId: 'm1', producaoExternaId: 'p1', producaoNome: 'Guias Cardíacas Junho' }];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps, 'emp-2');
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultadosEmpresa.get(exec.id)!;
+    expect(resultado.status).toBe('alerta');
+    expect(resultado.totalValor).toBe(0);
+    expect(state.contribuicoes.get(resultado.id)).toEqual([]);
+
+    const final = state.execucoes.get(exec.id)!;
+    expect(final.totalAlerta).toBe(1);
+    expect(final.status).toBe('concluido'); // conclui mesmo em alerta — não é falha de infra
+  });
+
+  // QA 10.4c-1: defesa em profundidade — a UI só lista médicos vinculados à empresa, mas o
+  // servidor não pode confiar só nisso (mesmo princípio do QA M-1 já existente no orquestrador).
+  it('rejeita a execução se algum médico selecionado não pertence à empresa (empresaGrupoId diferente)', async () => {
+    const empresa = empresaFake({
+      id: 'emp-3',
+      nome: 'MEDISA',
+      regraPreco: { forma: 'por_guia', base: null, limiar: null, taxa: 6.41, valorFixo: null },
+    });
+    const medicos = [
+      medicoFake({ id: 'm1', cpf: '55555555555', nome: 'Dr. Do Grupo', empresaGrupoId: 'emp-3' }),
+      medicoFake({ id: 'm2', cpf: '66666666666', nome: 'Dr. Avulso', empresaGrupoId: null }),
+    ];
+    const state = novoEstado(medicos, [empresa]);
+    state.itensPorProducao['p1'] = guiasCardiacas(10, 'm1');
+    state.itensPorProducao['p2'] = guiasCardiacas(10, 'm2');
+
+    const selecoes = [
+      { medicoId: 'm1', producaoExternaId: 'p1', producaoNome: 'Guias' },
+      { medicoId: 'm2', producaoExternaId: 'p2', producaoNome: 'Guias' },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    await expect(iniciarExecucao('2026-06', selecoes, 'u', deps, 'emp-3')).rejects.toMatchObject({
+      code: 'SELECAO_INVALIDA',
+    });
+    // Nenhuma execução foi criada — falhou antes de persistir nada.
+    expect(state.execucoes.size).toBe(0);
   });
 });

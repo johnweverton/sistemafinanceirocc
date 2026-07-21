@@ -1,0 +1,50 @@
+# QA Gate — Story 10.4c (Emissão de boleto por empresa) — iteração 1 (final)
+storyId: "10.4c"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-20"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [QA-104C-1 (medium, corrigida na mesma iteração)]
+notes: >
+  AC 1-5 verificados. Rota de emissão (`/api/boletos/emitir`): branch `empresa_id` vs
+  `medico_id` isola corretamente qual bloco de cobrança/conta emissora/condições é usado,
+  cai em `SEM_MEDICO` (422) se nenhum dos dois estiver setado, e `EMPRESA_NAO_ENCONTRADA`
+  (404) se a FK estiver quebrada. `camposFaltantesCobranca`/`enderecoCompletoOuAusente`
+  generalizadas para `DadosCobranca | null` (tipo já compartilhado entre Médico e Empresa) —
+  sem duplicação. Idempotência (409) e feature flag (403) verificadas como aplicando-se
+  identicamente aos dois caminhos (mesmo código, nenhum branch novo nesses steps). UI: modo
+  "Por empresa" em `NovaExecucao.tsx` só habilita o disparo quando TODOS os médicos vinculados
+  (via `empresaGrupoId`, 10.4a) têm produção selecionada — sem rateio implícito por omissão.
+  `ContribuicoesEmpresa` em `RelatorioGrupos.tsx` busca sob demanda (só ao abrir o `<details>`),
+  evitando N chamadas desnecessárias na lista de resultados. Regressão (AC4): nenhuma linha do
+  caminho `medico_id` mudou de comportamento — confirmado por teste dedicado e pela suíte
+  completa (625 testes, era 610 antes da 10.4c/610 durante 10.4b — 15 novos entre 10.4c e a
+  correção QA-104C-1, zero quebras). typecheck/lint/`next build` (44/44 páginas) verdes.
+  Anti-self-review: mesma sessão do @dev (personas distintas) — revisão ativa encontrou um
+  gap real de autorização (ver issue abaixo), não confirmação passiva do próprio trabalho.
+issues:
+  - id: QA-104C-1
+    severity: medium
+    category: security
+    description: >
+      `iniciarExecucao` (orquestrador, usado pela rota `POST /api/execucoes` que a UI da
+      10.4c chama) validava que os médicos selecionados existem/estão ativos/configurados
+      (defesa QA M-1 pré-existente), mas NÃO validava que, quando `empresaId` é informado,
+      cada médico selecionado de fato pertence àquela empresa (`medico.empresaGrupoId ===
+      empresaId`). A UI (`NovaExecucao.tsx`) já filtra os médicos exibidos por
+      `empresaGrupoId`, mas isso é só client-side — o mesmo princípio de "defesa em
+      profundidade" documentado no comentário QA M-1 logo acima no código se aplicava aqui e
+      não estava coberto. Um payload manipulado (ou um bug futuro na UI) poderia incluir um
+      médico de fora do grupo na execução agregada, atribuindo a produção dele à empresa
+      errada — erro de dinheiro, não só de exibição.
+    recommendation: >
+      CORRIGIDA na iteração 1 — `iniciarExecucao` (`execucao-orchestrator.ts`) agora rejeita
+      com `422 SELECAO_INVALIDA` se algum médico selecionado tiver `empresaGrupoId` diferente
+      da empresa informada, na mesma seção que já valida existência/ativo/configuração/vínculo.
+      Teste dedicado adicionado em `execucao-integracao.test.ts` ("rejeita a execução se algum
+      médico selecionado não pertence à empresa"); os dois testes de integração pré-existentes
+      da 10.4b foram ajustados para setar `empresaGrupoId` nos fixtures de médico (antes
+      indefinido, o que deixava a lacuna sem cobertura).

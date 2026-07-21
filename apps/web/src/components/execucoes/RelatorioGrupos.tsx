@@ -28,6 +28,60 @@ function classeLabel(classe: string): string {
   }
 }
 
+/**
+ * Auditoria "qual médico contribuiu quanto" de um resultado AGREGADO por empresa (Story 10.4c).
+ * Busca sob demanda (só quando o `<details>` é aberto) — a lista de resultados normalmente não
+ * precisa desse detalhe, só quando o operador quer conferir/disputar.
+ */
+function ContribuicoesEmpresa({ resultadoId }: { resultadoId: string }) {
+  const [aberto, setAberto] = useState(false);
+  const { data: medicos } = useQuery({
+    queryKey: medicoQueryKeys.medicos(),
+    queryFn: medicosService.listar,
+  });
+  const nomePorMedico = useMemo(() => new Map((medicos ?? []).map((m) => [m.id, m.nome])), [medicos]);
+
+  const { data: contribuicoes, isLoading } = useQuery({
+    queryKey: execucaoQueryKeys.contribuicoes(resultadoId),
+    queryFn: () => execucoesService.contribuicoes(resultadoId),
+    enabled: aberto,
+  });
+
+  return (
+    <details className="mt-2" onToggle={(e) => setAberto((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-xs font-medium text-cc-accent hover:underline">
+        Ver contribuições por médico
+      </summary>
+      <div className="mt-2 overflow-x-auto">
+        {isLoading ? (
+          <p className="text-xs text-cc-muted">Carregando…</p>
+        ) : !contribuicoes || contribuicoes.length === 0 ? (
+          <p className="text-xs text-cc-muted">Nenhuma contribuição registrada.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-cc-muted">
+                <th className="py-1 font-medium">Médico</th>
+                <th className="py-1 font-medium text-right">Guias</th>
+                <th className="py-1 font-medium text-right">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contribuicoes.map((c) => (
+                <tr key={c.id} className="border-t border-cc-hairline">
+                  <td className="py-1 text-cc-ink-2">{nomePorMedico.get(c.medicoId) ?? c.medicoId}</td>
+                  <td className="py-1 text-right tabular text-cc-ink-2">{c.guias}</td>
+                  <td className="py-1 text-right tabular text-cc-ink">{brl(c.valor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function normalizarBusca(s: string): string {
   return s
     .normalize('NFD')
@@ -351,6 +405,8 @@ function Grupo({
                 </table>
                 </div>
               )}
+              {/* Story 10.4c: resultado AGREGADO por empresa — auditoria "qual médico contribuiu quanto". */}
+              {!resumido && r.empresaId && <ContribuicoesEmpresa resultadoId={r.id} />}
               {mostrarAlertas &&
                 r.alertas.map((a, i) => (
                   <p key={i} className="mt-1.5 flex gap-1.5 text-xs text-cc-warning">
