@@ -1,0 +1,29 @@
+# QA Gate — Story 10.1 (Regras de preço próprias por médico/rubrica) — iteração 1 (final)
+storyId: "10.1"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-20"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: []
+notes: >
+  AC 1-6 verificados. `modoCobranca: 'preco_proprio'` como novo valor do union (não um bloco
+  independente) resolve de graça o risco "override × percentual no mesmo médico" listado na
+  própria story — `modoCobranca` é coluna única, os três modos são mutuamente exclusivos por
+  construção. Três formas (`por_guia`, `base_excedente`, `fixo`) cobertas com casos de ouro
+  batendo os valores reais da conferência (Ezequiel 90×4,00=360,00; Jansen
+  935,62+(173-144)×6,50=1123,12; Nelson/Carlos Batista 591,22; Jefferson 130,53). Alertas
+  nunca chutam valor (regra ausente/incompleta → subtotal 0, status alerta) — verificado em
+  todas as 3 formas. Migrations 0025/0027 conferidas: CHECKs com `drop constraint if exists`
+  antes de `add constraint` (idempotentes, diferente do achado QA-104A-1 da 10.4a). Regressão:
+  suíte completa do modo faixas (`precos`, `contagem`, `regressao-prd12`) passa sem edição;
+  teste dedicado prova que uma `regraPreco` "órfã" (presente mas `modoCobranca` ≠
+  `preco_proprio`) produz resultado byte-idêntico ao médico sem o campo. Histórico de auditoria
+  (`medicos_historico`) cobre os campos novos automaticamente via diff genérico — verificado.
+  typecheck (web+shared)/lint verdes; suíte completa e `next build` confirmados nas iterações
+  seguintes do épico (10.2/10.3/10.4a), sem regressão introduzida por elas nesta story.
+  Anti-self-review: revisão em separado desta sessão, com leitura crítica do código de
+  produção (não confirmação passiva dos próprios testes).
+issues: []

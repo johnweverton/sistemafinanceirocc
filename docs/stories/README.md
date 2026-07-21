@@ -363,22 +363,26 @@ confirmada pelo dono); estas stories cobrem só o que sobrou.
 
 | # | Story | Divergência | Status | Foco |
 |---|-------|-------------|--------|------|
-| 10.1 | Regras de preço próprias por médico/rubrica | D2 | **InReview** — implementado 2026-07-20, aguardando @qa (Nefrologia saiu para a 10.4) | override base+excedente+limiar / fixo no engine + cadastro (Jansen, Nelson, Carlos Batista, Jefferson) |
-| 10.2 | Pediatria: consultas × valor unitário | D3 | **InReview** — implementado 2026-07-20, aguardando @qa | somar consultas ambulatoriais (produção separada na API) às guias, sem dupla contagem |
-| 10.3 | Outros hospitais > 80 guias: cobrar o teto | D4 | **InReview** — implementado 2026-07-20, aguardando @qa | regra na tabela `precos` + revisão consciente do PRD §11 |
+| 10.1 | Regras de preço próprias por médico/rubrica | D2 | **Done** — @qa PASS 2026-07-20, sem achados (Nefrologia saiu para a 10.4) | override base+excedente+limiar / fixo no engine + cadastro (Jansen, Nelson, Carlos Batista, Jefferson) |
+| 10.2 | Pediatria: consultas × valor unitário | D3 | **Done** — @qa PASS 2026-07-20, sem achados | somar consultas ambulatoriais (produção separada na API) às guias, sem dupla contagem |
+| 10.3 | Outros hospitais > 80 guias: cobrar o teto | D4 | **Done** — @qa PASS 2026-07-20, sem achados | regra na tabela `precos` + revisão consciente do PRD §11 |
 | 10.4 | Emissão por empresa (MEDISA) — **referência de arquitetura**, ver sub-stories abaixo | D2 (Nefrologia/guias cardíacas) | Split em sub-stories | novo agregado "empresa emissora" (reaproveita `RegraPreco`/`DadosCobranca`); complexidade revisada para L |
 | 10.4a | Cadastro de empresas e vínculo médico↔empresa | D2 | **Done** — @qa PASS 2026-07-20 (1 achado corrigido na iteração) | tabela `empresas`, `medicos.empresa_grupo_id`, CRUD reaproveitando padrões de médico |
 | 10.4b | Execução e resultado agregado por empresa | D2 | **Ready** — @po GO condicional 2026-07-20 (AC 3 ajustado: `base_excedente`/`fixo` na empresa viram alerta, não rateio chutado) — depende da 10.4a | extração de `aplicarRegraPreco`, `execucao_resultado_contribuicoes`, orquestrador |
 | 10.4c | Emissão de boleto por empresa | D2 | **Ready** — @po GO 2026-07-20 — depende da 10.4b | branch na rota de emissão, UI de nova execução por empresa |
 
-10.1–10.3 estão `InReview` (implementadas 2026-07-20, aguardando @qa). A 10.4 nasceu durante a GATE
-da 10.1: Nefrologia/guias cardíacas não são override de médico, são produção de vários médicos
-agrupada e faturada para a empresa MEDISA. O @architect concluiu o desenho em 2026-07-20 — reaproveita
+10.1–10.3 e 10.4a estão `Done` (gates em `docs/qa/gates/`). A 10.4 nasceu durante a GATE da 10.1:
+Nefrologia/guias cardíacas não são override de médico, são produção de vários médicos agrupada e
+faturada para a empresa MEDISA. O @architect concluiu o desenho em 2026-07-20 — reaproveita
 `RegraPreco`/`DadosCobranca`/`ContaEmissora` já existentes, complexidade real é L (não XL) — e o @sm
-quebrou o trabalho em 3 sub-stories sequenciais (10.4a → 10.4b → 10.4c). As três passaram pelo @po
-(`*validate-story-draft`, GO) e estão `Ready` para @dev, respeitando a ordem de dependência (10.4a
-primeiro — 10.4b e 10.4c dependem dela). D6 (conta emissora por médico varia por mês) é validação de
-cadastro, não código — tratada fora do épico.
+quebrou o trabalho em 3 sub-stories sequenciais (10.4a → 10.4b → 10.4c). 10.4b/10.4c estão `Ready`
+para @dev, respeitando a ordem de dependência (10.4a concluída, entrega a base necessária). D6
+(conta emissora por médico varia por mês) é validação de cadastro, não código — tratada fora do
+épico.
+
+**Próximo passo:** Story 10.4b (execução e resultado agregado por empresa) — extrai
+`aplicarRegraPreco` do Engine, novas tabelas `execucoes.empresa_id`/`execucao_resultados.empresa_id`/
+`execucao_resultado_contribuicoes`, orquestrador com branch de agregação.
 
 ## Fora de escopo
 - D1 (>180 guias) e D5 (reajuste dez/2025): resolvidos, sem trabalho.

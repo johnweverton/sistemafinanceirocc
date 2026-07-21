@@ -1,0 +1,30 @@
+# QA Gate — Story 10.3 (Outros hospitais > 80 guias: cobrar o teto) — iteração 1 (final)
+storyId: "10.3"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-20"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: []
+notes: >
+  AC 1-5 verificados. Mudança mínima confirmada: só dados (`TABELA_PRECO_PADRAO.OUTROS_HOSPITAIS`
+  ganhou `excedente: { tipo: 'fixo', valorFixo: 367.36 }`), zero código novo no Engine —
+  `valorDaFaixa` já suportava a forma `fixo` (usada por IMOBILIZACOES). Migration 0024
+  (`insert into precos`) sem guarda de idempotência (não é `on conflict do nothing`), mas
+  confirmado como o MESMO padrão já usado pela migration 0003 original (seed de `precos`) —
+  não é uma regressão introduzida por esta story, é característica herdada de como seeds
+  funcionam neste projeto (diferente do gap de CHECK constraints achado na 10.4a, que quebrava
+  um padrão de idempotência estabelecido). Tabela `precos` confirmada como não lida em runtime
+  (`TABELA_PRECO_PADRAO` é a fonte de verdade real) — sem risco funcional mesmo se a seed for
+  duplicada. Regressão consciente do PRD §11 documentada corretamente: o teste que antes
+  fixava "FORA DA TABELA" foi atualizado com nota explícita no Change Log (não foi um
+  "conserto silencioso" de teste). Descoberta e corrigida durante a implementação: o teste real
+  estava em `precos.test.ts`, não em `regressao-prd12.test.ts` como a estimativa original da
+  story previa — documentado no Dev Notes. Casos de ouro batem a evidência real (Anderson
+  Ferreira: 310,06 Hapvida não-cred + 367,36 outros hospitais = 677,42). Hapvida/Imobilizações
+  confirmados inalterados. typecheck (web+shared)/lint verdes.
+  Anti-self-review: revisão em separado desta sessão, com leitura crítica do código de
+  produção (não confirmação passiva dos próprios testes).
+issues: []

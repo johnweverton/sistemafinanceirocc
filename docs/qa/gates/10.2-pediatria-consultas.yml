@@ -1,0 +1,32 @@
+# QA Gate — Story 10.2 (Pediatria: consultas ambulatoriais × valor unitário) — iteração 1 (final)
+storyId: "10.2"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-20"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: []
+notes: >
+  AC 1-7 verificados. Componente ADITIVO (soma ao valor de guias já calculado por qualquer
+  modo de cobrança) confirmado no código — roda depois do if/else de modo, incondicional se
+  `isPediatra` e `itensConsultas` presente. Anti-dupla-contagem por construção: `itensConsultas`
+  é sempre um array separado de `itens`, nunca reaproveitado por `contarGuiasProducao`; teste
+  dedicado prova que o subtotal de guias é idêntico com/sem consultas. Edge case relevante
+  coberto: pediatra sem guias hospitalares mas com consultas não cai em `sem_dados` (perderia
+  o valor) — devolve resultado só com o componente de consultas, status `ok`. Elegibilidade
+  (`isPediatra`) confirmada — médico não-pediatra com `itensConsultas` presente é ignorado.
+  Valor unitário injetável (parâmetro do Engine, não hardcoded) e lido de `config_cobranca`
+  uma única vez por LOTE no orquestrador (`processarProximoLote`), não por médico — sem N+1.
+  Migration 0026 (`add column if not exists`) sem CHECKs — idempotente, sem o gap de 0028.
+  Modelo de dados: segunda referência de produção OPCIONAL na MESMA linha de
+  `execucao_selecoes` preserva o UNIQUE(execucao_id, medico_id) existente sem relaxá-lo —
+  decisão de arquitetura verificada como correta e menos arriscada que permitir múltiplas
+  seleções por médico. UI: seletor de produção de consultas sempre MANUAL (nunca auto-match),
+  decisão deliberada para não arriscar heurística em cálculo de dinheiro — confirmada nos dois
+  modos de `NovaExecucao` (por competência e por médico). typecheck (web+shared)/lint verdes;
+  teste de integração fim a fim no orquestrador (guias + consultas separadas → soma correta).
+  Anti-self-review: revisão em separado desta sessão, com leitura crítica do código de
+  produção (não confirmação passiva dos próprios testes).
+issues: []
