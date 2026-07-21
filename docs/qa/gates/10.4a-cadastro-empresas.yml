@@ -1,0 +1,46 @@
+# QA Gate — Story 10.4a (Cadastro de empresas e vínculo médico↔empresa) — iteração 1 (final)
+storyId: "10.4a"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-07-20"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [QA-104A-1 (medium, corrigida na iteração)]
+notes: >
+  AC 1-8 verificados. Reuso confirmado sem duplicação: `dadosCobrancaSchema`/
+  `condicoesCobrancaSchema`/`regraPrecoSchema`/`contaEmissoraSchema` importados diretamente
+  em `empresa-schema.ts`; `toDadosCobranca`/`toCondicoes`/`toRegraPreco` generalizados em
+  `mappers.ts` (parâmetro passou de `MedicoRow` para interfaces estruturais
+  `CobrancaRowFields`/`CondicoesRowFields`/`RegraPrecoRowFields`) e reaproveitados por
+  `toEmpresa` sem reimplementar a conversão. `empresa_grupo_id` confirmado ortogonal a
+  `conta_emissora` (comentários de coluna e Dev Notes deixam a distinção explícita).
+  Auth: GET aberto a admin/colaborador/financeiro, escrita (POST/PATCH/DELETE) restrita a
+  admin — mesmo padrão de `/api/medicos`. Histórico obrigatório (motivo + diff só dos
+  campos alterados) espelha `medico-repository.ts`. Exclusão bloqueada por médicos
+  vinculados (`POSSUI_MEDICOS_VINCULADOS`) antes de tocar o banco — defesa em profundidade
+  reforçada pela própria FK (sem `on delete cascade`, Postgres rejeitaria a exclusão mesmo
+  se o guard de aplicação falhasse). Regressão: suíte completa + `next build` verdes;
+  `MedicoForm` ganhou `useQuery` (lista de empresas) sem quebrar o fluxo de combinação/
+  contaEmissora/regraPreco já existente — teste de componente ajustado com
+  `QueryClientProvider` + mock do novo service. typecheck (web+shared)/lint verdes; 586
+  testes web (71 arquivos) + 20 shared; `next build` gera `/empresas` e
+  `/empresas/[id]/historico`. Anti-self-review: mesma sessão do @dev (personas distintas,
+  mesmo padrão dos Épicos 7/8/9) — revisão ativa, não confirmação passiva.
+issues:
+  - id: QA-104A-1
+    severity: medium
+    category: code
+    description: >
+      Migration 0028 usava `alter table empresas add constraint ...` para as 4 CHECKs
+      (pagador_tipo, conta_emissora, regra_preco_forma, regra_preco_coerente) sem o
+      `drop constraint if exists` prévio que todas as migrations anteriores do projeto
+      usam (0018, 0025, 0027) para permitir re-execução segura. Como a `create table`
+      já é `if not exists` (no-op numa segunda aplicação), uma reaplicação acidental da
+      migration falharia nas 4 linhas de `add constraint` com "constraint already
+      exists", quebrando o padrão de idempotência documentado no próprio arquivo.
+    recommendation: >
+      CORRIGIDA na iteração 1 — adicionado `alter table empresas drop constraint if
+      exists <nome>;` antes de cada uma das 4 `add constraint`, replicando exatamente o
+      padrão de 0025/0027.

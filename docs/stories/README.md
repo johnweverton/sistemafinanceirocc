@@ -367,7 +367,7 @@ confirmada pelo dono); estas stories cobrem só o que sobrou.
 | 10.2 | Pediatria: consultas × valor unitário | D3 | **InReview** — implementado 2026-07-20, aguardando @qa | somar consultas ambulatoriais (produção separada na API) às guias, sem dupla contagem |
 | 10.3 | Outros hospitais > 80 guias: cobrar o teto | D4 | **InReview** — implementado 2026-07-20, aguardando @qa | regra na tabela `precos` + revisão consciente do PRD §11 |
 | 10.4 | Emissão por empresa (MEDISA) — **referência de arquitetura**, ver sub-stories abaixo | D2 (Nefrologia/guias cardíacas) | Split em sub-stories | novo agregado "empresa emissora" (reaproveita `RegraPreco`/`DadosCobranca`); complexidade revisada para L |
-| 10.4a | Cadastro de empresas e vínculo médico↔empresa | D2 | **InReview** — implementado 2026-07-20, aguardando @qa | tabela `empresas`, `medicos.empresa_grupo_id`, CRUD reaproveitando padrões de médico |
+| 10.4a | Cadastro de empresas e vínculo médico↔empresa | D2 | **Done** — @qa PASS 2026-07-20 (1 achado corrigido na iteração) | tabela `empresas`, `medicos.empresa_grupo_id`, CRUD reaproveitando padrões de médico |
 | 10.4b | Execução e resultado agregado por empresa | D2 | **Ready** — @po GO condicional 2026-07-20 (AC 3 ajustado: `base_excedente`/`fixo` na empresa viram alerta, não rateio chutado) — depende da 10.4a | extração de `aplicarRegraPreco`, `execucao_resultado_contribuicoes`, orquestrador |
 | 10.4c | Emissão de boleto por empresa | D2 | **Ready** — @po GO 2026-07-20 — depende da 10.4b | branch na rota de emissão, UI de nova execução por empresa |
 

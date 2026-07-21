@@ -59,17 +59,24 @@ create table if not exists empresas (
   updated_at timestamptz not null default now()
 );
 
+-- CHECKs nomeadas com drop+add para idempotência em re-execução (mesmo padrão de 0018/0025/0027) —
+-- `create table if not exists` faz no-op se a tabela já existe, mas `add constraint` sem o drop
+-- prévio falharia com "constraint already exists" numa segunda aplicação da migration.
+alter table empresas drop constraint if exists chk_empresas_pagador_tipo;
 alter table empresas add constraint chk_empresas_pagador_tipo
   check (pagador_tipo is null or pagador_tipo in ('PF', 'PJ'));
 
+alter table empresas drop constraint if exists chk_empresas_conta_emissora;
 alter table empresas add constraint chk_empresas_conta_emissora
   check (conta_emissora in ('mc', 'cavalcante_viana'));
 
+alter table empresas drop constraint if exists chk_empresas_regra_preco_forma;
 alter table empresas add constraint chk_empresas_regra_preco_forma
   check (regra_preco_forma is null or regra_preco_forma in ('por_guia', 'base_excedente', 'fixo'));
 
 -- Coerência por forma — mesma regra da 0027, mas SEM o gate de modo_cobranca (empresa não tem
 -- faixa_guias/percentual_producao; se a forma está setada, os campos dela são obrigatórios).
+alter table empresas drop constraint if exists chk_empresas_regra_preco_coerente;
 alter table empresas add constraint chk_empresas_regra_preco_coerente
   check (
     regra_preco_forma is null
