@@ -2,6 +2,7 @@
 export * from './types/conta-emissora';
 export * from './types/medico';
 export * from './types/empresa';
+export * from './types/cliente-contabilidade';
 export * from './types/integracao';
 export * from './types/execucao';
 export * from './types/preco';

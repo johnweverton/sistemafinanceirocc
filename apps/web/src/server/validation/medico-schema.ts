@@ -8,7 +8,8 @@ export const modoCobrancaSchema = z.enum(['faixa_guias', 'percentual_producao', 
 // Regra de preço própria (Story 10.1) — GATE do dono 2026-07-20. Nefrologia/guias cardíacas
 // saíram para a Story 10.4 (agrupamento por empresa). Ezequiel (por_guia, R$4,00) reincluído
 // no automático em 2026-07-20 — confirmado estável, deixou de ser caso manual.
-export const regraPrecoFormaSchema = z.enum(['por_guia', 'base_excedente', 'fixo']);
+// 'faixa_faturamento' (Story 11.1, Epic 11) — clientes de contabilidade no Simples Nacional.
+export const regraPrecoFormaSchema = z.enum(['por_guia', 'base_excedente', 'fixo', 'faixa_faturamento']);
 // Conta emissora (Story 7.1, QA-711-2) — espelha a CHECK da migration 0021.
 export const contaEmissoraSchema = z.enum(CONTAS_EMISSORAS_VALIDAS);
 export const pagadorTipoSchema = z.enum(['PF', 'PJ']);
@@ -33,9 +34,13 @@ export const regraPrecoSchema = z
   .object({
     forma: regraPrecoFormaSchema,
     base: z.number().min(0).nullable().optional().default(null),
-    limiar: z.number().int().min(0).nullable().optional().default(null),
+    // 'limiar' é reaproveitado como corte de guias (base_excedente) OU corte de faturamento em
+    // R$ (faixa_faturamento, Story 11.1) — por isso não é .int() (faturamento tem centavos).
+    limiar: z.number().min(0).nullable().optional().default(null),
     taxa: z.number().min(0).nullable().optional().default(null),
     valorFixo: z.number().min(0).nullable().optional().default(null),
+    valorAbaixoLimiar: z.number().min(0).nullable().optional().default(null),
+    valorAcimaLimiar: z.number().min(0).nullable().optional().default(null),
   })
   .refine((r) => r.forma !== 'por_guia' || r.taxa != null, {
     message: 'Forma "por guia" exige taxa',
@@ -45,10 +50,26 @@ export const regraPrecoSchema = z
     message: 'Forma "base + excedente" exige base, limiar e taxa',
     path: ['forma'],
   })
+  // limiar de guias precisa ser inteiro (coluna integer em medicos/empresas); faixa_faturamento
+  // usa o mesmo campo para um corte em R$ (coluna numeric em clientes_contabilidade), que aceita
+  // centavos — por isso o .int() é condicional à forma, não no tipo base do campo.
+  .refine((r) => r.forma !== 'base_excedente' || r.limiar == null || Number.isInteger(r.limiar), {
+    message: 'Forma "base + excedente" exige limiar inteiro (quantidade de guias)',
+    path: ['limiar'],
+  })
   .refine((r) => r.forma !== 'fixo' || r.valorFixo != null, {
     message: 'Forma "fixo" exige valor fixo',
     path: ['valorFixo'],
-  });
+  })
+  .refine(
+    (r) =>
+      r.forma !== 'faixa_faturamento' ||
+      (r.limiar != null && r.valorAbaixoLimiar != null && r.valorAcimaLimiar != null),
+    {
+      message: 'Forma "faixa de faturamento" exige limiar, valor abaixo e valor acima do limiar',
+      path: ['forma'],
+    },
+  );
 type RegraPrecoInput = z.infer<typeof regraPrecoSchema>;
 
 function regraPrecoCoerente(d: { modoCobranca?: ModoCobrancaInput; regraPreco?: RegraPrecoInput | null }): boolean {

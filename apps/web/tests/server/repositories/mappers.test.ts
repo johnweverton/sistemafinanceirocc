@@ -7,12 +7,15 @@ import {
   toExecucaoSelecaoRow,
   toEmpresa,
   empresaUpdateToRow,
+  toClienteContabilidade,
+  clienteContabilidadeUpdateToRow,
   toBoleto,
   toBoletoEvento,
   type ExecucaoRow,
   type ExecucaoResultadoRow,
   type ExecucaoSelecaoRow,
   type EmpresaRow,
+  type ClienteContabilidadeRow,
   type BoletoRow,
   type BoletoEventoRow,
 } from '../../../src/server/repositories/mappers';
@@ -186,6 +189,102 @@ describe('toEmpresa / empresaUpdateToRow (Story 10.4a)', () => {
     const row = empresaUpdateToRow({ regraPreco: null });
     expect(row.regra_preco_forma).toBeNull();
     expect(row.regra_preco_taxa).toBeNull();
+  });
+});
+
+describe('toClienteContabilidade / clienteContabilidadeUpdateToRow (Story 11.1)', () => {
+  const rowBase: ClienteContabilidadeRow = {
+    id: 'cc-1',
+    nome: 'Padaria Bom Pão Ltda',
+    regime_tributario: 'simples_nacional',
+    modo_cobranca: 'faixa_faturamento',
+    pagador_tipo: 'PJ',
+    pagador_documento: '12345678000199',
+    pagador_nome: 'Padaria Bom Pão Ltda',
+    email: null,
+    whatsapp: null,
+    cep: null,
+    logradouro: null,
+    numero: null,
+    complemento: null,
+    bairro: null,
+    cidade: null,
+    uf: null,
+    conta_emissora: 'mc',
+    dias_vencimento: null,
+    multa_percent: null,
+    juros_mes_percent: null,
+    desconto_percent: null,
+    desconto_dias: null,
+    regra_preco_forma: 'faixa_faturamento',
+    regra_preco_base: null,
+    regra_preco_limiar: 5000,
+    regra_preco_taxa: null,
+    regra_preco_valor_fixo: null,
+    regra_preco_valor_abaixo_limiar: 250,
+    regra_preco_valor_acima_limiar: 480.56,
+    adicional_ativo: false,
+    adicional_valor: null,
+    adicional_intervalo_meses: null,
+    adicional_competencia_base: null,
+    ativo: true,
+    created_at: '2026-07-24T00:00:00Z',
+    updated_at: '2026-07-24T00:00:00Z',
+  };
+
+  it('toClienteContabilidade mapeia regra faixa_faturamento e adicional', () => {
+    const c = toClienteContabilidade(rowBase);
+    expect(c.nome).toBe('Padaria Bom Pão Ltda');
+    expect(c.regimeTributario).toBe('simples_nacional');
+    expect(c.modoCobranca).toBe('faixa_faturamento');
+    expect(c.regraPreco).toMatchObject({
+      forma: 'faixa_faturamento',
+      limiar: 5000,
+      valorAbaixoLimiar: 250,
+      valorAcimaLimiar: 480.56,
+    });
+    expect(c.adicionalAtivo).toBe(false);
+  });
+
+  it('toClienteContabilidade mapeia adicional semestral ativo', () => {
+    const c = toClienteContabilidade({
+      ...rowBase,
+      adicional_ativo: true,
+      adicional_valor: 15000,
+      adicional_intervalo_meses: 6,
+      adicional_competencia_base: '2026-01',
+    });
+    expect(c.adicionalAtivo).toBe(true);
+    expect(c.adicionalValor).toBe(15000);
+    expect(c.adicionalIntervaloMeses).toBe(6);
+    expect(c.adicionalCompetenciaBase).toBe('2026-01');
+  });
+
+  it('clienteContabilidadeUpdateToRow achata regra faixa_faturamento', () => {
+    const row = clienteContabilidadeUpdateToRow({
+      nome: 'Padaria Bom Pão Ltda',
+      regimeTributario: 'simples_nacional',
+      modoCobranca: 'faixa_faturamento',
+      regraPreco: {
+        forma: 'faixa_faturamento',
+        base: null,
+        limiar: 5000,
+        taxa: null,
+        valorFixo: null,
+        valorAbaixoLimiar: 250,
+        valorAcimaLimiar: 480.56,
+      },
+    });
+    expect(row.regra_preco_forma).toBe('faixa_faturamento');
+    expect(row.regra_preco_valor_abaixo_limiar).toBe(250);
+    expect(row.regra_preco_valor_acima_limiar).toBe(480.56);
+  });
+
+  it('clienteContabilidadeUpdateToRow com regraPreco null limpa as colunas (incl. faixa)', () => {
+    const row = clienteContabilidadeUpdateToRow({ regraPreco: null });
+    expect(row.regra_preco_forma).toBeNull();
+    expect(row.regra_preco_valor_abaixo_limiar).toBeNull();
+    expect(row.regra_preco_valor_acima_limiar).toBeNull();
   });
 });
 

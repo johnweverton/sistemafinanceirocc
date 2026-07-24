@@ -1,0 +1,55 @@
+// Domínio: Cliente Contábil — clientes do escritório de contabilidade que pagam honorários
+// mensais (Story 11.1, Epic 11). Ver docs/architecture/feature-emissao-contabilidade.md (D1) para
+// o desenho do @architect: propositalmente NÃO reaproveita a tabela `empresas` (Épico 10.4, que é
+// especificamente sobre agregação de produção médica) — só os tipos de domínio de cobrança
+// (DadosCobranca, CondicoesCobranca, ContaEmissora) e o mecanismo de regra de preço (RegraPreco).
+import type { ContaEmissora } from './conta-emissora';
+import type { DadosCobranca, CondicoesCobranca, RegraPreco } from './medico';
+
+/** Regime tributário do cliente — metadado informativo/relatório. Quem decide a regra de cálculo
+ *  é `modoCobranca`, não o regime (existem exceções fixas dentro do Simples Nacional). */
+export type RegimeTributario = 'simples_nacional' | 'lucro_presumido';
+
+/**
+ * Modo de cobrança do cliente contábil (GATE do dono, 2026-07-22/24):
+ *   - 'faixa_faturamento': valor do boleto varia por faturamento mensal informado (Story 11.2) —
+ *     usa `regraPreco` forma 'faixa_faturamento'. Maioria (~80%) do Simples Nacional.
+ *   - 'fixo': valor mensal fixo por contrato, reajustado 1x/ano (manual) — usa `regraPreco` forma
+ *     'fixo'. Lucro Presumido + exceções do Simples Nacional (mesma regra de reajuste para ambos).
+ */
+export type ModoCobrancaContabilidade = 'faixa_faturamento' | 'fixo';
+
+export interface ClienteContabilidade {
+  id: string;
+  nome: string;
+  regimeTributario: RegimeTributario;
+  modoCobranca: ModoCobrancaContabilidade;
+  /** Regra de preço (Story 10.1/10.4b, forma estendida em 11.1). Obrigatória para calcular o
+   *  boleto mensal, mas pode ficar null durante o cadastro (mesmo padrão de `Empresa.regraPreco`). */
+  regraPreco: RegraPreco | null;
+  cobranca: DadosCobranca | null;
+  contaEmissora: ContaEmissora;
+  condicoes: CondicoesCobranca | null;
+  /** Adicional semestral avulso (ex.: Vital Soluções, R$15.000 a cada 6 meses — Story 11.4). */
+  adicionalAtivo: boolean;
+  /** Valor do boleto avulso. Obrigatório quando `adicionalAtivo`. */
+  adicionalValor: number | null;
+  /** Intervalo em meses do ciclo (ex.: 6). Obrigatório quando `adicionalAtivo`. */
+  adicionalIntervaloMeses: number | null;
+  /** Primeira competência do ciclo, formato 'YYYY-MM'. Obrigatório quando `adicionalAtivo`. */
+  adicionalCompetenciaBase: string | null;
+  ativo: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClienteContabilidadeHistorico {
+  id: string;
+  clienteContabilidadeId: string;
+  campoAlterado: string;
+  valorAnterior: string | null;
+  valorNovo: string | null;
+  alteradoPor: string;
+  motivo: string | null;
+  alteradoEm: string;
+}

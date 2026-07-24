@@ -1,13 +1,22 @@
 'use client';
-import { useMemo, useState } from 'react';
-import type { Empresa, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora, RegraPreco, RegraPrecoForma } from '@cobranca/shared';
+import { useState } from 'react';
+import type {
+  ClienteContabilidade,
+  DadosCobranca,
+  PagadorTipo,
+  CondicoesCobranca,
+  ContaEmissora,
+  RegraPreco,
+  RegimeTributario,
+  ModoCobrancaContabilidade,
+} from '@cobranca/shared';
 import { CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
-import type { NovaEmpresaPayload } from '@/services/empresas';
+import type { NovoClienteContabilidadePayload } from '@/services/clientes-contabilidade';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
 
-// contaEmissora admite '' no ESTADO (empresa nova começa sem escolha, mesmo padrão do médico
-// desde a Story 7.3); o submit só habilita com empresa emissora selecionada.
-type FormState = Omit<NovaEmpresaPayload, 'contaEmissora'> & { contaEmissora: ContaEmissora | '' };
+// contaEmissora admite '' no ESTADO (cliente novo começa sem escolha, mesmo padrão de
+// empresa/médico); o submit só habilita com empresa emissora selecionada.
+type FormState = Omit<NovoClienteContabilidadePayload, 'contaEmissora'> & { contaEmissora: ContaEmissora | '' };
 
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB',
@@ -15,7 +24,7 @@ const UFS = [
 ];
 
 const COBRANCA_VAZIA: DadosCobranca = {
-  pagadorTipo: 'PJ', // empresa é quase sempre pagador PJ (CNPJ) — default diferente do médico
+  pagadorTipo: 'PJ', // cliente contábil é quase sempre pagador PJ (CNPJ)
   pagadorDocumento: '',
   pagadorNome: '',
   email: '',
@@ -29,20 +38,34 @@ const COBRANCA_VAZIA: DadosCobranca = {
   whatsapp: '',
 };
 
-const VAZIO: FormState = {
-  nome: '',
-  contaEmissora: '',
-  ativo: true,
+const CONDICOES_VAZIAS: CondicoesCobranca = {
+  diasVencimento: null,
+  multaPercent: null,
+  jurosMesPercent: null,
+  descontoPercent: null,
+  descontoDias: null,
 };
 
 const REGRA_PRECO_VAZIA: RegraPreco = {
-  forma: 'por_guia',
+  forma: 'faixa_faturamento',
   base: null,
-  limiar: null,
+  limiar: 5000,
   taxa: null,
   valorFixo: null,
-  valorAbaixoLimiar: null,
-  valorAcimaLimiar: null,
+  valorAbaixoLimiar: 250,
+  valorAcimaLimiar: 480.56,
+};
+
+const VAZIO: FormState = {
+  nome: '',
+  regimeTributario: 'simples_nacional',
+  modoCobranca: 'faixa_faturamento',
+  contaEmissora: '',
+  adicionalAtivo: false,
+  adicionalValor: null,
+  adicionalIntervaloMeses: 6,
+  adicionalCompetenciaBase: null,
+  ativo: true,
 };
 
 /** True se o usuário digitou algo em qualquer campo de cobrança (define se enviamos o bloco). */
@@ -53,60 +76,69 @@ function temAlgumaCobranca(c: DadosCobranca): boolean {
   );
 }
 
-const CONDICOES_VAZIAS: CondicoesCobranca = {
-  diasVencimento: null,
-  multaPercent: null,
-  jurosMesPercent: null,
-  descontoPercent: null,
-  descontoDias: null,
-};
-
 /** True se algum override comercial foi preenchido (campo vazio herda o padrão global). */
 function temAlgumaCondicao(c: CondicoesCobranca): boolean {
   return Object.values(c).some((v) => v != null);
 }
 
+/** Regra de preço coerente com o modo de cobrança selecionado (espelho da CHECK 0030). */
+function regraCoerenteComModo(modo: ModoCobrancaContabilidade, r: RegraPreco): boolean {
+  if (modo === 'fixo') return r.valorFixo != null;
+  return r.limiar != null && r.valorAbaixoLimiar != null && r.valorAcimaLimiar != null;
+}
+
 interface Props {
-  inicial?: Empresa;
+  inicial?: ClienteContabilidade;
   exigeMotivo?: boolean;
-  onSubmit: (dados: NovaEmpresaPayload, motivo: string) => Promise<void> | void;
+  onSubmit: (dados: NovoClienteContabilidadePayload, motivo: string) => Promise<void> | void;
   salvando?: boolean;
 }
 
-export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando = false }: Props) {
+export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmit, salvando = false }: Props) {
   const [form, setForm] = useState<FormState>(
     inicial
-      ? { nome: inicial.nome, contaEmissora: inicial.contaEmissora, ativo: inicial.ativo }
+      ? {
+          nome: inicial.nome,
+          regimeTributario: inicial.regimeTributario,
+          modoCobranca: inicial.modoCobranca,
+          contaEmissora: inicial.contaEmissora,
+          adicionalAtivo: inicial.adicionalAtivo,
+          adicionalValor: inicial.adicionalValor,
+          adicionalIntervaloMeses: inicial.adicionalIntervaloMeses,
+          adicionalCompetenciaBase: inicial.adicionalCompetenciaBase,
+          ativo: inicial.ativo,
+        }
       : VAZIO,
   );
   const [motivo, setMotivo] = useState('');
   const [cobranca, setCobranca] = useState<DadosCobranca>(inicial?.cobranca ?? COBRANCA_VAZIA);
   const [condicoes, setCondicoes] = useState<CondicoesCobranca>(inicial?.condicoes ?? CONDICOES_VAZIAS);
-  const [regraPreco, setRegraPrecoState] = useState<RegraPreco | null>(inicial?.regraPreco ?? null);
+  const [regraPreco, setRegraPrecoState] = useState<RegraPreco>(
+    inicial?.regraPreco ?? { ...REGRA_PRECO_VAZIA, forma: VAZIO.modoCobranca },
+  );
   const [cepBuscando, setCepBuscando] = useState(false);
 
   const motivoOk = !exigeMotivo || motivo.trim().length > 0;
-  // Regra de preço, se preenchida, precisa ser coerente com a forma (espelho da CHECK 0028) —
-  // igual à validação de médico (Story 10.1), mas aqui a regra é sempre opcional (nenhum "modo").
-  const regraPrecoOk =
-    regraPreco == null ||
-    (regraPreco.forma === 'por_guia'
-      ? regraPreco.taxa != null
-      : regraPreco.forma === 'base_excedente'
-        ? regraPreco.base != null && regraPreco.limiar != null && regraPreco.taxa != null
-        : regraPreco.valorFixo != null);
+  const regraOk = regraCoerenteComModo(form.modoCobranca, regraPreco);
+  const adicionalOk =
+    !form.adicionalAtivo ||
+    (form.adicionalValor != null && form.adicionalIntervaloMeses != null && !!form.adicionalCompetenciaBase);
   const contaOk = form.contaEmissora !== '';
-  const podeSalvar = motivoOk && regraPrecoOk && contaOk && form.nome.trim().length > 0;
+  const podeSalvar = motivoOk && regraOk && adicionalOk && contaOk && form.nome.trim().length > 0;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
   }
 
-  function setRegra<K extends keyof RegraPreco>(campo: K, valor: RegraPreco[K]) {
-    setRegraPrecoState((r) => ({ ...(r ?? REGRA_PRECO_VAZIA), [campo]: valor }));
+  function onModoChange(modo: ModoCobrancaContabilidade) {
+    set('modoCobranca', modo);
+    setRegraPrecoState((r) => ({ ...REGRA_PRECO_VAZIA, forma: modo, ...(modo === 'fixo' ? { valorFixo: r.valorFixo } : {}) }));
   }
 
-  /** Campo numérico da regra de preço: '' vira null. */
+  function setRegra<K extends keyof RegraPreco>(campo: K, valor: RegraPreco[K]) {
+    setRegraPrecoState((r) => ({ ...r, [campo]: valor }));
+  }
+
   function setRegraNum(campo: keyof Omit<RegraPreco, 'forma'>, valor: string) {
     setRegra(campo, valor === '' ? null : Number(valor));
   }
@@ -115,7 +147,6 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
     setCobranca((c) => ({ ...c, [campo]: valor }));
   }
 
-  /** Campos numéricos de override: '' vira null (herda o padrão global). */
   function setCond(campo: keyof CondicoesCobranca, valor: string) {
     setCondicoes((c) => ({ ...c, [campo]: valor === '' ? null : Number(valor) }));
   }
@@ -142,14 +173,17 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
   }
 
   function handleSubmit() {
-    const payload: NovaEmpresaPayload = {
+    const payload: NovoClienteContabilidadePayload = {
       ...form,
       contaEmissora: form.contaEmissora as ContaEmissora, // garantido por podeSalvar (contaOk)
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
       condicoes: temAlgumaCondicao(condicoes) ? condicoes : null,
       regraPreco,
+      adicionalValor: form.adicionalAtivo ? form.adicionalValor : null,
+      adicionalIntervaloMeses: form.adicionalAtivo ? form.adicionalIntervaloMeses : null,
+      adicionalCompetenciaBase: form.adicionalAtivo ? form.adicionalCompetenciaBase : null,
     };
-    void onSubmit(payload, exigeMotivo ? motivo : 'Cadastro inicial da empresa');
+    void onSubmit(payload, exigeMotivo ? motivo : 'Cadastro inicial do cliente contábil');
   }
 
   return (
@@ -161,13 +195,13 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
       className="space-y-6"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Nome da empresa">
+        <Field label="Nome do cliente">
           <input
             name="nome"
             value={form.nome}
             onChange={(e) => set('nome', e.target.value)}
             className="input"
-            placeholder="Ex.: MEDISA"
+            placeholder="Razão social ou nome fantasia"
           />
         </Field>
 
@@ -191,86 +225,131 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
           </select>
           {!contaOk && (
             <p className="mt-1 text-xs text-cc-danger" role="alert">
-              Escolha a conta que emitirá os boletos desta empresa.
+              Escolha a conta que emitirá os boletos deste cliente.
             </p>
           )}
         </Field>
+
+        <Field label="Regime tributário">
+          <select
+            value={form.regimeTributario}
+            onChange={(e) => set('regimeTributario', e.target.value as RegimeTributario)}
+            className="input"
+          >
+            <option value="simples_nacional">Simples Nacional</option>
+            <option value="lucro_presumido">Lucro Presumido</option>
+          </select>
+        </Field>
+
+        <Field label="Modo de cobrança">
+          <select
+            value={form.modoCobranca}
+            onChange={(e) => onModoChange(e.target.value as ModoCobrancaContabilidade)}
+            className="input"
+          >
+            <option value="faixa_faturamento">Por faixa de faturamento mensal</option>
+            <option value="fixo">Valor fixo (contrato)</option>
+          </select>
+        </Field>
       </div>
+
+      {/* Nota fora do <label> — texto dentro do <Field> entraria no accessible name do select
+          (label envolve todo o conteúdo), colidindo com buscas por "Modo de cobrança". */}
+      <p className="-mt-3 text-2xs text-cc-muted">
+        Regime tributário é um metadado informativo — quem decide o cálculo do boleto é o modo de
+        cobrança (há exceções fixas dentro do Simples Nacional).
+      </p>
 
       <CheckField
         name="ativo"
         checked={form.ativo}
         onChange={(v) => set('ativo', v)}
-        label="Empresa ativa"
+        label="Cliente ativo"
       />
 
-      {/* Regra de preço da produção agregada (Story 10.4b consome isto) */}
+      {/* Regra de preço — campos adaptam ao modo de cobrança selecionado */}
+      <div className="rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4 space-y-4">
+        <p className="text-sm font-semibold text-cc-ink">Regra de cálculo do boleto mensal</p>
+
+        {form.modoCobranca === 'faixa_faturamento' ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Limite de faturamento (R$)">
+                <input type="number" min={0} step={0.01} value={regraPreco.limiar ?? ''}
+                  onChange={(e) => setRegraNum('limiar', e.target.value)} className="input tabular" placeholder="5000.00" />
+              </Field>
+              <Field label="Valor abaixo do limite (R$)">
+                <input type="number" min={0} step={0.01} value={regraPreco.valorAbaixoLimiar ?? ''}
+                  onChange={(e) => setRegraNum('valorAbaixoLimiar', e.target.value)} className="input tabular" placeholder="250.00" />
+              </Field>
+              <Field label="Valor a partir do limite (R$)">
+                <input type="number" min={0} step={0.01} value={regraPreco.valorAcimaLimiar ?? ''}
+                  onChange={(e) => setRegraNum('valorAcimaLimiar', e.target.value)} className="input tabular" placeholder="480.56" />
+              </Field>
+            </div>
+            <p className="text-2xs text-cc-muted">
+              O faturamento do mês é informado na tela de lançamento (Story 11.2) — o boleto usa o
+              valor conforme o faturamento estiver abaixo ou a partir do limite.
+            </p>
+          </>
+        ) : (
+          <>
+            <Field label="Valor fixo mensal (R$)">
+              <input type="number" min={0} step={0.01} value={regraPreco.valorFixo ?? ''}
+                onChange={(e) => setRegraNum('valorFixo', e.target.value)} className="input tabular" placeholder="0.00" />
+            </Field>
+            <p className="text-2xs text-cc-muted">
+              Reajustado uma vez por ano (manual) — edite este valor com o motivo do reajuste; o
+              histórico fica registrado.
+            </p>
+          </>
+        )}
+
+        {!regraOk && (
+          <p className="text-xs text-cc-danger" role="alert">
+            Preencha todos os campos da regra de cálculo.
+          </p>
+        )}
+      </div>
+
+      {/* Adicional periódico (ex.: semestral) */}
       <div className="rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4 space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-cc-ink">Regra de preço da produção agregada</p>
+          <p className="text-sm font-semibold text-cc-ink">Adicional periódico avulso</p>
           <CheckField
-            name="temRegraPreco"
-            checked={regraPreco != null}
-            onChange={(v) => setRegraPrecoState(v ? REGRA_PRECO_VAZIA : null)}
-            label="Configurar"
+            name="adicionalAtivo"
+            checked={form.adicionalAtivo}
+            onChange={(v) => set('adicionalAtivo', v)}
+            label="Cliente tem"
           />
         </div>
 
-        {regraPreco && (
+        {form.adicionalAtivo && (
           <>
-            <Field label="Forma da regra">
-              <select
-                value={regraPreco.forma}
-                onChange={(e) => setRegra('forma', e.target.value as RegraPrecoForma)}
-                className="input"
-              >
-                <option value="por_guia">Por guia linear (ex.: MEDISA R$6,41/guia)</option>
-                <option value="base_excedente">Base + excedente com limiar</option>
-                <option value="fixo">Valor fixo mensal</option>
-              </select>
-              <p className="mt-1.5 text-2xs text-cc-muted">
-                A execução agregada (Story 10.4b) hoje só suporta a forma &ldquo;por guia
-                linear&rdquo; — as demais geram alerta em vez de um rateio entre médicos.
-              </p>
-            </Field>
-
-            {regraPreco.forma === 'por_guia' ? (
-              <Field label="Taxa por guia (R$)">
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={regraPreco.taxa ?? ''}
-                  onChange={(e) => setRegraNum('taxa', e.target.value)}
-                  className="input tabular"
-                  placeholder="6.41"
-                />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Valor do adicional (R$)">
+                <input type="number" min={0} step={0.01} value={form.adicionalValor ?? ''}
+                  onChange={(e) => set('adicionalValor', e.target.value === '' ? null : Number(e.target.value))}
+                  className="input tabular" placeholder="15000.00" />
               </Field>
-            ) : regraPreco.forma === 'base_excedente' ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Field label="Base (R$)">
-                  <input type="number" min={0} step={0.01} value={regraPreco.base ?? ''}
-                    onChange={(e) => setRegraNum('base', e.target.value)} className="input tabular" placeholder="0.00" />
-                </Field>
-                <Field label="Limiar (guias)">
-                  <input type="number" min={0} step={1} value={regraPreco.limiar ?? ''}
-                    onChange={(e) => setRegraNum('limiar', e.target.value)} className="input tabular" placeholder="0" />
-                </Field>
-                <Field label="Taxa por guia excedente (R$)">
-                  <input type="number" min={0} step={0.01} value={regraPreco.taxa ?? ''}
-                    onChange={(e) => setRegraNum('taxa', e.target.value)} className="input tabular" placeholder="0.00" />
-                </Field>
-              </div>
-            ) : (
-              <Field label="Valor fixo mensal (R$)">
-                <input type="number" min={0} step={0.01} value={regraPreco.valorFixo ?? ''}
-                  onChange={(e) => setRegraNum('valorFixo', e.target.value)} className="input tabular" placeholder="0.00" />
+              <Field label="Intervalo (meses)">
+                <input type="number" min={1} step={1} value={form.adicionalIntervaloMeses ?? ''}
+                  onChange={(e) => set('adicionalIntervaloMeses', e.target.value === '' ? null : Number(e.target.value))}
+                  className="input tabular" placeholder="6" />
               </Field>
-            )}
-
-            {!regraPrecoOk && (
+              <Field label="Competência base (1º ciclo)">
+                <input type="month" value={form.adicionalCompetenciaBase ?? ''}
+                  onChange={(e) => set('adicionalCompetenciaBase', e.target.value || null)}
+                  className="input" />
+              </Field>
+            </div>
+            <p className="text-2xs text-cc-muted">
+              Boleto avulso separado do mensal (ex.: Vital Soluções, R$15.000 a cada 6 meses) —
+              geração entra na Story 11.4.
+            </p>
+            {!adicionalOk && (
               <p className="text-xs text-cc-danger" role="alert">
-                Preencha todos os campos da regra de preço.
+                Preencha valor, intervalo e competência base do adicional.
               </p>
             )}
           </>
@@ -314,7 +393,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
             </Field>
 
             <Field label="E-mail" optional>
-              <input type="email" value={cobranca.email} onChange={(e) => setCob('email', e.target.value)} className="input" placeholder="contato@empresa.com" />
+              <input type="email" value={cobranca.email} onChange={(e) => setCob('email', e.target.value)} className="input" placeholder="contato@cliente.com" />
             </Field>
 
             <Field label="WhatsApp / ID do Grupo" optional>
@@ -362,7 +441,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
             </Field>
           </div>
           <p className="text-2xs text-cc-muted">
-            Preencha todos os campos obrigatórios para habilitar a emissão de boleto desta empresa.
+            Preencha todos os campos obrigatórios para habilitar a emissão de boleto deste cliente.
             O endereço é preenchido automaticamente pelo CEP.
           </p>
         </div>
@@ -418,7 +497,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
 
       <div className="flex items-center gap-3 pt-1">
         <button type="submit" disabled={!podeSalvar || salvando} className="btn-primary">
-          {salvando ? 'Salvando...' : 'Salvar empresa'}
+          {salvando ? 'Salvando...' : 'Salvar cliente'}
         </button>
       </div>
     </form>

@@ -10,6 +10,7 @@ const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
   { href: '/medicos', label: 'Médicos', icon: MedicosIcon },
   { href: '/empresas', label: 'Empresas', icon: EmpresasIcon },
+  { href: '/clientes-contabilidade', label: 'Clientes Contábeis', icon: ClientesContabeisIcon },
   { href: '/execucoes', label: 'Execuções', icon: ExecucoesIcon },
   { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
   { href: '/extrato', label: 'Extrato', icon: ExtratoIcon },
@@ -215,6 +216,15 @@ function EmpresasIcon({ className = '' }: { className?: string }) {
       <path d="M3 21h18" />
       <path d="M5 21V7l7-4 7 4v14" />
       <path d="M9 9h1M14 9h1M9 13h1M14 13h1M9 17h1M14 17h1" />
+    </svg>
+  );
+}
+
+function ClientesContabeisIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <path d="M8 7h8M8 11h8M8 15h5" />
     </svg>
   );
 }

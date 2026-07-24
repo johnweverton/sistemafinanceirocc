@@ -4,6 +4,8 @@ import type {
   MedicoHistorico,
   Empresa,
   EmpresaHistorico,
+  ClienteContabilidade,
+  ClienteContabilidadeHistorico,
   DadosCobranca,
   CondicoesCobranca,
   RegraPreco,
@@ -51,13 +53,18 @@ interface CondicoesRowFields {
   desconto_dias: number | null;
 }
 
-/** Colunas de regra de preço própria compartilhadas por `medicos` e `empresas` (migration 0025/0027/0028). */
+/** Colunas de regra de preço própria compartilhadas por `medicos`, `empresas` e
+ *  `clientes_contabilidade` (migration 0025/0027/0028/0030). Os 2 últimos campos só existem em
+ *  `clientes_contabilidade` (forma 'faixa_faturamento', Story 11.1) — ausentes/`undefined` em
+ *  `medicos`/`empresas`, tratado como `null` por `toRegraPreco`. */
 interface RegraPrecoRowFields {
   regra_preco_forma?: RegraPreco['forma'] | null;
   regra_preco_base?: number | null;
   regra_preco_limiar?: number | null;
   regra_preco_taxa?: number | null;
   regra_preco_valor_fixo?: number | null;
+  regra_preco_valor_abaixo_limiar?: number | null;
+  regra_preco_valor_acima_limiar?: number | null;
 }
 
 export interface MedicoRow {
@@ -138,6 +145,8 @@ function toRegraPreco(row: RegraPrecoRowFields): RegraPreco | null {
     limiar: row.regra_preco_limiar ?? null,
     taxa: row.regra_preco_taxa ?? null,
     valorFixo: row.regra_preco_valor_fixo ?? null,
+    valorAbaixoLimiar: row.regra_preco_valor_abaixo_limiar ?? null,
+    valorAcimaLimiar: row.regra_preco_valor_acima_limiar ?? null,
   };
 }
 
@@ -414,6 +423,163 @@ export function toEmpresaHistorico(row: EmpresaHistoricoRow): EmpresaHistorico {
   return {
     id: row.id,
     empresaId: row.empresa_id,
+    campoAlterado: row.campo_alterado,
+    valorAnterior: row.valor_anterior,
+    valorNovo: row.valor_novo,
+    alteradoPor: row.alterado_por,
+    motivo: row.motivo,
+    alteradoEm: row.alterado_em,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cliente Contábil (Story 11.1, Epic 11) — mesmo padrão de empresa, reaproveitando os helpers de
+// cobrança/condições/regra de preço acima. Domínio SEPARADO de `empresas` (Épico 10.4, agregação
+// de produção médica) — ver docs/architecture/feature-emissao-contabilidade.md, decisão D1.
+// ---------------------------------------------------------------------------
+
+export interface ClienteContabilidadeRow extends CobrancaRowFields, CondicoesRowFields, RegraPrecoRowFields {
+  id: string;
+  nome: string;
+  regime_tributario: ClienteContabilidade['regimeTributario'];
+  modo_cobranca: ClienteContabilidade['modoCobranca'];
+  conta_emissora: ClienteContabilidade['contaEmissora'];
+  adicional_ativo: boolean;
+  adicional_valor: number | null;
+  adicional_intervalo_meses: number | null;
+  adicional_competencia_base: string | null;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export function toClienteContabilidade(row: ClienteContabilidadeRow): ClienteContabilidade {
+  return {
+    id: row.id,
+    nome: row.nome,
+    regimeTributario: row.regime_tributario,
+    modoCobranca: row.modo_cobranca,
+    regraPreco: toRegraPreco(row),
+    cobranca: toDadosCobranca(row),
+    contaEmissora: row.conta_emissora,
+    condicoes: toCondicoes(row),
+    adicionalAtivo: row.adicional_ativo,
+    adicionalValor: row.adicional_valor ?? null,
+    adicionalIntervaloMeses: row.adicional_intervalo_meses ?? null,
+    adicionalCompetenciaBase: row.adicional_competencia_base ?? null,
+    ativo: row.ativo,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Campos de domínio (camelCase) → colunas do banco (snake_case), só os presentes. */
+export function clienteContabilidadeUpdateToRow(
+  dados: Partial<ClienteContabilidade>,
+): Partial<ClienteContabilidadeRow> {
+  const map: Record<string, keyof ClienteContabilidadeRow> = {
+    nome: 'nome',
+    regimeTributario: 'regime_tributario',
+    modoCobranca: 'modo_cobranca',
+    contaEmissora: 'conta_emissora',
+    adicionalAtivo: 'adicional_ativo',
+    adicionalValor: 'adicional_valor',
+    adicionalIntervaloMeses: 'adicional_intervalo_meses',
+    adicionalCompetenciaBase: 'adicional_competencia_base',
+    ativo: 'ativo',
+  };
+  const row: Partial<ClienteContabilidadeRow> = {};
+  for (const [campo, valor] of Object.entries(dados)) {
+    if (campo === 'cobranca' || campo === 'condicoes' || campo === 'regraPreco') continue;
+    const col = map[campo];
+    if (col) (row as Record<string, unknown>)[col] = valor === '' ? null : valor;
+  }
+
+  if (dados.cobranca !== undefined) {
+    if (dados.cobranca === null) {
+      Object.assign(row, {
+        pagador_tipo: null, pagador_documento: null, pagador_nome: null, email: null,
+        whatsapp: null, cep: null, logradouro: null, numero: null, complemento: null,
+        bairro: null, cidade: null, uf: null,
+      } satisfies Partial<ClienteContabilidadeRow>);
+    } else {
+      const c = dados.cobranca;
+      Object.assign(row, {
+        pagador_tipo: c.pagadorTipo,
+        pagador_documento: c.pagadorDocumento,
+        pagador_nome: c.pagadorNome,
+        email: c.email || null,
+        whatsapp: c.whatsapp || null,
+        cep: c.cep || null,
+        logradouro: c.logradouro || null,
+        numero: c.numero || null,
+        complemento: c.complemento || null,
+        bairro: c.bairro || null,
+        cidade: c.cidade || null,
+        uf: c.uf || null,
+      } satisfies Partial<ClienteContabilidadeRow>);
+    }
+  }
+
+  if (dados.regraPreco !== undefined) {
+    if (dados.regraPreco === null) {
+      Object.assign(row, {
+        regra_preco_forma: null, regra_preco_base: null, regra_preco_limiar: null,
+        regra_preco_taxa: null, regra_preco_valor_fixo: null,
+        regra_preco_valor_abaixo_limiar: null, regra_preco_valor_acima_limiar: null,
+      } satisfies Partial<ClienteContabilidadeRow>);
+    } else {
+      const rp = dados.regraPreco;
+      Object.assign(row, {
+        regra_preco_forma: rp.forma,
+        regra_preco_base: rp.base ?? null,
+        regra_preco_limiar: rp.limiar ?? null,
+        regra_preco_taxa: rp.taxa ?? null,
+        regra_preco_valor_fixo: rp.valorFixo ?? null,
+        regra_preco_valor_abaixo_limiar: rp.valorAbaixoLimiar ?? null,
+        regra_preco_valor_acima_limiar: rp.valorAcimaLimiar ?? null,
+      } satisfies Partial<ClienteContabilidadeRow>);
+    }
+  }
+
+  if (dados.condicoes !== undefined) {
+    if (dados.condicoes === null) {
+      Object.assign(row, {
+        dias_vencimento: null, multa_percent: null, juros_mes_percent: null,
+        desconto_percent: null, desconto_dias: null,
+      } satisfies Partial<ClienteContabilidadeRow>);
+    } else {
+      const o = dados.condicoes;
+      Object.assign(row, {
+        dias_vencimento: o.diasVencimento,
+        multa_percent: o.multaPercent,
+        juros_mes_percent: o.jurosMesPercent,
+        desconto_percent: o.descontoPercent,
+        desconto_dias: o.descontoDias,
+      } satisfies Partial<ClienteContabilidadeRow>);
+    }
+  }
+
+  return row;
+}
+
+export interface ClienteContabilidadeHistoricoRow {
+  id: string;
+  cliente_contabilidade_id: string;
+  campo_alterado: string;
+  valor_anterior: string | null;
+  valor_novo: string | null;
+  alterado_por: string;
+  motivo: string | null;
+  alterado_em: string;
+}
+
+export function toClienteContabilidadeHistorico(
+  row: ClienteContabilidadeHistoricoRow,
+): ClienteContabilidadeHistorico {
+  return {
+    id: row.id,
+    clienteContabilidadeId: row.cliente_contabilidade_id,
     campoAlterado: row.campo_alterado,
     valorAnterior: row.valor_anterior,
     valorNovo: row.valor_novo,

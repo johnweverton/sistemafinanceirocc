@@ -23,22 +23,37 @@ export type ModoCobranca = 'faixa_guias' | 'percentual_producao' | 'preco_propri
  *     limiar 144, taxa 6,50).
  *   - 'fixo': valor mensal fixo, independe da quantidade de guias (Nelson, Carlos Batista,
  *     R$591,22; Jefferson, R$130,53).
+ *   - 'faixa_faturamento': `valor = faturamento >= limiar ? valorAcimaLimiar : valorAbaixoLimiar`
+ *     (Story 11.1/11.2, Epic 11 — clientes de contabilidade no regime Simples Nacional: ex.
+ *     faturamento < R$5.000 → R$250, >= R$5.000 → R$480,56). `limiar` é reaproveitado como o
+ *     corte de faturamento (mesmo campo usado por 'base_excedente' para o corte de guias).
  * Nefrologia/"guias cardíacas" NÃO entram aqui — são agrupamento de produção por empresa
  * (MEDISA), tratado na Story 10.4, não um override de médico individual.
  */
-export type RegraPrecoForma = 'por_guia' | 'base_excedente' | 'fixo';
+export type RegraPrecoForma = 'por_guia' | 'base_excedente' | 'fixo' | 'faixa_faturamento';
 
 /** Regra de preço própria por médico — editável sem deploy (linha, não código). */
 export interface RegraPreco {
   forma: RegraPrecoForma;
   /** Valor base antes do excedente. Obrigatório na forma 'base_excedente'. */
   base: number | null;
-  /** Guias a partir das quais o excedente por guia incide. Obrigatório na forma 'base_excedente'. */
+  /**
+   * Guias a partir das quais o excedente por guia incide (forma 'base_excedente') OU corte de
+   * faturamento (forma 'faixa_faturamento', Epic 11). Obrigatório em ambas as formas.
+   */
   limiar: number | null;
   /** Valor por guia. Obrigatório nas formas 'por_guia' e 'base_excedente'. */
   taxa: number | null;
   /** Valor fixo mensal, independe de guias. Obrigatório na forma 'fixo'. */
   valorFixo: number | null;
+  /**
+   * Valor quando faturamento < limiar (forma 'faixa_faturamento', Epic 11). Opcional (não
+   * `?: number | null` em vez de obrigatório) para não exigir o campo de todo literal `RegraPreco`
+   * já existente de médico (Story 10.1) e empresa (Story 10.4) — só a forma 'faixa_faturamento' o usa.
+   */
+  valorAbaixoLimiar?: number | null;
+  /** Valor quando faturamento >= limiar (forma 'faixa_faturamento', Epic 11). Ver nota acima. */
+  valorAcimaLimiar?: number | null;
 }
 
 /** Tipo de pessoa do pagador do boleto — independente do CPF-chave do médico. */

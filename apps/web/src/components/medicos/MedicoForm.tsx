@@ -58,6 +58,8 @@ const REGRA_PRECO_VAZIA: RegraPreco = {
   limiar: null,
   taxa: null,
   valorFixo: null,
+  valorAbaixoLimiar: null,
+  valorAcimaLimiar: null,
 };
 
 /** True se o usuário digitou algo em qualquer campo de cobrança (define se enviamos o bloco). */
