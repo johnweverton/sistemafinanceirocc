@@ -45,6 +45,11 @@ export interface Execucao {
    * médicos num único resultado. Null/ausente = execução normal por médico (comportamento atual).
    */
   empresaId?: string | null;
+  /**
+   * Marca esta execução como sendo de um cliente contábil (Story 11.3) — processada sem lotes
+   * (não há médicos/produção envolvidos). Mutuamente exclusivo com `empresaId`.
+   */
+  clienteContabilidadeId?: string | null;
 }
 
 export interface ExecucaoResultado {
@@ -80,6 +85,11 @@ export interface ExecucaoResultado {
    * (médico legado sem vínculo, identificado por `cpf`).
    */
   empresaId?: string | null;
+  /**
+   * Resultado de um cliente contábil (Story 11.3) — valor único, sem agregação. Mutuamente
+   * exclusivo com `medicoId`/`empresaId` (constraint `chk_execucao_resultados_exclusao_mutua`).
+   */
+  clienteContabilidadeId?: string | null;
 }
 
 /**

@@ -28,11 +28,24 @@ export interface ApoioData {
 
 export const execucoesService = {
   apoio: () => apiFetch<ApoioData>('/execucoes/apoio'),
-  /** `empresaId` (Story 10.4c) marca a execução como agregada por empresa — opcional. */
-  disparar: (competencia: string, selecoes: ExecucaoSelecaoPayload[], empresaId?: string) =>
+  /**
+   * `empresaId` (Story 10.4c) marca a execução como agregada por empresa; `clienteContabilidadeId`
+   * (Story 11.3) marca como execução de cliente contábil — mutuamente exclusivos, ambos opcionais.
+   */
+  disparar: (
+    competencia: string,
+    selecoes: ExecucaoSelecaoPayload[],
+    empresaId?: string,
+    clienteContabilidadeId?: string,
+  ) =>
     apiFetch<{ execucaoId: string }>('/execucoes', {
       method: 'POST',
-      body: JSON.stringify({ competencia, selecoes, ...(empresaId ? { empresaId } : {}) }),
+      body: JSON.stringify({
+        competencia,
+        selecoes,
+        ...(empresaId ? { empresaId } : {}),
+        ...(clienteContabilidadeId ? { clienteContabilidadeId } : {}),
+      }),
     }),
   listar: () => apiFetch<Execucao[]>('/execucoes'),
   detalhe: (id: string) => apiFetch<Execucao>(`/execucoes/${id}`),

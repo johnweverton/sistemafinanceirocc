@@ -112,6 +112,9 @@ export function ClientesContabilidadeManager() {
               Lançar faturamento
             </Link>
           )}
+          <Link href={`/clientes-contabilidade/${modo.cliente.id}/execucao`} className="link-action">
+            Gerar execução e emitir boleto
+          </Link>
           <Link href={`/clientes-contabilidade/${modo.cliente.id}/historico`} className="link-action">
             Ver histórico de alterações
           </Link>

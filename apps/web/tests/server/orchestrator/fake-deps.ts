@@ -1,4 +1,13 @@
-import type { Execucao, Empresa, Medico, ItemProducao, ResultadoMedico, ExecucaoResultado } from '@cobranca/shared';
+import type {
+  Execucao,
+  Empresa,
+  Medico,
+  ItemProducao,
+  ResultadoMedico,
+  ExecucaoResultado,
+  ClienteContabilidade,
+  ClienteContabilidadeFaturamento,
+} from '@cobranca/shared';
 import type { OrchestratorDeps } from '../../../src/server/orchestrator/execucao-orchestrator';
 
 export interface ResultadoEmpresaFake {
@@ -6,6 +15,17 @@ export interface ResultadoEmpresaFake {
   empresaId: string;
   nome: string;
   guias: number;
+  totalValor: number;
+  status: ExecucaoResultado['status'];
+  alertas: string[];
+  subtotalFaixa: string;
+}
+
+export interface ResultadoClienteContabilidadeFake {
+  id: string;
+  execucaoId: string;
+  clienteContabilidadeId: string;
+  nome: string;
   totalValor: number;
   status: ExecucaoResultado['status'];
   alertas: string[];
@@ -22,6 +42,12 @@ export interface FakeState {
   resultadosEmpresa: Map<string, ResultadoEmpresaFake>;
   /** Contribuições por médico, chaveadas pelo id do resultado agregado (Story 10.4b). */
   contribuicoes: Map<string, { medicoId: string; guias: number; valor: number }[]>;
+  /** Clientes contábeis cadastrados (Story 11.1) — para execuções de cliente contábil. */
+  clientesContabilidade: Map<string, ClienteContabilidade>;
+  /** Faturamento lançado por cliente contábil, chaveado por `${clienteId}:${competencia}` (Story 11.2). */
+  faturamentos: Map<string, ClienteContabilidadeFaturamento>;
+  /** Resultado (único) por execução de cliente contábil (Story 11.3). */
+  resultadosClienteContabilidade: Map<string, ResultadoClienteContabilidadeFake>;
   selecoes: {
     execucaoId: string;
     medicoId: string;
@@ -37,11 +63,17 @@ export interface FakeState {
   producoesComFalha: Set<string>;
 }
 
-export function novoEstado(medicos: Medico[], empresas: Empresa[] = []): FakeState {
+export function novoEstado(
+  medicos: Medico[],
+  empresas: Empresa[] = [],
+  clientesContabilidade: ClienteContabilidade[] = [],
+): FakeState {
   const medicosMap = new Map<string, Medico>();
   for (const m of medicos) medicosMap.set(m.id, m);
   const empresasMap = new Map<string, Empresa>();
   for (const e of empresas) empresasMap.set(e.id, e);
+  const clientesMap = new Map<string, ClienteContabilidade>();
+  for (const c of clientesContabilidade) clientesMap.set(c.id, c);
 
   return {
     execucoes: new Map(),
@@ -50,6 +82,9 @@ export function novoEstado(medicos: Medico[], empresas: Empresa[] = []): FakeSta
     empresas: empresasMap,
     resultadosEmpresa: new Map(),
     contribuicoes: new Map(),
+    clientesContabilidade: clientesMap,
+    faturamentos: new Map(),
+    resultadosClienteContabilidade: new Map(),
     selecoes: [],
     itensPorProducao: {},
     guiasAnterioresPorMedicoId: {},
@@ -64,6 +99,27 @@ export function empresaFake(over: Partial<Empresa> & { id: string; nome: string 
     contaEmissora: 'mc',
     condicoes: null,
     regraPreco: null,
+    ativo: true,
+    createdAt: '2026-06-01T00:00:00Z',
+    updatedAt: '2026-06-01T00:00:00Z',
+    ...over,
+  };
+}
+
+export function clienteContabilidadeFake(
+  over: Partial<ClienteContabilidade> & { id: string; nome: string },
+): ClienteContabilidade {
+  return {
+    regimeTributario: 'simples_nacional',
+    modoCobranca: 'faixa_faturamento',
+    regraPreco: null,
+    cobranca: null,
+    contaEmissora: 'mc',
+    condicoes: null,
+    adicionalAtivo: false,
+    adicionalValor: null,
+    adicionalIntervaloMeses: null,
+    adicionalCompetenciaBase: null,
     ativo: true,
     createdAt: '2026-06-01T00:00:00Z',
     updatedAt: '2026-06-01T00:00:00Z',
@@ -113,7 +169,10 @@ export function fakeDeps(
     listarMedicosPorIds: async (ids) =>
       ids.map((id) => state.medicos.get(id)).filter((m): m is Medico => m != null),
     buscarEmpresa: async (id) => state.empresas.get(id) ?? null,
-    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId) => {
+    buscarClienteContabilidade: async (id) => state.clientesContabilidade.get(id) ?? null,
+    buscarFaturamentoClienteContabilidade: async (clienteId, competencia) =>
+      state.faturamentos.get(`${clienteId}:${competencia}`) ?? null,
+    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId, clienteContabilidadeId) => {
       const id = `exec-${proximoId++}`;
       const exec: Execucao = {
         id,
@@ -129,6 +188,7 @@ export function fakeDeps(
         totalSemDados: null,
         totalGeralValor: null,
         empresaId: empresaId ?? null,
+        clienteContabilidadeId: clienteContabilidadeId ?? null,
       };
       state.execucoes.set(id, exec);
       state.resultados.set(id, []);
@@ -152,6 +212,11 @@ export function fakeDeps(
     },
     gravarContribuicoes: async (resultadoId, contribuicoes) => {
       state.contribuicoes.set(resultadoId, contribuicoes);
+    },
+    gravarResultadoClienteContabilidade: async (execucaoId, clienteContabilidadeId, r) => {
+      const resultadoId = `resultado-cliente-contabilidade-${proximoId++}`;
+      state.resultadosClienteContabilidade.set(execucaoId, { id: resultadoId, execucaoId, clienteContabilidadeId, ...r });
+      return resultadoId;
     },
     atualizarProgresso: async (id, progresso) => {
       const e = state.execucoes.get(id)!;

@@ -7,18 +7,31 @@
 //
 // As dependências de I/O (banco, rede, encadeamento HTTP) são injetáveis para permitir
 // teste unitário com mocks sem tocar Supabase nem a API da Carmem.
-import type { Execucao, Empresa, Medico, ItemProducao, ResultadoMedico, ExecucaoResultado } from '@cobranca/shared';
+import type {
+  Execucao,
+  Empresa,
+  Medico,
+  ItemProducao,
+  ResultadoMedico,
+  ExecucaoResultado,
+  ClienteContabilidade,
+  ClienteContabilidadeFaturamento,
+} from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
 import { processarEmpresa, type ProducaoMedico } from '@/server/engine/processar-empresa';
+import { aplicarRegraPreco } from '@/server/engine/regra-preco';
 import { buscarItens } from '@/server/integration/fin-api-client';
 import { buscarMedico, listarMedicosPorIds } from '@/server/repositories/medico-repository';
 import { buscarEmpresa } from '@/server/repositories/empresa-repository';
+import { buscarClienteContabilidade } from '@/server/repositories/cliente-contabilidade-repository';
+import { buscarFaturamento } from '@/server/repositories/cliente-contabilidade-faturamento-repository';
 import {
   criarExecucao,
   buscarExecucao,
   contarResultados,
   gravarResultado,
   gravarResultadoEmpresa,
+  gravarResultadoClienteContabilidade,
   gravarContribuicoes,
   atualizarProgresso,
   concluirExecucao,
@@ -50,6 +63,13 @@ export interface OrchestratorDeps {
   listarMedicosPorIds: (ids: string[]) => Promise<Medico[]>;
   /** Empresa de um resultado agregado (Story 10.4b). */
   buscarEmpresa: (id: string) => Promise<Empresa | null>;
+  /** Cliente contábil de uma execução (Story 11.3). */
+  buscarClienteContabilidade: (id: string) => Promise<ClienteContabilidade | null>;
+  /** Faturamento lançado da competência (Story 11.2), usado no modo faixa_faturamento. */
+  buscarFaturamentoClienteContabilidade: (
+    clienteId: string,
+    competencia: string,
+  ) => Promise<ClienteContabilidadeFaturamento | null>;
   criarExecucao: (
     competencia: string,
     iniciadoPor: string,
@@ -61,6 +81,7 @@ export interface OrchestratorDeps {
       producaoConsultasNome?: string | null;
     }[],
     empresaId?: string | null,
+    clienteContabilidadeId?: string | null,
   ) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
@@ -70,6 +91,12 @@ export interface OrchestratorDeps {
     execucaoId: string,
     empresaId: string,
     r: { nome: string; guias: number; totalValor: number; status: ExecucaoResultado['status']; alertas: string[]; subtotalFaixa: string },
+  ) => Promise<string>;
+  /** Grava o resultado (único, sem agregação) de um cliente contábil (Story 11.3). */
+  gravarResultadoClienteContabilidade: (
+    execucaoId: string,
+    clienteContabilidadeId: string,
+    r: { nome: string; totalValor: number; status: ExecucaoResultado['status']; alertas: string[]; subtotalFaixa: string },
   ) => Promise<string>;
   /** Grava a auditoria "qual médico contribuiu quanto" de um resultado agregado (Story 10.4b). */
   gravarContribuicoes: (
@@ -100,11 +127,14 @@ export function depsPadrao(): OrchestratorDeps {
     buscarMedico,
     listarMedicosPorIds,
     buscarEmpresa,
+    buscarClienteContabilidade,
+    buscarFaturamentoClienteContabilidade: buscarFaturamento,
     criarExecucao,
     buscarExecucao,
     contarResultados,
     gravarResultado,
     gravarResultadoEmpresa,
+    gravarResultadoClienteContabilidade,
     gravarContribuicoes,
     atualizarProgresso,
     concluirExecucao,
@@ -162,7 +192,21 @@ export async function iniciarExecucao(
   deps: OrchestratorDeps = depsPadrao(),
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
+  /** Marca a execução como sendo de cliente contábil (Story 11.3) — null/ausente = execução normal. */
+  clienteContabilidadeId?: string | null,
 ): Promise<Execucao> {
+  // Cliente contábil não tem médicos/produção — caminho totalmente separado das validações de
+  // seleção abaixo (mesmo espírito do branch de empresa, mas sem nada pra selecionar).
+  if (clienteContabilidadeId) {
+    if (empresaId) {
+      throw new ApiError(422, 'Execução não pode ser de empresa e cliente contábil ao mesmo tempo', 'SELECAO_INVALIDA');
+    }
+    const cliente = await deps.buscarClienteContabilidade(clienteContabilidadeId);
+    if (!cliente) throw new ApiError(422, 'Cliente contábil não encontrado', 'CLIENTE_CONTABILIDADE_NAO_ENCONTRADO');
+    if (!cliente.ativo) throw new ApiError(422, 'Cliente contábil inativo', 'CLIENTE_CONTABILIDADE_INATIVO');
+    return deps.criarExecucao(competencia, usuarioId, [], null, clienteContabilidadeId);
+  }
+
   // QA M-1: validação server-side das seleções (defesa em profundidade — a UI já filtra,
   // mas o invariante da 0005 não pode depender só dela). Médico precisa existir, estar
   // ativo, configurado e vinculado à origem; medicoId duplicado é rejeitado.
@@ -235,6 +279,18 @@ export async function processarProximoLote(
   // esta é a ÚNICA leitura de `execucao.empresaId` em todo o orquestrador.
   if (execucao.empresaId) {
     return processarExecucaoEmpresa(execucaoId, execucao.empresaId, deps);
+  }
+
+  // Story 11.3: mesmo espírito do branch de empresa acima — sem lotes, ainda mais simples (não
+  // há médicos/produção para buscar, só a regra de preço do cliente + o faturamento lançado).
+  // Única leitura de `execucao.clienteContabilidadeId` em todo o orquestrador.
+  if (execucao.clienteContabilidadeId) {
+    return processarExecucaoClienteContabilidade(
+      execucaoId,
+      execucao.clienteContabilidadeId,
+      execucao.competencia,
+      deps,
+    );
   }
 
   const total = execucao.totalMedicos ?? 0;
@@ -361,6 +417,62 @@ async function processarExecucaoEmpresa(
   });
 
   return { concluido: true, processadosNoLote: selecoes.length, progresso: 100 };
+}
+
+/**
+ * Processa uma execução de CLIENTE CONTÁBIL (Story 11.3) de ponta a ponta, sem lotes: não há
+ * médicos nem produção — só a regra de preço do cliente e, no modo `faixa_faturamento`, o
+ * faturamento já lançado da competência (Story 11.2). Mesmo mecanismo de `aplicarRegraPreco`
+ * usado por médico/empresa, reaproveitado sem alteração. Falha de infraestrutura propaga (mesmo
+ * comportamento de `processarExecucaoEmpresa` — não há "isolar 1 e seguir" pra um resultado só).
+ */
+async function processarExecucaoClienteContabilidade(
+  execucaoId: string,
+  clienteContabilidadeId: string,
+  competencia: string,
+  deps: OrchestratorDeps,
+): Promise<ResultadoLote> {
+  const cliente = await deps.buscarClienteContabilidade(clienteContabilidadeId);
+  if (!cliente) throw new Error(`Cliente contábil ${clienteContabilidadeId} não encontrado`);
+
+  const resultado = await (async () => {
+    if (cliente.modoCobranca === 'faixa_faturamento') {
+      const faturamento = await deps.buscarFaturamentoClienteContabilidade(clienteContabilidadeId, competencia);
+      if (!faturamento) {
+        // Nunca chuta valor (PRD §2): sem faturamento lançado, alerta explícito — o operador
+        // precisa lançar o faturamento (Story 11.2) antes de gerar o boleto desta competência.
+        return {
+          valor: 0,
+          alertas: [`Faturamento não lançado para a competência ${competencia} — lance antes de gerar o boleto.`],
+          subtotalFaixa: '',
+        };
+      }
+      return aplicarRegraPreco(cliente.regraPreco, faturamento.faturamento);
+    }
+    // modo 'fixo': valorFixo independe de qualquer quantidade (0 é ignorado por aplicarRegraPreco
+    // nesta forma).
+    return aplicarRegraPreco(cliente.regraPreco, 0);
+  })();
+
+  const status: ExecucaoResultado['status'] = resultado.alertas.length > 0 ? 'alerta' : 'ok';
+
+  await deps.gravarResultadoClienteContabilidade(execucaoId, cliente.id, {
+    nome: cliente.nome,
+    totalValor: resultado.valor,
+    status,
+    alertas: resultado.alertas,
+    subtotalFaixa: resultado.subtotalFaixa,
+  });
+
+  await deps.atualizarProgresso(execucaoId, 100);
+  await deps.concluirExecucao(execucaoId, {
+    totalOk: status === 'ok' ? 1 : 0,
+    totalAlerta: status === 'alerta' ? 1 : 0,
+    totalSemDados: 0,
+    totalGeralValor: resultado.valor,
+  });
+
+  return { concluido: true, processadosNoLote: 1, progresso: 100 };
 }
 
 async function finalizar(execucaoId: string, deps: OrchestratorDeps): Promise<void> {

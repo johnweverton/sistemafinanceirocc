@@ -40,6 +40,8 @@ export async function criarExecucao(
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
+  /** Marca a execução como sendo de cliente contábil (Story 11.3) — null/ausente = execução normal. */
+  clienteContabilidadeId?: string | null,
 ): Promise<Execucao> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -51,6 +53,7 @@ export async function criarExecucao(
       progresso: 0,
       total_medicos: selecoes.length,
       empresa_id: empresaId ?? null,
+      cliente_contabilidade_id: clienteContabilidadeId ?? null,
     })
     .select('*')
     .single();
@@ -201,6 +204,48 @@ export async function gravarResultadoEmpresa(
     .select('id')
     .single();
   if (error) throw new ApiError(500, 'Falha ao gravar resultado da empresa', 'DB_ERROR', { error: error.message });
+  return (data as { id: string }).id;
+}
+
+/**
+ * Grava o resultado de um cliente contábil (Story 11.3) — `medico_id`/`empresa_id` ficam null,
+ * `cliente_contabilidade_id` setado (CHECK `chk_execucao_resultados_exclusao_mutua`, migration
+ * 0032). Sem agregação (diferente de `gravarResultadoEmpresa`) — um valor único calculado por
+ * `aplicarRegraPreco` (Story 11.2), por isso não há `guias` nem contribuições por médico.
+ */
+export async function gravarResultadoClienteContabilidade(
+  execucaoId: string,
+  clienteContabilidadeId: string,
+  r: { nome: string; totalValor: number; status: ExecucaoResultado['status']; alertas: string[]; subtotalFaixa: string },
+): Promise<string> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .insert({
+      execucao_id: execucaoId,
+      cliente_contabilidade_id: clienteContabilidadeId,
+      medico_id: null,
+      cpf: '',
+      nome: r.nome,
+      procedimentos: null,
+      cirurgias: null,
+      guias: null,
+      guias_consolidado: null,
+      subtotais:
+        r.status === 'ok'
+          ? [{ classe: 'PRECO_PROPRIO', guias: 0, valor: r.totalValor, faixa: r.subtotalFaixa }]
+          : [],
+      total_valor: r.totalValor,
+      status: r.status,
+      alertas: r.alertas,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    throw new ApiError(500, 'Falha ao gravar resultado do cliente contábil', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
   return (data as { id: string }).id;
 }
 

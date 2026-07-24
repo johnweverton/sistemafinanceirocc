@@ -19,6 +19,7 @@ import { criarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-r
 import { registrarDisparo } from '@/server/repositories/boleto-disparo-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
 import { buscarEmpresa } from '@/server/repositories/empresa-repository';
+import { buscarClienteContabilidade } from '@/server/repositories/cliente-contabilidade-repository';
 import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
@@ -120,11 +121,11 @@ export const POST = withErrorHandler(async (req) => {
     );
   }
 
-  // 5. Carregar o PAGADOR do resultado — médico OU empresa (Story 10.4c), nunca os dois
-  //    (CHECK chk_execucao_resultados_nao_ambos_medico_empresa, migration 0029). O pagador do
-  //    boleto vem do bloco de cobrança dele (não do CPF/nome do resultado, que é só a chave de
-  //    cruzamento/exibição).
-  let pagadorNomenclatura: string; // "médico" ou "empresa" — só para as mensagens de erro
+  // 5. Carregar o PAGADOR do resultado — médico, empresa (Story 10.4c) OU cliente contábil
+  //    (Story 11.3), nunca mais de um (CHECK chk_execucao_resultados_exclusao_mutua, migration
+  //    0032). O pagador do boleto vem do bloco de cobrança dele (não do CPF/nome do resultado,
+  //    que é só a chave de cruzamento/exibição).
+  let pagadorNomenclatura: string; // "médico"/"empresa"/"cliente contábil" — só para mensagens de erro
   let cobrancaPagador: DadosCobranca | null;
   let condicoesPagador: CondicoesCobranca | null;
   let contaEmissora: ContaEmissora;
@@ -138,6 +139,15 @@ export const POST = withErrorHandler(async (req) => {
     cobrancaPagador = empresa.cobranca;
     condicoesPagador = empresa.condicoes;
     contaEmissora = empresa.contaEmissora;
+  } else if (resultadoRow.cliente_contabilidade_id) {
+    const cliente = await buscarClienteContabilidade(resultadoRow.cliente_contabilidade_id);
+    if (!cliente) {
+      throw new ApiError(404, 'Cliente contábil do resultado não encontrado', 'CLIENTE_CONTABILIDADE_NAO_ENCONTRADO');
+    }
+    pagadorNomenclatura = 'cliente contábil';
+    cobrancaPagador = cliente.cobranca;
+    condicoesPagador = cliente.condicoes;
+    contaEmissora = cliente.contaEmissora;
   } else if (resultadoRow.medico_id) {
     const medico = await buscarMedico(resultadoRow.medico_id);
     if (!medico) {
@@ -148,7 +158,7 @@ export const POST = withErrorHandler(async (req) => {
     condicoesPagador = medico.condicoes ?? null;
     contaEmissora = medico.contaEmissora;
   } else {
-    throw new ApiError(422, 'Resultado sem médico nem empresa vinculado — não é possível cobrar', 'SEM_MEDICO');
+    throw new ApiError(422, 'Resultado sem médico, empresa nem cliente contábil vinculado — não é possível cobrar', 'SEM_MEDICO');
   }
 
   // 6. Guard: falhar cedo (aqui, não no Cora) se faltar o mínimo pra emitir (documento+nome).

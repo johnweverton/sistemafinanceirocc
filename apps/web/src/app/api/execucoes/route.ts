@@ -31,6 +31,7 @@ export const POST = withErrorHandler(async (req) => {
     sessao.userId,
     undefined,
     parsed.data.empresaId,
+    parsed.data.clienteContabilidadeId,
   );
 
   // Fire-and-forget: dispara o primeiro lote sem aguardar (responde 202 já).

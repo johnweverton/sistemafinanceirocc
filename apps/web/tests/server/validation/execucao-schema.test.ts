@@ -56,3 +56,36 @@ describe('dispararExecucaoSchema — produção de consultas (Story 10.2)', () =
     expect(r.success).toBe(false);
   });
 });
+
+describe('dispararExecucaoSchema — cliente contábil (Story 11.3)', () => {
+  const clienteId = '22222222-2222-2222-2222-222222222222';
+
+  it('selecoes vazio + clienteContabilidadeId passa (cliente contábil não tem médicos)', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [],
+      clienteContabilidadeId: clienteId,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('selecoes ausente (default []) + clienteContabilidadeId passa', () => {
+    const r = dispararExecucaoSchema.safeParse({ competencia: '2026-07', clienteContabilidadeId: clienteId });
+    expect(r.success).toBe(true);
+  });
+
+  it('selecoes vazio SEM clienteContabilidadeId (nem empresaId) → rejeita', () => {
+    const r = dispararExecucaoSchema.safeParse({ competencia: '2026-07', selecoes: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('empresaId e clienteContabilidadeId juntos → rejeita', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [],
+      empresaId: '33333333-3333-3333-3333-333333333333',
+      clienteContabilidadeId: clienteId,
+    });
+    expect(r.success).toBe(false);
+  });
+});

@@ -631,6 +631,8 @@ export interface ExecucaoRow {
   total_geral_valor: number | null;
   /** Execução agregada por empresa (migration 0029) — opcional em bancos sem a migration. */
   empresa_id?: string | null;
+  /** Execução de cliente contábil (migration 0032, Story 11.3) — opcional em bancos sem a migration. */
+  cliente_contabilidade_id?: string | null;
 }
 
 export function toExecucao(row: ExecucaoRow): Execucao {
@@ -648,6 +650,7 @@ export function toExecucao(row: ExecucaoRow): Execucao {
     totalSemDados: row.total_sem_dados,
     totalGeralValor: row.total_geral_valor,
     empresaId: row.empresa_id ?? null,
+    clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
   };
 }
 
@@ -710,6 +713,8 @@ export interface ExecucaoResultadoRow {
   motivo_revisao: string | null;
   /** Resultado agregado por empresa (migration 0029) — opcional em bancos sem a migration. */
   empresa_id?: string | null;
+  /** Resultado de cliente contábil (migration 0032, Story 11.3) — opcional em bancos sem a migration. */
+  cliente_contabilidade_id?: string | null;
 }
 
 export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultado {
@@ -732,6 +737,7 @@ export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultad
     revisadoEm: row.revisado_em ?? null,
     motivoRevisao: row.motivo_revisao ?? null,
     empresaId: row.empresa_id ?? null,
+    clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
   };
 }
 
