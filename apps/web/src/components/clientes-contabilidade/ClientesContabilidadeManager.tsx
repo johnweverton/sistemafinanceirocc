@@ -107,6 +107,9 @@ export function ClientesContabilidadeManager() {
           />
         </div>
         <div className="flex flex-wrap gap-4">
+          <Link href={`/clientes-contabilidade/${modo.cliente.id}`} className="link-action">
+            Ver detalhes e histórico consolidado
+          </Link>
           {modo.cliente.modoCobranca === 'faixa_faturamento' && (
             <Link href={`/clientes-contabilidade/${modo.cliente.id}/faturamento`} className="link-action">
               Lançar faturamento

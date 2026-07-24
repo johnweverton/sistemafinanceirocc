@@ -10,6 +10,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 import {
   listarResumoPorMedico,
   historicoResultadosPorMedico,
+  historicoResultadosPorClienteContabilidade,
 } from '@/server/repositories/execucao-repository';
 
 function makeBuilder(result: { data: unknown; error: unknown }) {
@@ -85,6 +86,7 @@ describe('historicoResultadosPorMedico', () => {
     expect(res).toEqual([{
       execucaoId: 'e1', competencia: '2026-06', execucaoStatus: 'concluido',
       statusResultado: 'ok', totalValor: 950.89, iniciadoEm: '2026-06-01T10:00:00Z',
+      ehAdicional: false, // campo novo (Story 11.4/11.5) — médico não usa, default false
     }]);
   });
 
@@ -92,6 +94,36 @@ describe('historicoResultadosPorMedico', () => {
     mockFrom.mockReturnValue(makeBuilder({ data: null, error: { message: 'boom' } }));
     await expect(historicoResultadosPorMedico({ medicoId: 'm1' })).rejects.toThrow(
       'Falha ao buscar histórico do médico',
+    );
+  });
+});
+
+describe('historicoResultadosPorClienteContabilidade (Story 11.5)', () => {
+  it('filtra por cliente_contabilidade_id e mapeia eh_adicional', async () => {
+    const rowMensal = {
+      execucao_id: 'e1', status: 'ok', total_valor: 250,
+      execucoes: { competencia: '2026-07', status: 'concluido', iniciado_em: '2026-07-24T00:00:00Z', eh_adicional: false },
+    };
+    const rowAdicional = {
+      execucao_id: 'e2', status: 'ok', total_valor: 15000,
+      execucoes: { competencia: '2026-07', status: 'concluido', iniciado_em: '2026-07-24T01:00:00Z', eh_adicional: true },
+    };
+    const builder = makeBuilder({ data: [rowAdicional, rowMensal], error: null });
+    mockFrom.mockReturnValue(builder);
+
+    const res = await historicoResultadosPorClienteContabilidade('cc-1');
+
+    expect(builder.eq).toHaveBeenCalledWith('cliente_contabilidade_id', 'cc-1');
+    expect(res).toEqual([
+      { execucaoId: 'e2', competencia: '2026-07', execucaoStatus: 'concluido', statusResultado: 'ok', totalValor: 15000, iniciadoEm: '2026-07-24T01:00:00Z', ehAdicional: true },
+      { execucaoId: 'e1', competencia: '2026-07', execucaoStatus: 'concluido', statusResultado: 'ok', totalValor: 250, iniciadoEm: '2026-07-24T00:00:00Z', ehAdicional: false },
+    ]);
+  });
+
+  it('propaga erro como ApiError', async () => {
+    mockFrom.mockReturnValue(makeBuilder({ data: null, error: { message: 'boom' } }));
+    await expect(historicoResultadosPorClienteContabilidade('cc-1')).rejects.toThrow(
+      'Falha ao buscar histórico do cliente contábil',
     );
   });
 });

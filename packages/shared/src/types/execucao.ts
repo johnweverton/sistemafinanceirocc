@@ -137,7 +137,11 @@ export interface ExecucaoResumoMedico {
   qtdExecucoes: number;
 }
 
-/** Uma ocorrência no histórico de um médico ao longo das competências (drill-down). */
+/**
+ * Uma ocorrência no histórico de um médico ao longo das competências (drill-down). Reaproveitado
+ * tal como está pelo histórico de cliente contábil (Story 11.5) — nenhum campo é específico de
+ * médico.
+ */
 export interface ExecucaoHistoricoMedicoItem {
   execucaoId: string;
   competencia: string;
@@ -145,4 +149,6 @@ export interface ExecucaoHistoricoMedicoItem {
   statusResultado: StatusResultado;
   totalValor: number | null;
   iniciadoEm: string;
+  /** Adicional semestral (Story 11.4) — undefined/false = execução mensal normal. */
+  ehAdicional?: boolean;
 }

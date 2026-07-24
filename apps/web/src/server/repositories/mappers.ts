@@ -796,7 +796,13 @@ export interface ExecucaoHistoricoMedicoItemRow {
   execucao_id: string;
   status: ExecucaoResultado['status'];
   total_valor: number | null;
-  execucoes: { competencia: string; status: Execucao['status']; iniciado_em: string };
+  execucoes: {
+    competencia: string;
+    status: Execucao['status'];
+    iniciado_em: string;
+    /** Adicional semestral (migration 0033, Story 11.4) — opcional em bancos sem a migration. */
+    eh_adicional?: boolean | null;
+  };
 }
 
 export function toExecucaoHistoricoMedicoItem(
@@ -809,6 +815,7 @@ export function toExecucaoHistoricoMedicoItem(
     statusResultado: row.status,
     totalValor: row.total_valor,
     iniciadoEm: row.execucoes.iniciado_em,
+    ehAdicional: row.execucoes.eh_adicional ?? false,
   };
 }
 

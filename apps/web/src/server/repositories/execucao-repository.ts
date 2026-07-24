@@ -432,3 +432,24 @@ export async function historicoResultadosPorMedico(
   if (error) throw new ApiError(500, 'Falha ao buscar histórico do médico', 'DB_ERROR', { error: error.message });
   return (data as unknown as ExecucaoHistoricoMedicoItemRow[]).map(toExecucaoHistoricoMedicoItem);
 }
+
+/**
+ * Todas as ocorrências de um cliente contábil ao longo das competências (Story 11.5) — mesmo
+ * padrão de `historicoResultadosPorMedico`, reaproveitando o mesmo tipo/mapper (nenhum campo é
+ * específico de médico). Inclui `eh_adicional` (Story 11.4) para diferenciar boleto mensal do
+ * adicional semestral na listagem.
+ */
+export async function historicoResultadosPorClienteContabilidade(
+  clienteContabilidadeId: string,
+): Promise<ExecucaoHistoricoMedicoItem[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .select('execucao_id, status, total_valor, execucoes!inner(competencia, status, iniciado_em, eh_adicional)')
+    .eq('cliente_contabilidade_id', clienteContabilidadeId)
+    .order('execucoes(competencia)', { ascending: false });
+  if (error) {
+    throw new ApiError(500, 'Falha ao buscar histórico do cliente contábil', 'DB_ERROR', { error: error.message });
+  }
+  return (data as unknown as ExecucaoHistoricoMedicoItemRow[]).map(toExecucaoHistoricoMedicoItem);
+}

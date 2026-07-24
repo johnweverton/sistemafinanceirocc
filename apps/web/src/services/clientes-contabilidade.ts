@@ -2,6 +2,7 @@ import type {
   ClienteContabilidade,
   ClienteContabilidadeHistorico,
   ClienteContabilidadeFaturamento,
+  ExecucaoHistoricoMedicoItem,
   DadosCobranca,
   CondicoesCobranca,
   RegraPreco,
@@ -58,6 +59,8 @@ export const clientesContabilidadeService = {
   excluir: (id: string) => apiFetch<void>(`/clientes-contabilidade/${id}`, { method: 'DELETE' }),
   listarFaturamentos: (id: string) =>
     apiFetch<ClienteContabilidadeFaturamento[]>(`/clientes-contabilidade/${id}/faturamentos`),
+  execucoes: (id: string) =>
+    apiFetch<ExecucaoHistoricoMedicoItem[]>(`/clientes-contabilidade/${id}/execucoes`),
   lancarFaturamento: (id: string, payload: LancarFaturamentoPayload) =>
     apiFetch<LancarFaturamentoResposta>(`/clientes-contabilidade/${id}/faturamentos`, {
       method: 'POST',
@@ -70,4 +73,5 @@ export const clienteContabilidadeQueryKeys = {
   cliente: (id: string) => ['clientes-contabilidade', id] as const,
   clienteHistorico: (id: string) => ['clientes-contabilidade', id, 'historico'] as const,
   clienteFaturamentos: (id: string) => ['clientes-contabilidade', id, 'faturamentos'] as const,
+  clienteExecucoes: (id: string) => ['clientes-contabilidade', id, 'execucoes'] as const,
 };
