@@ -42,17 +42,21 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
   const disparar = useMutation({
     mutationFn: () => execucoesService.disparar(competencia, [], undefined, clienteId, ehAdicional),
     onSuccess: (r) => setExecucaoId(r.execucaoId),
-    onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao gerar execução', 'error'),
+    onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao calcular valor', 'error'),
   });
 
   return (
     <section className="space-y-6">
       <div className="page-header">
-        <h1 className="page-title">Gerar execução{cliente ? ` — ${cliente.nome}` : ''}</h1>
+        <h1 className="page-title">Emissão{cliente ? ` — ${cliente.nome}` : ''}</h1>
         <Link href="/clientes-contabilidade" className="btn-ghost btn btn-sm">
           Voltar
         </Link>
       </div>
+      <p className="-mt-4 text-2xs text-cc-muted">
+        Fluxo em 2 passos: calcule o valor da competência, confira o resultado e só então emita o
+        boleto.
+      </p>
 
       {!execucaoId && (
         <div className="card space-y-4 p-6">
@@ -72,7 +76,7 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
                 disabled={disparar.isPending || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)}
                 className="btn-primary"
               >
-                {disparar.isPending ? 'Gerando...' : 'Gerar execução'}
+                {disparar.isPending ? 'Calculando...' : 'Calcular valor'}
               </button>
             </div>
           </div>

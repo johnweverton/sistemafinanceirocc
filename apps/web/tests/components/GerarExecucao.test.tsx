@@ -74,7 +74,7 @@ describe('GerarExecucao', () => {
     renderComProviders();
     await waitFor(() => expect(screen.getByText(/Clínica X/)).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /Gerar execução/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Calcular valor/i }));
 
     await waitFor(() =>
       expect(execucoesService.disparar).toHaveBeenCalledWith(expect.any(String), [], undefined, 'cc-1', false),
@@ -106,7 +106,7 @@ describe('GerarExecucao', () => {
     ]);
 
     renderComProviders();
-    fireEvent.click(screen.getByRole('button', { name: /Gerar execução/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Calcular valor/i }));
 
     await waitFor(() => expect(screen.getByText(/R\$ 1200.00/)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /Emitir boleto/i })).toBeInTheDocument();
@@ -141,7 +141,7 @@ describe('GerarExecucao', () => {
     ]);
 
     renderComProviders();
-    fireEvent.click(screen.getByRole('button', { name: /Gerar execução/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Calcular valor/i }));
 
     await waitFor(() => expect(screen.getByText(/Faturamento não lançado/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /Emitir boleto/i })).not.toBeInTheDocument();
@@ -166,7 +166,7 @@ describe('GerarExecucao', () => {
     await waitFor(() => expect(toggle.checked).toBe(false));
 
     fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole('button', { name: /Gerar execução/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Calcular valor/i }));
     await waitFor(() =>
       expect(execucoesService.disparar).toHaveBeenCalledWith(expect.any(String), [], undefined, 'cc-1', true),
     );

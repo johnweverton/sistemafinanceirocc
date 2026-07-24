@@ -1,10 +1,27 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { clientesContabilidadeService, clienteContabilidadeQueryKeys } from '@/services/clientes-contabilidade';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApiClientError } from '@/lib/api-client';
+import {
+  clientesContabilidadeService,
+  clienteContabilidadeQueryKeys,
+  type AtualizarClienteContabilidadePayload,
+} from '@/services/clientes-contabilidade';
 import { reajusteAnualPendente } from '@/lib/reajuste-anual';
+import { useToast } from '@/components/ui/Toast';
+import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
 
+// Hub único do cliente contábil (feedback do dono, 2026-07-24): clicar na linha da lista chega
+// direto aqui, com as ações em destaque no topo — nada mais fica "lá embaixo" atrás de um
+// formulário. Edição de cadastro vive aqui (toggle local), substituindo o antigo modo "editar"
+// que existia dentro de ClientesContabilidadeManager.
 export function DetalheCliente({ clienteId }: { clienteId: string }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [editando, setEditando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
   const { data: cliente, isLoading: carregandoCliente } = useQuery({
     queryKey: clienteContabilidadeQueryKeys.cliente(clienteId),
     queryFn: () => clientesContabilidadeService.detalhe(clienteId),
@@ -27,6 +44,23 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
     queryFn: () => clientesContabilidadeService.execucoes(clienteId),
   });
 
+  const atualizar = useMutation({
+    mutationFn: (p: AtualizarClienteContabilidadePayload) => clientesContabilidadeService.atualizar(clienteId, p),
+    onSuccess: (c) => {
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.clientes() });
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.cliente(clienteId) });
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.clienteHistorico(clienteId) });
+      setEditando(false);
+      setErro(null);
+      toast(`Alterações de ${c.nome} salvas`, 'success');
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao salvar';
+      setErro(msg);
+      toast(msg, 'error');
+    },
+  });
+
   if (carregandoCliente) return <p className="text-sm text-cc-muted">Carregando…</p>;
   if (!cliente) return <p className="alert-error">Cliente contábil não encontrado.</p>;
 
@@ -44,11 +78,42 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
         </Link>
       </div>
 
-      <div className="card grid grid-cols-1 gap-4 p-6 sm:grid-cols-3">
-        <Info label="Regime tributário" valor={cliente.regimeTributario === 'lucro_presumido' ? 'Lucro Presumido' : 'Simples Nacional'} />
-        <Info label="Modo de cobrança" valor={cliente.modoCobranca === 'fixo' ? 'Valor fixo' : 'Faixa de faturamento'} />
-        <Info label="Status" valor={cliente.ativo ? 'Ativo' : 'Inativo'} />
+      {/* Barra de ações em destaque, logo abaixo do título — nunca atrás de um formulário. */}
+      <div className="flex flex-wrap gap-4">
+        <Link href={`/clientes-contabilidade/${clienteId}/execucao`} className="link-action">
+          Emissão
+        </Link>
+        {cliente.modoCobranca === 'faixa_faturamento' && (
+          <Link href={`/clientes-contabilidade/${clienteId}/faturamento`} className="link-action">
+            Faturamento
+          </Link>
+        )}
+        <button type="button" onClick={() => setEditando((v) => !v)} className="link-action">
+          {editando ? 'Cancelar edição' : 'Editar cadastro'}
+        </button>
+        <Link href={`/clientes-contabilidade/${clienteId}/historico`} className="link-action">
+          Histórico
+        </Link>
       </div>
+
+      {erro && <p role="alert" className="alert-error">{erro}</p>}
+
+      {editando ? (
+        <div className="card p-6">
+          <ClienteContabilidadeForm
+            inicial={cliente}
+            exigeMotivo
+            salvando={atualizar.isPending}
+            onSubmit={(dados, motivo) => atualizar.mutate({ ...dados, motivo })}
+          />
+        </div>
+      ) : (
+        <div className="card grid grid-cols-1 gap-4 p-6 sm:grid-cols-3">
+          <Info label="Regime tributário" valor={cliente.regimeTributario === 'lucro_presumido' ? 'Lucro Presumido' : 'Simples Nacional'} />
+          <Info label="Modo de cobrança" valor={cliente.modoCobranca === 'fixo' ? 'Valor fixo' : 'Faixa de faturamento'} />
+          <Info label="Status" valor={cliente.ativo ? 'Ativo' : 'Inativo'} />
+        </div>
+      )}
 
       {reajustePendente && (
         <p className="alert-error" role="alert">
@@ -56,20 +121,6 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
           mais. Confira o índice de reajuste do ano e atualize o valor fixo no cadastro.
         </p>
       )}
-
-      <div className="flex flex-wrap gap-4">
-        {cliente.modoCobranca === 'faixa_faturamento' && (
-          <Link href={`/clientes-contabilidade/${clienteId}/faturamento`} className="link-action">
-            Lançar faturamento
-          </Link>
-        )}
-        <Link href={`/clientes-contabilidade/${clienteId}/execucao`} className="link-action">
-          Gerar execução e emitir boleto
-        </Link>
-        <Link href={`/clientes-contabilidade/${clienteId}/historico`} className="link-action">
-          Ver histórico de alterações do cadastro
-        </Link>
-      </div>
 
       {cliente.modoCobranca === 'faixa_faturamento' && (
         <div className="space-y-2">

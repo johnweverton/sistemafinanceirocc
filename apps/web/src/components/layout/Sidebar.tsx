@@ -6,17 +6,33 @@ import { LogoCC } from '@/components/layout/LogoCC';
 import { LogoutButton } from '@/components/layout/LogoutButton';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 
-const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
-  { href: '/medicos', label: 'Médicos', icon: MedicosIcon },
-  { href: '/empresas', label: 'Empresas', icon: EmpresasIcon },
-  { href: '/clientes-contabilidade', label: 'Clientes Contábeis', icon: ClientesContabeisIcon },
-  { href: '/execucoes', label: 'Execuções', icon: ExecucoesIcon },
-  { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
-  { href: '/extrato', label: 'Extrato', icon: ExtratoIcon },
-  { href: '/dre', label: 'DRE', icon: DreIcon },
-  { href: '/configuracoes', label: 'Configurações', icon: ConfigIcon },
+// Item avulso (Dashboard) fica fora de qualquer seção — visão cruzada, não pertence a uma
+// vertical só. As duas verticais de cobrança (médica vs contabilidade) ficam em seções
+// separadas visualmente (feedback do dono, 2026-07-24) — Configurações fica avulso no fim,
+// mesmo espírito do Dashboard.
+const NAV_TOPO = [{ href: '/dashboard', label: 'Dashboard', icon: DashboardIcon }];
+
+const NAV_SECOES = [
+  {
+    titulo: 'Cobrança Médica',
+    itens: [
+      { href: '/medicos', label: 'Médicos', icon: MedicosIcon },
+      { href: '/empresas', label: 'Empresas', icon: EmpresasIcon },
+      { href: '/execucoes', label: 'Execuções', icon: ExecucoesIcon },
+      { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
+      { href: '/extrato', label: 'Extrato', icon: ExtratoIcon },
+      { href: '/dre', label: 'DRE', icon: DreIcon },
+    ],
+  },
+  {
+    titulo: 'Contabilidade',
+    itens: [
+      { href: '/clientes-contabilidade', label: 'Clientes Contábeis', icon: ClientesContabeisIcon },
+    ],
+  },
 ];
+
+const NAV_RODAPE = [{ href: '/configuracoes', label: 'Configurações', icon: ConfigIcon }];
 
 /** Navegação lateral: fixa no desktop, drawer deslizante no mobile. */
 export function Sidebar() {
@@ -116,30 +132,26 @@ export function Sidebar() {
 
         {/* Navegação */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {NAV.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? 'page' : undefined}
-                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                  active
-                    ? 'bg-cc-accent-soft text-cc-accent'
-                    : 'text-cc-ink-2 hover:bg-cc-surface-2 hover:text-cc-ink'
-                }`}
-              >
-                {/* Barra de acento à esquerda no item ativo */}
-                <span
-                  className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-cc-accent transition-opacity ${
-                    active ? 'opacity-100' : 'opacity-0'
-                  }`}
-                />
-                <Icon className={active ? 'text-cc-accent' : 'text-cc-muted group-hover:text-cc-ink'} />
-                {label}
-              </Link>
-            );
-          })}
+          {NAV_TOPO.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} />
+          ))}
+
+          {NAV_SECOES.map((secao) => (
+            <div key={secao.titulo} className="pt-4 first:pt-1">
+              <p className="px-3 pb-1 text-2xs font-semibold uppercase tracking-[0.15em] text-cc-muted">
+                {secao.titulo}
+              </p>
+              {secao.itens.map((item) => (
+                <NavLink key={item.href} item={item} pathname={pathname} />
+              ))}
+            </div>
+          ))}
+
+          <div className="pt-4">
+            {NAV_RODAPE.map((item) => (
+              <NavLink key={item.href} item={item} pathname={pathname} />
+            ))}
+          </div>
         </nav>
 
         {/* Rodapé: tema + sair */}
@@ -149,6 +161,38 @@ export function Sidebar() {
         </div>
       </aside>
     </>
+  );
+}
+
+/** Um item de navegação — extraído para ser reaproveitado nas 3 áreas do menu (topo/seções/rodapé). */
+function NavLink({
+  item,
+  pathname,
+}: {
+  item: { href: string; label: string; icon: (props: { className?: string }) => React.JSX.Element };
+  pathname: string;
+}) {
+  const { href, label, icon: Icon } = item;
+  const active = pathname.startsWith(href);
+  return (
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+        active
+          ? 'bg-cc-accent-soft text-cc-accent'
+          : 'text-cc-ink-2 hover:bg-cc-surface-2 hover:text-cc-ink'
+      }`}
+    >
+      {/* Barra de acento à esquerda no item ativo */}
+      <span
+        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-cc-accent transition-opacity ${
+          active ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+      <Icon className={active ? 'text-cc-accent' : 'text-cc-muted group-hover:text-cc-ink'} />
+      {label}
+    </Link>
   );
 }
 

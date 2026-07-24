@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClienteContabilidade } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
@@ -9,7 +10,6 @@ import {
   clientesContabilidadeService,
   clienteContabilidadeQueryKeys,
   type NovoClienteContabilidadePayload,
-  type AtualizarClienteContabilidadePayload,
 } from '@/services/clientes-contabilidade';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -17,9 +17,14 @@ import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
 
-type Modo = { tipo: 'lista' } | { tipo: 'novo' } | { tipo: 'editar'; cliente: ClienteContabilidade };
+// Clicar na linha leva direto para a página de detalhe (/clientes-contabilidade/[id]), que é o
+// hub único de ações (Emissão/Faturamento/Editar cadastro/Histórico) — feedback do dono
+// (2026-07-24): as ações estavam "lá embaixo" só depois de abrir o cadastro pra edição. O modo
+// 'editar' saiu deste componente; cadastro só é editado dentro do hub (DetalheCliente.tsx).
+type Modo = { tipo: 'lista' } | { tipo: 'novo' };
 
 export function ClientesContabilidadeManager() {
+  const router = useRouter();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
@@ -50,23 +55,6 @@ export function ClientesContabilidadeManager() {
     },
   });
 
-  const atualizar = useMutation({
-    mutationFn: ({ id, p }: { id: string; p: AtualizarClienteContabilidadePayload }) =>
-      clientesContabilidadeService.atualizar(id, p),
-    onSuccess: (c, vars) => {
-      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.clientes() });
-      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.clienteHistorico(vars.id) });
-      setModo({ tipo: 'lista' });
-      setErro(null);
-      toast(`Alterações de ${c.nome} salvas`, 'success');
-    },
-    onError: (e) => {
-      const msg = e instanceof ApiClientError ? e.message : 'Erro ao salvar';
-      setErro(msg);
-      toast(msg, 'error');
-    },
-  });
-
   const excluir = useMutation({
     mutationFn: (id: string) => clientesContabilidadeService.excluir(id),
     onSuccess: () => {
@@ -87,40 +75,6 @@ export function ClientesContabilidadeManager() {
         {erro && <p role="alert" className="alert-error">{erro}</p>}
         <div className="card p-6">
           <ClienteContabilidadeForm salvando={criar.isPending} onSubmit={(dados) => criar.mutate(dados)} />
-        </div>
-      </section>
-    );
-  }
-
-  if (modo.tipo === 'editar') {
-    return (
-      <section className="space-y-6">
-        <PageHeader titulo="Editar cliente contábil" onVoltar={() => setModo({ tipo: 'lista' })} />
-        <p className="text-sm text-cc-ink-2 -mt-3">{modo.cliente.nome}</p>
-        {erro && <p role="alert" className="alert-error">{erro}</p>}
-        <div className="card p-6">
-          <ClienteContabilidadeForm
-            inicial={modo.cliente}
-            exigeMotivo
-            salvando={atualizar.isPending}
-            onSubmit={(dados, motivo) => atualizar.mutate({ id: modo.cliente.id, p: { ...dados, motivo } })}
-          />
-        </div>
-        <div className="flex flex-wrap gap-4">
-          <Link href={`/clientes-contabilidade/${modo.cliente.id}`} className="link-action">
-            Ver detalhes e histórico consolidado
-          </Link>
-          {modo.cliente.modoCobranca === 'faixa_faturamento' && (
-            <Link href={`/clientes-contabilidade/${modo.cliente.id}/faturamento`} className="link-action">
-              Lançar faturamento
-            </Link>
-          )}
-          <Link href={`/clientes-contabilidade/${modo.cliente.id}/execucao`} className="link-action">
-            Gerar execução e emitir boleto
-          </Link>
-          <Link href={`/clientes-contabilidade/${modo.cliente.id}/historico`} className="link-action">
-            Ver histórico de alterações
-          </Link>
         </div>
       </section>
     );
@@ -174,7 +128,7 @@ export function ClientesContabilidadeManager() {
                 <tr
                   key={c.id}
                   className="border-b border-cc-hairline last:border-0 hover:bg-cc-surface-2/50 cursor-pointer"
-                  onClick={() => setModo({ tipo: 'editar', cliente: c })}
+                  onClick={() => router.push(`/clientes-contabilidade/${c.id}`)}
                 >
                   <td className="py-2.5 px-4 font-medium text-cc-ink">{c.nome}</td>
                   <td className="py-2.5 px-4 text-cc-ink-2">{regimeLabel(c.regimeTributario)}</td>
@@ -186,15 +140,35 @@ export function ClientesContabilidadeManager() {
                     <span className={c.ativo ? 'badge-green' : 'badge-slate'}>{c.ativo ? 'Ativo' : 'Inativo'}</span>
                   </td>
                   <td className="py-2.5 px-4 text-right">
-                    <button
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        setConfirmacao(c);
-                      }}
-                      className="text-xs font-medium text-cc-danger hover:underline"
-                    >
-                      Excluir
-                    </button>
+                    {/* Ações rápidas na própria linha (feedback do dono, 2026-07-24) — não exige
+                        abrir o hub pra emitir/lançar faturamento dos casos comuns. */}
+                    <div className="flex items-center justify-end gap-3">
+                      <Link
+                        href={`/clientes-contabilidade/${c.id}/execucao`}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="link-action"
+                      >
+                        Emissão
+                      </Link>
+                      {c.modoCobranca === 'faixa_faturamento' && (
+                        <Link
+                          href={`/clientes-contabilidade/${c.id}/faturamento`}
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="link-action"
+                        >
+                          Faturamento
+                        </Link>
+                      )}
+                      <button
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setConfirmacao(c);
+                        }}
+                        className="text-xs font-medium text-cc-danger hover:underline"
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

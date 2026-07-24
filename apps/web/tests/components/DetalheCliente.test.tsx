@@ -1,8 +1,10 @@
-// Teste de componente — DetalheCliente (Story 11.5). Mocka o service (sem I/O) e envolve com
-// QueryClientProvider (useQuery exige o contexto) — mesmo padrão de MedicoForm.test.tsx.
+// Teste de componente — DetalheCliente (Story 11.5 + reorganização UX 2026-07-24). Mocka o
+// service (sem I/O) e envolve com QueryClientProvider (useQuery exige o contexto) — mesmo padrão
+// de MedicoForm.test.tsx.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from '../../src/components/ui/Toast';
 
 vi.mock('../../src/services/clientes-contabilidade', () => ({
   clientesContabilidadeService: {
@@ -10,8 +12,10 @@ vi.mock('../../src/services/clientes-contabilidade', () => ({
     historico: vi.fn(),
     listarFaturamentos: vi.fn(),
     execucoes: vi.fn(),
+    atualizar: vi.fn(),
   },
   clienteContabilidadeQueryKeys: {
+    clientes: () => ['clientes-contabilidade'] as const,
     cliente: (id: string) => ['clientes-contabilidade', id] as const,
     clienteHistorico: (id: string) => ['clientes-contabilidade', id, 'historico'] as const,
     clienteFaturamentos: (id: string) => ['clientes-contabilidade', id, 'faturamentos'] as const,
@@ -26,7 +30,9 @@ function renderComQuery(clienteId: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <DetalheCliente clienteId={clienteId} />
+      <ToastProvider>
+        <DetalheCliente clienteId={clienteId} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -101,5 +107,56 @@ describe('DetalheCliente', () => {
 
     await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
     expect(screen.queryByText(/Reajuste anual pendente/i)).not.toBeInTheDocument();
+  });
+
+  it('a barra de ações mostra Emissão/Faturamento/Editar cadastro/Histórico em destaque (reorganização 2026-07-24)', async () => {
+    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue(clienteFaixaBase);
+
+    renderComQuery('cc-1');
+
+    await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'Emissão' })).toHaveAttribute('href', '/clientes-contabilidade/cc-1/execucao');
+    expect(screen.getByRole('link', { name: 'Faturamento' })).toHaveAttribute('href', '/clientes-contabilidade/cc-1/faturamento');
+    expect(screen.getByRole('link', { name: 'Histórico' })).toHaveAttribute('href', '/clientes-contabilidade/cc-1/historico');
+    expect(screen.getByRole('button', { name: 'Editar cadastro' })).toBeInTheDocument();
+  });
+
+  it('cliente modo fixo não mostra o link "Faturamento" na barra de ações', async () => {
+    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue({
+      ...clienteFaixaBase,
+      modoCobranca: 'fixo',
+    });
+
+    renderComQuery('cc-1');
+
+    await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: 'Faturamento' })).not.toBeInTheDocument();
+  });
+
+  it('"Editar cadastro" abre o formulário inline; salvar chama o service e volta pra visão normal', async () => {
+    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue(clienteFaixaBase);
+    vi.mocked(clientesContabilidadeService.atualizar).mockResolvedValue(clienteFaixaBase);
+
+    renderComQuery('cc-1');
+
+    await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Editar cadastro' }));
+
+    // Formulário de cadastro aparece; a botão vira "Cancelar edição".
+    expect(screen.getByRole('button', { name: 'Cancelar edição' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /Nome do cliente/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Motivo da alteração/i }), {
+      target: { value: 'Correção de teste' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Salvar cliente/i }));
+
+    await waitFor(() =>
+      expect(clientesContabilidadeService.atualizar).toHaveBeenCalledWith(
+        'cc-1',
+        expect.objectContaining({ motivo: 'Correção de teste' }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Editar cadastro' })).toBeInTheDocument());
   });
 });
