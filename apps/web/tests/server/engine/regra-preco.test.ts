@@ -51,6 +51,41 @@ describe('aplicarRegraPreco — forma fixo', () => {
   });
 });
 
+describe('aplicarRegraPreco — forma faixa_faturamento (Story 11.2)', () => {
+  const regra: RegraPreco = {
+    forma: 'faixa_faturamento',
+    base: null,
+    limiar: 5000,
+    taxa: null,
+    valorFixo: null,
+    valorAbaixoLimiar: 250,
+    valorAcimaLimiar: 480.56,
+  };
+
+  it('faturamento abaixo do limiar (R$4.999,99) → R$250', () => {
+    const r = aplicarRegraPreco(regra, 4999.99);
+    expect(r.valor).toBe(250);
+    expect(r.alertas).toEqual([]);
+  });
+
+  it('faturamento exatamente no limiar (R$5.000,00) → R$480,56 (GATE do dono: >= entra na faixa de cima)', () => {
+    const r = aplicarRegraPreco(regra, 5000);
+    expect(r.valor).toBe(480.56);
+  });
+
+  it('faturamento acima do limiar (R$10.000,00) → R$480,56', () => {
+    const r = aplicarRegraPreco(regra, 10000);
+    expect(r.valor).toBe(480.56);
+  });
+
+  it('regra incompleta (sem valorAcimaLimiar) → alerta, valor 0, nunca chuta', () => {
+    const incompleta: RegraPreco = { ...regra, valorAcimaLimiar: null };
+    const r = aplicarRegraPreco(incompleta, 6000);
+    expect(r.valor).toBe(0);
+    expect(r.alertas[0]).toContain('faixa de faturamento');
+  });
+});
+
 describe('aplicarRegraPreco — regra ausente', () => {
   it('null → alerta, valor 0', () => {
     const r = aplicarRegraPreco(null, 100);

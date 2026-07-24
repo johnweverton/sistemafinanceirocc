@@ -1,7 +1,8 @@
 // Regra de preço própria — extraída de processar-medico.ts (Story 10.4b) para ser reaproveitada
 // tanto pelo médico individual (modo 'preco_proprio', Story 10.1) quanto pelo agregado de
-// empresa (Story 10.4b) — mesma lógica, única diferença é a origem do número de guias (um
-// médico só vs. soma de vários). Função pura, sem I/O.
+// empresa (Story 10.4b) quanto pelo cliente contábil no modo 'faixa_faturamento' (Story 11.2) —
+// mesma lógica, a única diferença é o que a "quantidade" representa (guias contadas vs.
+// faturamento em R$ informado). Função pura, sem I/O.
 import type { RegraPreco } from '@cobranca/shared';
 
 export interface ResultadoRegraPreco {
@@ -13,10 +14,11 @@ export interface ResultadoRegraPreco {
 }
 
 /**
- * Aplica uma regra de preço própria (`por_guia`, `base_excedente` ou `fixo`) a uma quantidade
- * de guias. Regra ausente ou incompleta nunca chuta valor — devolve alerta e valor 0.
+ * Aplica uma regra de preço (`por_guia`, `base_excedente`, `fixo` ou `faixa_faturamento`) a uma
+ * quantidade — guias (médico/empresa) ou faturamento em R$ (cliente contábil, Story 11.2).
+ * Regra ausente ou incompleta nunca chuta valor — devolve alerta e valor 0.
  */
-export function aplicarRegraPreco(regra: RegraPreco | null, guias: number): ResultadoRegraPreco {
+export function aplicarRegraPreco(regra: RegraPreco | null, quantidade: number): ResultadoRegraPreco {
   if (!regra) {
     return {
       valor: 0,
@@ -34,9 +36,9 @@ export function aplicarRegraPreco(regra: RegraPreco | null, guias: number): Resu
       };
     }
     return {
-      valor: guias * regra.taxa,
+      valor: quantidade * regra.taxa,
       alertas: [],
-      subtotalFaixa: `${guias} × R$${regra.taxa.toFixed(2)} (por guia)`,
+      subtotalFaixa: `${quantidade} × R$${regra.taxa.toFixed(2)} (por guia)`,
     };
   }
 
@@ -48,11 +50,31 @@ export function aplicarRegraPreco(regra: RegraPreco | null, guias: number): Resu
         subtotalFaixa: '',
       };
     }
-    const excedente = Math.max(0, guias - regra.limiar);
+    const excedente = Math.max(0, quantidade - regra.limiar);
     return {
       valor: regra.base + excedente * regra.taxa,
       alertas: [],
       subtotalFaixa: `base R$${regra.base.toFixed(2)} + ${excedente} × R$${regra.taxa.toFixed(2)} (limiar ${regra.limiar} guias)`,
+    };
+  }
+
+  if (regra.forma === 'faixa_faturamento') {
+    if (regra.limiar == null || regra.valorAbaixoLimiar == null || regra.valorAcimaLimiar == null) {
+      return {
+        valor: 0,
+        alertas: [
+          'Regra de preço "faixa de faturamento" incompleta (falta limiar, valor abaixo ou valor acima) — valor zerado, corrigir cadastro.',
+        ],
+        subtotalFaixa: '',
+      };
+    }
+    // faturamento (aqui, `quantidade`) >= limiar entra na faixa de cima (GATE do dono, 2026-07-24).
+    const naFaixaDeCima = quantidade >= regra.limiar;
+    const valor = naFaixaDeCima ? regra.valorAcimaLimiar : regra.valorAbaixoLimiar;
+    return {
+      valor,
+      alertas: [],
+      subtotalFaixa: `faturamento R$${quantidade.toFixed(2)} ${naFaixaDeCima ? '≥' : '<'} R$${regra.limiar.toFixed(2)} → R$${valor.toFixed(2)}`,
     };
   }
 

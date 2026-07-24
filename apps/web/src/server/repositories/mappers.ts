@@ -6,6 +6,7 @@ import type {
   EmpresaHistorico,
   ClienteContabilidade,
   ClienteContabilidadeHistorico,
+  ClienteContabilidadeFaturamento,
   DadosCobranca,
   CondicoesCobranca,
   RegraPreco,
@@ -586,6 +587,28 @@ export function toClienteContabilidadeHistorico(
     alteradoPor: row.alterado_por,
     motivo: row.motivo,
     alteradoEm: row.alterado_em,
+  };
+}
+
+export interface ClienteContabilidadeFaturamentoRow {
+  id: string;
+  cliente_contabilidade_id: string;
+  competencia: string;
+  faturamento: number;
+  informado_por: string;
+  informado_em: string;
+}
+
+export function toClienteContabilidadeFaturamento(
+  row: ClienteContabilidadeFaturamentoRow,
+): ClienteContabilidadeFaturamento {
+  return {
+    id: row.id,
+    clienteContabilidadeId: row.cliente_contabilidade_id,
+    competencia: row.competencia,
+    faturamento: Number(row.faturamento), // numeric pode vir como string do PostgREST
+    informadoPor: row.informado_por,
+    informadoEm: row.informado_em,
   };
 }
 

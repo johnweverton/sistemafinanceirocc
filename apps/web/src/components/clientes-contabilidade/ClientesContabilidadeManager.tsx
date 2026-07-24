@@ -106,7 +106,12 @@ export function ClientesContabilidadeManager() {
             onSubmit={(dados, motivo) => atualizar.mutate({ id: modo.cliente.id, p: { ...dados, motivo } })}
           />
         </div>
-        <div>
+        <div className="flex flex-wrap gap-4">
+          {modo.cliente.modoCobranca === 'faixa_faturamento' && (
+            <Link href={`/clientes-contabilidade/${modo.cliente.id}/faturamento`} className="link-action">
+              Lançar faturamento
+            </Link>
+          )}
           <Link href={`/clientes-contabilidade/${modo.cliente.id}/historico`} className="link-action">
             Ver histórico de alterações
           </Link>

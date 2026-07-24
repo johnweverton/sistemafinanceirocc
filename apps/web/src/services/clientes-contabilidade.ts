@@ -1,6 +1,7 @@
 import type {
   ClienteContabilidade,
   ClienteContabilidadeHistorico,
+  ClienteContabilidadeFaturamento,
   DadosCobranca,
   CondicoesCobranca,
   RegraPreco,
@@ -9,6 +10,16 @@ import type {
   ModoCobrancaContabilidade,
 } from '@cobranca/shared';
 import { apiFetch } from '@/lib/api-client';
+
+export interface LancarFaturamentoPayload {
+  competencia: string;
+  faturamento: number;
+}
+
+export interface LancarFaturamentoResposta {
+  faturamento: ClienteContabilidadeFaturamento;
+  preview: { valor: number; alertas: string[]; subtotalFaixa: string };
+}
 
 export interface NovoClienteContabilidadePayload {
   nome: string;
@@ -45,10 +56,18 @@ export const clientesContabilidadeService = {
   historico: (id: string) =>
     apiFetch<ClienteContabilidadeHistorico[]>(`/clientes-contabilidade/${id}/historico`),
   excluir: (id: string) => apiFetch<void>(`/clientes-contabilidade/${id}`, { method: 'DELETE' }),
+  listarFaturamentos: (id: string) =>
+    apiFetch<ClienteContabilidadeFaturamento[]>(`/clientes-contabilidade/${id}/faturamentos`),
+  lancarFaturamento: (id: string, payload: LancarFaturamentoPayload) =>
+    apiFetch<LancarFaturamentoResposta>(`/clientes-contabilidade/${id}/faturamentos`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
 
 export const clienteContabilidadeQueryKeys = {
   clientes: () => ['clientes-contabilidade'] as const,
   cliente: (id: string) => ['clientes-contabilidade', id] as const,
   clienteHistorico: (id: string) => ['clientes-contabilidade', id, 'historico'] as const,
+  clienteFaturamentos: (id: string) => ['clientes-contabilidade', id, 'faturamentos'] as const,
 };

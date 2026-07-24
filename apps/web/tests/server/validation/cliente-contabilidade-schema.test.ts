@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   novoClienteContabilidadeSchema,
   atualizarClienteContabilidadeSchema,
+  lancarFaturamentoSchema,
 } from '../../../src/server/validation/cliente-contabilidade-schema';
 
 describe('novoClienteContabilidadeSchema', () => {
@@ -124,5 +125,24 @@ describe('atualizarClienteContabilidadeSchema', () => {
   it('campo fora da whitelist (strict) → rejeita', () => {
     const r = atualizarClienteContabilidadeSchema.safeParse({ nome: 'X', motivo: 'y', campoInvalido: 'z' });
     expect(r.success).toBe(false);
+  });
+});
+
+describe('lancarFaturamentoSchema (Story 11.2)', () => {
+  it('competência YYYY-MM + faturamento válido passa', () => {
+    const r = lancarFaturamentoSchema.parse({ competencia: '2026-07', faturamento: 4500 });
+    expect(r.faturamento).toBe(4500);
+  });
+
+  it('competência fora do formato → rejeita', () => {
+    expect(lancarFaturamentoSchema.safeParse({ competencia: '07-2026', faturamento: 4500 }).success).toBe(false);
+  });
+
+  it('faturamento negativo → rejeita', () => {
+    expect(lancarFaturamentoSchema.safeParse({ competencia: '2026-07', faturamento: -1 }).success).toBe(false);
+  });
+
+  it('faturamento zero é válido (mês sem movimento)', () => {
+    expect(lancarFaturamentoSchema.safeParse({ competencia: '2026-07', faturamento: 0 }).success).toBe(true);
   });
 });

@@ -72,3 +72,13 @@ export const atualizarClienteContabilidadeSchema = z
 
 export type NovoClienteContabilidadeInput = z.infer<typeof novoClienteContabilidadeSchema>;
 export type AtualizarClienteContabilidadeInput = z.infer<typeof atualizarClienteContabilidadeSchema>;
+
+/** Lançamento de faturamento mensal (Story 11.2) — usado pelo modo `faixa_faturamento`. */
+export const lancarFaturamentoSchema = z
+  .object({
+    competencia: competenciaSchema,
+    faturamento: z.number().min(0, 'Faturamento não pode ser negativo'),
+  })
+  .strict();
+
+export type LancarFaturamentoInput = z.infer<typeof lancarFaturamentoSchema>;

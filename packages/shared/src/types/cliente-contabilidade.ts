@@ -53,3 +53,18 @@ export interface ClienteContabilidadeHistorico {
   motivo: string | null;
   alteradoEm: string;
 }
+
+/**
+ * Faturamento mensal informado para um cliente contábil no modo `faixa_faturamento` (Story
+ * 11.2). Um lançamento por competência (`unique (cliente_contabilidade_id, competencia)`,
+ * migration 0031) — relançar a mesma competência ATUALIZA o valor, não duplica.
+ */
+export interface ClienteContabilidadeFaturamento {
+  id: string;
+  clienteContabilidadeId: string;
+  /** 'YYYY-MM'. */
+  competencia: string;
+  faturamento: number;
+  informadoPor: string;
+  informadoEm: string;
+}
