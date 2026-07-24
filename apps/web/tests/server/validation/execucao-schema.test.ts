@@ -89,3 +89,25 @@ describe('dispararExecucaoSchema — cliente contábil (Story 11.3)', () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe('dispararExecucaoSchema — adicional semestral (Story 11.4)', () => {
+  const clienteId = '22222222-2222-2222-2222-222222222222';
+
+  it('ehAdicional true + clienteContabilidadeId passa', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      clienteContabilidadeId: clienteId,
+      ehAdicional: true,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('ehAdicional true SEM clienteContabilidadeId → rejeita', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [{ medicoId: clienteId, producaoExternaId: 'p1', producaoNome: 'P' }],
+      ehAdicional: true,
+    });
+    expect(r.success).toBe(false);
+  });
+});

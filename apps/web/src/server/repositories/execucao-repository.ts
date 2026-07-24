@@ -42,6 +42,8 @@ export async function criarExecucao(
   empresaId?: string | null,
   /** Marca a execução como sendo de cliente contábil (Story 11.3) — null/ausente = execução normal. */
   clienteContabilidadeId?: string | null,
+  /** Marca a execução como o boleto avulso do adicional semestral (Story 11.4). */
+  ehAdicional?: boolean,
 ): Promise<Execucao> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -54,6 +56,7 @@ export async function criarExecucao(
       total_medicos: selecoes.length,
       empresa_id: empresaId ?? null,
       cliente_contabilidade_id: clienteContabilidadeId ?? null,
+      eh_adicional: ehAdicional ?? false,
     })
     .select('*')
     .single();

@@ -82,6 +82,7 @@ export interface OrchestratorDeps {
     }[],
     empresaId?: string | null,
     clienteContabilidadeId?: string | null,
+    ehAdicional?: boolean,
   ) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
@@ -194,6 +195,8 @@ export async function iniciarExecucao(
   empresaId?: string | null,
   /** Marca a execução como sendo de cliente contábil (Story 11.3) — null/ausente = execução normal. */
   clienteContabilidadeId?: string | null,
+  /** Marca a execução como o boleto avulso do adicional semestral (Story 11.4). */
+  ehAdicional?: boolean,
 ): Promise<Execucao> {
   // Cliente contábil não tem médicos/produção — caminho totalmente separado das validações de
   // seleção abaixo (mesmo espírito do branch de empresa, mas sem nada pra selecionar).
@@ -204,7 +207,13 @@ export async function iniciarExecucao(
     const cliente = await deps.buscarClienteContabilidade(clienteContabilidadeId);
     if (!cliente) throw new ApiError(422, 'Cliente contábil não encontrado', 'CLIENTE_CONTABILIDADE_NAO_ENCONTRADO');
     if (!cliente.ativo) throw new ApiError(422, 'Cliente contábil inativo', 'CLIENTE_CONTABILIDADE_INATIVO');
-    return deps.criarExecucao(competencia, usuarioId, [], null, clienteContabilidadeId);
+    if (ehAdicional && !cliente.adicionalAtivo) {
+      throw new ApiError(422, 'Cliente contábil não tem adicional semestral ativo', 'ADICIONAL_NAO_ATIVO');
+    }
+    return deps.criarExecucao(competencia, usuarioId, [], null, clienteContabilidadeId, ehAdicional ?? false);
+  }
+  if (ehAdicional) {
+    throw new ApiError(422, 'Adicional semestral só é válido para execução de cliente contábil', 'ADICIONAL_SEM_CLIENTE');
   }
 
   // QA M-1: validação server-side das seleções (defesa em profundidade — a UI já filtra,
@@ -289,6 +298,7 @@ export async function processarProximoLote(
       execucaoId,
       execucao.clienteContabilidadeId,
       execucao.competencia,
+      Boolean(execucao.ehAdicional),
       deps,
     );
   }
@@ -430,12 +440,21 @@ async function processarExecucaoClienteContabilidade(
   execucaoId: string,
   clienteContabilidadeId: string,
   competencia: string,
+  ehAdicional: boolean,
   deps: OrchestratorDeps,
 ): Promise<ResultadoLote> {
   const cliente = await deps.buscarClienteContabilidade(clienteContabilidadeId);
   if (!cliente) throw new Error(`Cliente contábil ${clienteContabilidadeId} não encontrado`);
 
   const resultado = await (async () => {
+    // Adicional semestral (Story 11.4): valor à parte do cadastro, ignora modoCobranca/faturamento
+    // — regra montada em memória (não é a `regraPreco` persistida do cliente).
+    if (ehAdicional) {
+      return aplicarRegraPreco(
+        { forma: 'fixo', base: null, limiar: null, taxa: null, valorFixo: cliente.adicionalValor },
+        0,
+      );
+    }
     if (cliente.modoCobranca === 'faixa_faturamento') {
       const faturamento = await deps.buscarFaturamentoClienteContabilidade(clienteContabilidadeId, competencia);
       if (!faturamento) {
@@ -457,7 +476,7 @@ async function processarExecucaoClienteContabilidade(
   const status: ExecucaoResultado['status'] = resultado.alertas.length > 0 ? 'alerta' : 'ok';
 
   await deps.gravarResultadoClienteContabilidade(execucaoId, cliente.id, {
-    nome: cliente.nome,
+    nome: ehAdicional ? `${cliente.nome} — Adicional semestral` : cliente.nome,
     totalValor: resultado.valor,
     status,
     alertas: resultado.alertas,

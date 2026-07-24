@@ -172,7 +172,7 @@ export function fakeDeps(
     buscarClienteContabilidade: async (id) => state.clientesContabilidade.get(id) ?? null,
     buscarFaturamentoClienteContabilidade: async (clienteId, competencia) =>
       state.faturamentos.get(`${clienteId}:${competencia}`) ?? null,
-    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId, clienteContabilidadeId) => {
+    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId, clienteContabilidadeId, ehAdicional) => {
       const id = `exec-${proximoId++}`;
       const exec: Execucao = {
         id,
@@ -189,6 +189,7 @@ export function fakeDeps(
         totalGeralValor: null,
         empresaId: empresaId ?? null,
         clienteContabilidadeId: clienteContabilidadeId ?? null,
+        ehAdicional: ehAdicional ?? false,
       };
       state.execucoes.set(id, exec);
       state.resultados.set(id, []);

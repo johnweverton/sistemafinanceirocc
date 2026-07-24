@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiClientError } from '@/lib/api-client';
@@ -8,6 +8,7 @@ import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { boletosService } from '@/services/boletos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
 import { useToast } from '@/components/ui/Toast';
+import { cicloAdicionalVencendoNaCompetencia } from '@/lib/adicional-semestral';
 
 function competenciaAtual(): string {
   const hoje = new Date();
@@ -17,6 +18,7 @@ function competenciaAtual(): string {
 export function GerarExecucao({ clienteId }: { clienteId: string }) {
   const { toast } = useToast();
   const [competencia, setCompetencia] = useState(competenciaAtual());
+  const [ehAdicional, setEhAdicional] = useState(false);
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
 
   const { data: cliente } = useQuery({
@@ -24,8 +26,21 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
     queryFn: () => clientesContabilidadeService.detalhe(clienteId),
   });
 
+  const cicloVencendo =
+    !!cliente?.adicionalAtivo &&
+    !!cliente.adicionalCompetenciaBase &&
+    !!cliente.adicionalIntervaloMeses &&
+    cicloAdicionalVencendoNaCompetencia(cliente.adicionalCompetenciaBase, cliente.adicionalIntervaloMeses, competencia);
+
+  // Sugestão de UI (nunca dispara nada sozinha, PRD §2) — pré-marca o toggle quando a competência
+  // bate o ciclo; o operador ainda pode desmarcar/marcar manualmente antes de confirmar.
+  useEffect(() => {
+    setEhAdicional(cicloVencendo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cicloVencendo, cliente?.id]);
+
   const disparar = useMutation({
-    mutationFn: () => execucoesService.disparar(competencia, [], undefined, clienteId),
+    mutationFn: () => execucoesService.disparar(competencia, [], undefined, clienteId, ehAdicional),
     onSuccess: (r) => setExecucaoId(r.execucaoId),
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao gerar execução', 'error'),
   });
@@ -40,25 +55,49 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
       </div>
 
       {!execucaoId && (
-        <div className="card grid grid-cols-1 gap-4 p-6 sm:grid-cols-3">
-          <label className="block">
-            <span className="field-label mb-1.5">Competência</span>
-            <input
-              type="month"
-              value={competencia}
-              onChange={(e) => setCompetencia(e.target.value)}
-              className="input"
-            />
-          </label>
-          <div className="flex items-end">
-            <button
-              onClick={() => disparar.mutate()}
-              disabled={disparar.isPending || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)}
-              className="btn-primary"
-            >
-              {disparar.isPending ? 'Gerando...' : 'Gerar execução'}
-            </button>
+        <div className="card space-y-4 p-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <label className="block">
+              <span className="field-label mb-1.5">Competência</span>
+              <input
+                type="month"
+                value={competencia}
+                onChange={(e) => setCompetencia(e.target.value)}
+                className="input"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                onClick={() => disparar.mutate()}
+                disabled={disparar.isPending || !/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)}
+                className="btn-primary"
+              >
+                {disparar.isPending ? 'Gerando...' : 'Gerar execução'}
+              </button>
+            </div>
           </div>
+
+          {cliente?.adicionalAtivo && (
+            <div className="rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4">
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={ehAdicional}
+                  onChange={(e) => setEhAdicional(e.target.checked)}
+                  className="h-4 w-4 rounded border-cc-hairline accent-cc-accent"
+                />
+                <span className="text-sm text-cc-ink-2">
+                  Gerar o adicional semestral desta competência (R$ {(cliente.adicionalValor ?? 0).toFixed(2)}) em
+                  vez do boleto mensal
+                </span>
+              </label>
+              {cicloVencendo && (
+                <p className="mt-1.5 text-2xs text-cc-muted">
+                  Esta competência bate o ciclo do adicional semestral — toggle pré-marcado (confirme antes de gerar).
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

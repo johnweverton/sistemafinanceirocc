@@ -50,6 +50,11 @@ export interface Execucao {
    * (não há médicos/produção envolvidos). Mutuamente exclusivo com `empresaId`.
    */
   clienteContabilidadeId?: string | null;
+  /**
+   * Marca esta execução como o boleto avulso do adicional semestral (Story 11.4) — só válido
+   * junto com `clienteContabilidadeId`. Default `false` = execução mensal normal.
+   */
+  ehAdicional?: boolean;
 }
 
 export interface ExecucaoResultado {

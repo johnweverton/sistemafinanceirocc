@@ -77,7 +77,7 @@ describe('GerarExecucao', () => {
     fireEvent.click(screen.getByRole('button', { name: /Gerar execução/i }));
 
     await waitFor(() =>
-      expect(execucoesService.disparar).toHaveBeenCalledWith(expect.any(String), [], undefined, 'cc-1'),
+      expect(execucoesService.disparar).toHaveBeenCalledWith(expect.any(String), [], undefined, 'cc-1', false),
     );
   });
 
@@ -145,5 +145,47 @@ describe('GerarExecucao', () => {
 
     await waitFor(() => expect(screen.getByText(/Faturamento não lançado/)).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /Emitir boleto/i })).not.toBeInTheDocument();
+  });
+
+  it('cliente com adicional ativo mostra o toggle; sem bater o ciclo, começa desmarcado', async () => {
+    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue({
+      ...clienteFixo,
+      adicionalAtivo: true,
+      adicionalValor: 15000,
+      adicionalIntervaloMeses: 6,
+      adicionalCompetenciaBase: '2026-01',
+    });
+    vi.mocked(execucoesService.disparar).mockResolvedValue({ execucaoId: 'exec-4' });
+
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText(/Gerar o adicional semestral/i)).toBeInTheDocument());
+
+    // Competência que NÃO bate o ciclo (offset de 2 meses a partir de 2026-01, não múltiplo de 6).
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-03' } });
+    const toggle = screen.getByRole('checkbox') as HTMLInputElement;
+    await waitFor(() => expect(toggle.checked).toBe(false));
+
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: /Gerar execução/i }));
+    await waitFor(() =>
+      expect(execucoesService.disparar).toHaveBeenCalledWith(expect.any(String), [], undefined, 'cc-1', true),
+    );
+  });
+
+  it('competência que bate o ciclo pré-marca o toggle automaticamente', async () => {
+    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue({
+      ...clienteFixo,
+      adicionalAtivo: true,
+      adicionalValor: 15000,
+      adicionalIntervaloMeses: 6,
+      adicionalCompetenciaBase: '2026-01',
+    });
+
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText(/Gerar o adicional semestral/i)).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-07' } });
+    await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true));
+    expect(screen.getByText(/bate o ciclo do adicional semestral/i)).toBeInTheDocument();
   });
 });

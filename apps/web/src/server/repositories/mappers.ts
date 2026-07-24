@@ -633,6 +633,8 @@ export interface ExecucaoRow {
   empresa_id?: string | null;
   /** Execução de cliente contábil (migration 0032, Story 11.3) — opcional em bancos sem a migration. */
   cliente_contabilidade_id?: string | null;
+  /** Adicional semestral (migration 0033, Story 11.4) — opcional em bancos sem a migration. */
+  eh_adicional?: boolean | null;
 }
 
 export function toExecucao(row: ExecucaoRow): Execucao {
@@ -651,6 +653,7 @@ export function toExecucao(row: ExecucaoRow): Execucao {
     totalGeralValor: row.total_geral_valor,
     empresaId: row.empresa_id ?? null,
     clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
+    ehAdicional: row.eh_adicional ?? false,
   };
 }
 

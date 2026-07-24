@@ -30,13 +30,15 @@ export const execucoesService = {
   apoio: () => apiFetch<ApoioData>('/execucoes/apoio'),
   /**
    * `empresaId` (Story 10.4c) marca a execução como agregada por empresa; `clienteContabilidadeId`
-   * (Story 11.3) marca como execução de cliente contábil — mutuamente exclusivos, ambos opcionais.
+   * (Story 11.3) marca como execução de cliente contábil; `ehAdicional` (Story 11.4) marca como o
+   * boleto avulso do adicional semestral (só válido com `clienteContabilidadeId`).
    */
   disparar: (
     competencia: string,
     selecoes: ExecucaoSelecaoPayload[],
     empresaId?: string,
     clienteContabilidadeId?: string,
+    ehAdicional?: boolean,
   ) =>
     apiFetch<{ execucaoId: string }>('/execucoes', {
       method: 'POST',
@@ -45,6 +47,7 @@ export const execucoesService = {
         selecoes,
         ...(empresaId ? { empresaId } : {}),
         ...(clienteContabilidadeId ? { clienteContabilidadeId } : {}),
+        ...(ehAdicional ? { ehAdicional } : {}),
       }),
     }),
   listar: () => apiFetch<Execucao[]>('/execucoes'),

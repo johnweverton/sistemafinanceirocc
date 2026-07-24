@@ -22,6 +22,8 @@ export const dispararExecucaoSchema = z
     empresaId: z.string().uuid().optional(),
     // Marca a execução como sendo de cliente contábil (Story 11.3) — opcional.
     clienteContabilidadeId: z.string().uuid().optional(),
+    // Marca a execução como o boleto avulso do adicional semestral (Story 11.4) — opcional.
+    ehAdicional: z.boolean().optional(),
   })
   .refine((d) => d.selecoes.length >= 1 || !!d.clienteContabilidadeId, {
     message: 'Selecione pelo menos um médico',
@@ -30,6 +32,10 @@ export const dispararExecucaoSchema = z
   .refine((d) => !(d.empresaId && d.clienteContabilidadeId), {
     message: 'Execução não pode ser de empresa e cliente contábil ao mesmo tempo',
     path: ['clienteContabilidadeId'],
+  })
+  .refine((d) => !d.ehAdicional || !!d.clienteContabilidadeId, {
+    message: 'Adicional semestral só é válido para execução de cliente contábil',
+    path: ['ehAdicional'],
   });
 
 export type DispararExecucaoInput = z.infer<typeof dispararExecucaoSchema>;

@@ -109,6 +109,73 @@ describe('Orquestrador — cliente contábil, modo faixa_faturamento (Story 11.3
   });
 });
 
+describe('Orquestrador — adicional semestral (Story 11.4)', () => {
+  it('gera resultado com o valor do adicional, ignorando modoCobranca/faturamento do cadastro', async () => {
+    const cliente = clienteContabilidadeFake({
+      id: 'cc-adicional-1',
+      nome: 'Vital Soluções',
+      modoCobranca: 'fixo',
+      regraPreco: { forma: 'fixo', base: null, limiar: null, taxa: null, valorFixo: 1200 },
+      adicionalAtivo: true,
+      adicionalValor: 15000,
+      adicionalIntervaloMeses: 6,
+      adicionalCompetenciaBase: '2026-01',
+    });
+    const state = novoEstado([], [], [cliente]);
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-07', [], 'u', deps, undefined, 'cc-adicional-1', true);
+    expect(exec.ehAdicional).toBe(true);
+
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultadosClienteContabilidade.get(exec.id)!;
+    expect(resultado.status).toBe('ok');
+    expect(resultado.totalValor).toBe(15000); // NÃO é o valorFixo de 1200 do modo 'fixo' normal
+    expect(resultado.nome).toContain('Adicional semestral');
+  });
+
+  it('rejeita ehAdicional em cliente sem adicionalAtivo (422)', async () => {
+    const cliente = clienteContabilidadeFake({ id: 'cc-adicional-2', nome: 'Sem Adicional', adicionalAtivo: false });
+    const state = novoEstado([], [], [cliente]);
+    const deps = fakeDeps(state, 5, processarProximoLote);
+    await expect(
+      iniciarExecucao('2026-07', [], 'u', deps, undefined, 'cc-adicional-2', true),
+    ).rejects.toMatchObject({ status: 422, code: 'ADICIONAL_NAO_ATIVO' });
+    expect(state.execucoes.size).toBe(0);
+  });
+
+  it('rejeita ehAdicional sem clienteContabilidadeId (422)', async () => {
+    const state = novoEstado([], [], []);
+    const deps = fakeDeps(state, 5, processarProximoLote);
+    await expect(
+      iniciarExecucao('2026-07', [], 'u', deps, undefined, undefined, true),
+    ).rejects.toMatchObject({ status: 422, code: 'ADICIONAL_SEM_CLIENTE' });
+  });
+
+  it('execução mensal normal (ehAdicional false/ausente) não é afetada pela flag', async () => {
+    const cliente = clienteContabilidadeFake({
+      id: 'cc-adicional-3',
+      nome: 'Vital Soluções',
+      modoCobranca: 'fixo',
+      regraPreco: { forma: 'fixo', base: null, limiar: null, taxa: null, valorFixo: 1200 },
+      adicionalAtivo: true,
+      adicionalValor: 15000,
+      adicionalIntervaloMeses: 6,
+      adicionalCompetenciaBase: '2026-01',
+    });
+    const state = novoEstado([], [], [cliente]);
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-07', [], 'u', deps, undefined, 'cc-adicional-3');
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultadosClienteContabilidade.get(exec.id)!;
+    expect(resultado.totalValor).toBe(1200); // valorFixo do cadastro, não o adicional
+    expect(resultado.nome).toBe('Vital Soluções');
+  });
+});
+
 describe('Orquestrador — cliente contábil, validação em iniciarExecucao (Story 11.3)', () => {
   it('rejeita cliente contábil inexistente (422)', async () => {
     const state = novoEstado([], [], []);
