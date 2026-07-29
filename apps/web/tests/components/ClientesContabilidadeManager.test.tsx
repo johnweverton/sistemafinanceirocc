@@ -17,6 +17,7 @@ vi.mock('../../src/services/clientes-contabilidade', () => ({
     listar: vi.fn(),
     criar: vi.fn(),
     excluir: vi.fn(),
+    importar: vi.fn(),
   },
   clienteContabilidadeQueryKeys: {
     clientes: () => ['clientes-contabilidade'] as const,

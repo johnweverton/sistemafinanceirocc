@@ -1,4 +1,5 @@
-cpf,nome,especialidade,status_hapvida,faz_outros_hospitais,faz_imobilizacoes,modo_mudanca_data,colaborador_responsavel,pagador_tipo,pagador_documento,pagador_nome,email,cep,logradouro,numero,complemento,bairro,cidade,uf,conta_emissora
-12345678900,Dr. Fulano de Tal,Cardiologia,credenciado,nao,nao,nao,Maria,PF,12345678900,Dr. Fulano de Tal,fulano@exemplo.com,60000000,Rua das Flores,100,Sala 2,Centro,Fortaleza,CE,mc
-98765432100,Dra. Ciclana,Pediatria,nao_credenciado,nao,nao,nao,Joao,PJ,12345678000199,Clinica Ciclana LTDA,contato@ciclana.com,60110000,Avenida Beira Mar,2000,,Meireles,Fortaleza,CE,cavalcante_viana
-11122233344,Dr. Beltrano,Ortopedia,nenhum,sim,sim,nao,Maria,,,,,,,,,,,,
+cpf,nome,especialidade,status_hapvida,faz_outros_hospitais,faz_imobilizacoes,modo_mudanca_data,colaborador_responsavel,pagador_tipo,pagador_documento,pagador_nome,email,whatsapp,cep,logradouro,numero,complemento,bairro,cidade,uf,conta_emissora,modo_cobranca,percentual_producao,dias_vencimento,multa_percent,juros_mes_percent,desconto_percent,desconto_dias,regra_preco_forma,regra_preco_base,regra_preco_limiar,regra_preco_taxa,regra_preco_valor_fixo,empresa_grupo
+12345678900,Dr. Fulano de Tal,Cardiologia,credenciado,nao,nao,nao,Maria,PF,12345678900,Dr. Fulano de Tal,fulano@exemplo.com,85999998888,60000000,Rua das Flores,100,Sala 2,Centro,Fortaleza,CE,mc,faixa_guias,,,,,,,,,,,,
+98765432100,Dra. Ciclana,Pediatria,nao_credenciado,nao,nao,nao,Joao,PJ,12345678000199,Clinica Ciclana LTDA,contato@ciclana.com,,60110000,Avenida Beira Mar,2000,,Meireles,Fortaleza,CE,cavalcante_viana,faixa_guias,,,,,,,,,,,,
+11122233344,Dr. Beltrano,Ortopedia,nenhum,sim,sim,nao,Maria,,,,,,,,,,,,,,percentual_producao,35,,,,,,,,,,,
+55566677788,Dr. Preco Proprio,Neurologia,credenciado,nao,nao,nao,Maria,,,,,,,,,,,,,,preco_proprio,,,,,,,por_guia,,,4.00,,

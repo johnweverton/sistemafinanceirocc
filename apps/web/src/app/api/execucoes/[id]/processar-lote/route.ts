@@ -16,9 +16,10 @@ function segredosBatem(recebido: string | null, esperado: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-// Calibrado para 120 médicos/competência — pior caso ~30s/lote, dentro de 60s.
-// Revisitar se o volume mensal passar de ~200 médicos (architecture: Core Workflows).
-export const maxDuration = 60;
+// Calibrado para 120-150 médicos/competência processados em paralelo (concorrência limitada,
+// ver EXECUCAO_CONCORRENCIA_MEDICO em execucao-orchestrator.ts) — folga ampla dentro dos 300s
+// do plano Vercel Pro. Revisitar se o volume mensal passar muito de ~150 médicos por lote.
+export const maxDuration = 300;
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const env = getServerEnv();

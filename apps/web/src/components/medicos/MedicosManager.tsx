@@ -24,6 +24,10 @@ import { SyncModal } from './SyncModal';
 
 type Modo = { tipo: 'lista' } | { tipo: 'novo' } | { tipo: 'editar'; medico: Medico };
 type FiltroStatus = 'todos' | 'aguardando' | 'ativos' | 'inativos' | 'cobranca_incompleta';
+// Eixo ortogonal ao FiltroStatus (ciclo de vida do cadastro): "tipo" de negócio do médico.
+// "VH"/"Credenciado" mapeiam para o enum `statusHapvida` já existente (mesma tradução usada em
+// derivarStatusHapvida/medico-sync.ts: "Produção VH" da origem → 'nao_credenciado').
+type FiltroTipo = 'todos' | 'vh' | 'credenciado' | 'nenhum';
 type Confirmacao = { tipo: 'unico'; medico: Medico } | { tipo: 'lote'; ids: string[] };
 
 const POR_PAGINA = 25;
@@ -63,6 +67,13 @@ const FILTRO_OPCOES: { valor: FiltroStatus; label: string }[] = [
   { valor: 'cobranca_incompleta', label: 'Cobrança incompleta' },
 ];
 
+const FILTRO_TIPO_OPCOES: { valor: FiltroTipo; label: string }[] = [
+  { valor: 'todos', label: 'Todos os tipos' },
+  { valor: 'vh', label: 'VH' },
+  { valor: 'credenciado', label: 'Credenciado' },
+  { valor: 'nenhum', label: 'Nenhum' },
+];
+
 function normalizarBusca(s: string): string {
   return s
     .normalize('NFD')
@@ -80,6 +91,7 @@ export function MedicosManager() {
   const [excluirLoteResultado, setExcluirLoteResultado] = useState<ExclusaoLoteResultado | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
   const [pagina, setPagina] = useState(1);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
@@ -248,12 +260,16 @@ export function MedicosManager() {
       const alvo = normalizarBusca(`${m.nome} ${m.cpf ?? ''}`);
       if (!alvo.includes(termoBusca)) return false;
     }
-    if (filtroStatus === 'todos') return true;
-    const status = calcularStatus(m);
-    if (filtroStatus === 'aguardando') return status === 'aguardando';
-    if (filtroStatus === 'ativos') return status === 'ativo';
-    if (filtroStatus === 'inativos') return status === 'inativo';
-    if (filtroStatus === 'cobranca_incompleta') return status === 'cobranca_incompleta';
+    if (filtroStatus !== 'todos') {
+      const status = calcularStatus(m);
+      if (filtroStatus === 'aguardando' && status !== 'aguardando') return false;
+      if (filtroStatus === 'ativos' && status !== 'ativo') return false;
+      if (filtroStatus === 'inativos' && status !== 'inativo') return false;
+      if (filtroStatus === 'cobranca_incompleta' && status !== 'cobranca_incompleta') return false;
+    }
+    if (filtroTipo === 'vh' && m.statusHapvida !== 'nao_credenciado') return false;
+    if (filtroTipo === 'credenciado' && m.statusHapvida !== 'credenciado') return false;
+    if (filtroTipo === 'nenhum' && m.statusHapvida !== 'nenhum') return false;
     return true;
   });
 
@@ -270,6 +286,10 @@ export function MedicosManager() {
   }
   function atualizarFiltro(v: FiltroStatus) {
     setFiltroStatus(v);
+    setPagina(1);
+  }
+  function atualizarFiltroTipo(v: FiltroTipo) {
+    setFiltroTipo(v);
     setPagina(1);
   }
 
@@ -394,6 +414,18 @@ export function MedicosManager() {
             </option>
           ))}
         </select>
+        <select
+          value={filtroTipo}
+          onChange={(e) => atualizarFiltroTipo(e.target.value as FiltroTipo)}
+          className="input w-auto"
+          aria-label="Filtrar por tipo (VH/Credenciado)"
+        >
+          {FILTRO_TIPO_OPCOES.map((op) => (
+            <option key={op.valor} value={op.valor}>
+              {op.label}
+            </option>
+          ))}
+        </select>
         <span className="text-xs text-cc-muted">
           {medicosFiltrados.length} médico{medicosFiltrados.length !== 1 ? 's' : ''}
         </span>
@@ -497,9 +529,9 @@ export function MedicosManager() {
               <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
           }
-          title={medicosFiltrados.length === 0 && (busca || filtroStatus !== 'todos') ? 'Nenhum médico encontrado' : 'Nenhum médico cadastrado ainda'}
+          title={medicosFiltrados.length === 0 && (busca || filtroStatus !== 'todos' || filtroTipo !== 'todos') ? 'Nenhum médico encontrado' : 'Nenhum médico cadastrado ainda'}
           description={
-            medicosFiltrados.length === 0 && (busca || filtroStatus !== 'todos')
+            medicosFiltrados.length === 0 && (busca || filtroStatus !== 'todos' || filtroTipo !== 'todos')
               ? 'Ajuste a busca ou o filtro para ver outros resultados.'
               : 'Cadastre manualmente ou importe uma planilha para começar.'
           }

@@ -98,8 +98,8 @@ function montarUrl(base: string, path: string, params: Record<string, string>): 
 
 /**
  * GET autenticado que devolve um array cru. Erros:
- *   401 → FIN_API_401 (sem retry) · 4xx → FIN_API_CLIENT (sem retry)
- *   corpo não-array → FIN_API_FORMATO (sem retry) · 5xx/rede → retry ×3 → FIN_API_RETRY
+ *   401 → FIN_API_401 (sem retry) · 4xx (exceto 401/429) → FIN_API_CLIENT (sem retry)
+ *   corpo não-array → FIN_API_FORMATO (sem retry) · 429/5xx/rede → retry ×3 → FIN_API_RETRY
  * Array vazio é caminho VÁLIDO (ex.: médico sem produções).
  */
 async function fetchArray(
@@ -128,7 +128,12 @@ async function fetchArray(
       if (resp.status === 401) {
         throw new ApiError(502, 'API do sistema web recusou a chave (401)', 'FIN_API_401');
       }
-      // 4xx (exceto 401) = erro de cliente — não adianta repetir.
+      // 429 = rate limit — transitório (mais provável sob a concorrência do processamento em
+      // lote), deixa cair no retry com backoff em vez de falhar de imediato.
+      if (resp.status === 429) {
+        throw new RetryavelError(`API do sistema web respondeu ${resp.status}`);
+      }
+      // 4xx (exceto 401/429) = erro de cliente — não adianta repetir.
       if (resp.status >= 400 && resp.status < 500) {
         throw new ApiError(502, `API do sistema web respondeu ${resp.status}`, 'FIN_API_CLIENT');
       }

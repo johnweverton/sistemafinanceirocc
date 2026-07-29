@@ -194,12 +194,26 @@ describe('endpoints http — erros e resiliência', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('4xx não-401 → ApiError FIN_API_CLIENT, sem retry', async () => {
+  it('4xx não-401/429 → ApiError FIN_API_CLIENT, sem retry', async () => {
     const fetchMock = vi.fn(async () => new Response('bad', { status: 400 }));
     vi.stubGlobal('fetch', fetchMock);
     const { listarProducoes } = await client();
     await expect(listarProducoes('c1')).rejects.toMatchObject({ code: 'FIN_API_CLIENT' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('429 (rate limit) é transitório: aciona retry e tem sucesso na 2ª tentativa', async () => {
+    let chamada = 0;
+    const fetchMock = vi.fn(async () => {
+      chamada += 1;
+      if (chamada === 1) return new Response('rate limited', { status: 429 });
+      return new Response(JSON.stringify([itemBruto]), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { buscarItens } = await client();
+    const r = await buscarItens('p1');
+    expect(r).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('corpo não-array → ApiError FIN_API_FORMATO, sem retry', async () => {

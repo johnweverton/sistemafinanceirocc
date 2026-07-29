@@ -1,10 +1,12 @@
-// POST /api/medicos/importar — importa lista de médicos via arquivo CSV.
+// POST /api/medicos/importar — importa lista de médicos via arquivo CSV/Excel.
 // Formato esperado: ver /templates/medicos-modelo.csv (download na tela de médicos).
-import { withErrorHandler, ApiError } from '@/lib/api-error';
+import { withErrorHandler } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { criarMedico } from '@/server/repositories/medico-repository';
+import { listarEmpresas } from '@/server/repositories/empresa-repository';
 import { novoMedicoSchema } from '@/server/validation/medico-schema';
-import { parseCsv, parseExcel, rowToInput } from '@/server/csv/medicos-import';
+import { rowToInput } from '@/server/csv/medicos-import';
+import { extrairLinhasDoArquivo, processarLinhas } from '@/server/csv/planilha-import';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 import type { ImportarResultado } from '@/services/medicos';
 
@@ -16,76 +18,43 @@ const MAX_CSV_ROWS = 5000;
 // Achado I-1: rate limit — máximo 5 imports por minuto por usuário.
 const importLimiter = createRateLimiter('medicos-importar', { limit: 5, windowMs: 60_000 });
 
+function normalizarNome(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 export const POST = withErrorHandler(async (req) => {
   const sessao = await requireRole(['admin']);
   assertRateLimit(importLimiter, sessao.userId, 'importação de CSV');
 
   const formData = await req.formData();
-  const file = formData.get('arquivo');
-  if (!file || !(file instanceof File)) {
-    throw new ApiError(422, 'Arquivo CSV não enviado (campo: arquivo)', 'ARQUIVO_INVALIDO');
-  }
-  const nomeLower = file.name.toLowerCase();
-  const isCsv = nomeLower.endsWith('.csv');
-  const isExcel = nomeLower.endsWith('.xlsx') || nomeLower.endsWith('.xls');
+  const rows = await extrairLinhasDoArquivo(formData, { maxBytes: MAX_CSV_BYTES, maxRows: MAX_CSV_ROWS });
 
-  if (!isCsv && !isExcel) {
-    throw new ApiError(422, 'Somente arquivos .csv ou .xlsx são aceitos', 'FORMATO_INVALIDO');
+  // 1 query para resolver `empresa_grupo` (nome, coluna do template) → UUID, em vez de buscar
+  // por linha. Nome duplicado (após normalização) fica ambíguo — não escolhe a primeira, deixa
+  // de fora do mapa (a linha que citar esse nome vira erro de "não encontrada").
+  const empresas = await listarEmpresas();
+  const empresasPorNome = new Map<string, string>();
+  const nomesAmbiguos = new Set<string>();
+  for (const e of empresas) {
+    const chave = normalizarNome(e.nome);
+    if (empresasPorNome.has(chave)) nomesAmbiguos.add(chave);
+    else empresasPorNome.set(chave, e.id);
   }
-  if (file.size > MAX_CSV_BYTES) {
-    throw new ApiError(
-      413,
-      `Arquivo excede o limite de ${MAX_CSV_BYTES / (1024 * 1024)} MB`,
-      'ARQUIVO_GRANDE',
-    );
-  }
+  for (const chave of nomesAmbiguos) empresasPorNome.delete(chave);
 
-  let rows: Record<string, string>[] = [];
-  if (isCsv) {
-    const text = await file.text();
-    rows = parseCsv(text);
-  } else {
-    const arrayBuffer = await file.arrayBuffer();
-    rows = await parseExcel(Buffer.from(arrayBuffer));
-  }
-  if (rows.length === 0) {
-    throw new ApiError(422, 'Arquivo vazio ou sem linhas de dados após o cabeçalho', 'ARQUIVO_VAZIO');
-  }
-  if (rows.length > MAX_CSV_ROWS) {
-    throw new ApiError(
-      413,
-      `Arquivo excede o limite de ${MAX_CSV_ROWS} linhas`,
-      'ARQUIVO_GRANDE',
-    );
-  }
+  const resultado = await processarLinhas(rows, {
+    rowToInput: (row) => rowToInput(row, empresasPorNome),
+    schema: novoMedicoSchema,
+    criar: criarMedico,
+    chaveLinha: (row) => row.cpf ?? '',
+  });
 
-  const criados: string[] = [];
-  const erros: { linha: number; cpf: string; erro: string }[] = [];
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!;
-    const linhaCsv = i + 2; // +2: 1 do header + 1 do índice base-zero
-    const input = rowToInput(row);
-    const parsed = novoMedicoSchema.safeParse(input);
-    if (!parsed.success) {
-      erros.push({
-        linha: linhaCsv,
-        cpf: row.cpf ?? '',
-        erro: parsed.error.issues.map((e) => e.message).join('; '),
-      });
-      continue;
-    }
-    try {
-      const m = await criarMedico(parsed.data);
-      criados.push(m.id);
-    } catch (e) {
-      erros.push({
-        linha: linhaCsv,
-        cpf: row.cpf ?? '',
-        erro: e instanceof Error ? e.message : 'Erro ao criar',
-      });
-    }
-  }
-
-  return Response.json({ criados: criados.length, erros } satisfies ImportarResultado);
+  return Response.json({
+    criados: resultado.criados,
+    erros: resultado.erros.map((e) => ({ linha: e.linha, cpf: e.chave, erro: e.erro })),
+  } satisfies ImportarResultado);
 });

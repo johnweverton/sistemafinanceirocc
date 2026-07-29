@@ -24,11 +24,23 @@ function normalizeName(name: string) {
 
 type Modo = 'competencia' | 'medico' | 'empresa';
 
+// "VH"/"Credenciado" são os rótulos que o time usa no dia a dia; tecnicamente mapeiam para o
+// enum `statusHapvida` já existente (mesma tradução usada em derivarStatusHapvida/medico-sync.ts:
+// "Produção VH" da origem → 'nao_credenciado', "Produção Credenciada" → 'credenciado').
+type FiltroTipoMedico = 'todos' | 'vh' | 'credenciado' | 'nenhum';
+const STATUS_HAPVIDA_POR_FILTRO: Record<Exclude<FiltroTipoMedico, 'todos'>, string> = {
+  vh: 'nao_credenciado',
+  credenciado: 'credenciado',
+  nenhum: 'nenhum',
+};
+
 export function NovaExecucao() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [modo, setModo] = useState<Modo>('competencia');
   const [competencia, setCompetencia] = useState('');
+  // Filtro por tipo (modo "Por competência") — permite disparar só os VH, só os credenciados etc.
+  const [filtroTipoMedico, setFiltroTipoMedico] = useState<FiltroTipoMedico>('todos');
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -74,6 +86,23 @@ export function NovaExecucao() {
     };
   }, [medicos]);
 
+  // Contagem por tipo, para exibir no seletor (ex.: "VH (42)") — só considera médicos elegíveis.
+  const contagemPorTipo = useMemo(() => {
+    const contagem = { vh: 0, credenciado: 0, nenhum: 0 };
+    for (const m of validMedicos) {
+      if (m.statusHapvida === 'nao_credenciado') contagem.vh += 1;
+      else if (m.statusHapvida === 'credenciado') contagem.credenciado += 1;
+      else contagem.nenhum += 1;
+    }
+    return contagem;
+  }, [validMedicos]);
+
+  const medicosParaCompetencia = useMemo(() => {
+    if (filtroTipoMedico === 'todos') return validMedicos;
+    const status = STATUS_HAPVIDA_POR_FILTRO[filtroTipoMedico];
+    return validMedicos.filter((m) => m.statusHapvida === status);
+  }, [validMedicos, filtroTipoMedico]);
+
   const producoesDoMedicoSelecionado = useMemo(() => {
     const medico = validMedicos.find(m => m.id === medicoId);
     if (!medico) return [];
@@ -94,7 +123,7 @@ export function NovaExecucao() {
     const mesIndex = compValida ? parseInt(mes, 10) - 1 : -1;
     const mesNome = mesIndex >= 0 ? (mesesNfd[mesIndex] || '') : '';
 
-    for (const med of validMedicos) {
+    for (const med of medicosParaCompetencia) {
       const producoesDoMedico = producoes.filter(p => p.clienteId === med.externalId);
       const manualProdId = manualSelections[med.id];
 
@@ -137,7 +166,7 @@ export function NovaExecucao() {
     }
 
     return { matched, unmatched, finalPayload };
-  }, [validMedicos, producoes, manualSelections, consultaSelections, competencia]);
+  }, [medicosParaCompetencia, producoes, manualSelections, consultaSelections, competencia]);
 
   const disparar = useMutation({
     mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[]; empresaId?: string }) =>
@@ -444,6 +473,26 @@ export function NovaExecucao() {
                 }}
                 className="space-y-4"
               >
+                <div>
+                  <label htmlFor="filtro-tipo-medico" className="field-label mb-1.5">
+                    Tipo de médico
+                  </label>
+                  <select
+                    id="filtro-tipo-medico"
+                    className="input"
+                    value={filtroTipoMedico}
+                    onChange={(e) => setFiltroTipoMedico(e.target.value as FiltroTipoMedico)}
+                  >
+                    <option value="todos">Todos ({validMedicos.length})</option>
+                    <option value="vh">VH ({contagemPorTipo.vh})</option>
+                    <option value="credenciado">Credenciado ({contagemPorTipo.credenciado})</option>
+                    <option value="nenhum">Nenhum ({contagemPorTipo.nenhum})</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-cc-muted">
+                    Restringe a competência abaixo a um tipo específico (ex.: só os VH).
+                  </p>
+                </div>
+
                 <div>
                   <label htmlFor="competencia" className="field-label mb-1.5">
                     Competência

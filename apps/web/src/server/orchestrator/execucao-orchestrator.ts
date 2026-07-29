@@ -2,8 +2,13 @@
 // processa lote a lote (Integration Client + Engine + repositório) e encadeia o próximo lote
 // via chamada HTTP interna. Architecture: Core Workflows + Backend Architecture.
 //
-// Calibrado para 120 médicos/competência (volume real): BATCH_SIZE = 20 → ~6 lotes,
-// pior caso ~30s por lote, dentro do maxDuration de 60s do plano Vercel Pro.
+// Calibrado para 120-150 médicos/competência (volume real): BATCH_SIZE = 150 cobre a
+// competência inteira em 1 lote só. Dentro do lote, os médicos são processados com
+// concorrência limitada (EXECUCAO_CONCORRENCIA_MEDICO, default 8) em vez de sequencial —
+// era aí que estava o gargalo real (1-2 chamadas de rede à API da Carmem por médico, em
+// série). maxDuration de 300s (plano Vercel Pro) dá folga ampla mesmo com retries. O
+// encadeamento em múltiplos lotes continua existindo como rede de segurança caso o volume
+// cresça muito além disso ou a origem esteja degradada.
 //
 // As dependências de I/O (banco, rede, encadeamento HTTP) são injetáveis para permitir
 // teste unitário com mocks sem tocar Supabase nem a API da Carmem.
@@ -43,9 +48,14 @@ import {
 import { lerValorConsultaPediatria } from '@/server/repositories/config-cobranca-repository';
 import { getServerEnv } from '@/lib/env';
 import { ApiError } from '@/lib/api-error';
+import { executarComLimite } from './concorrencia';
 
-/** Médicos por lote — pior caso ~30s, dentro do maxDuration de 60s (architecture). */
-export const BATCH_SIZE = 20;
+/**
+ * Médicos por lote. Com processamento paralelo (concorrência limitada) dentro do lote,
+ * 150 cobre a competência inteira (~120 médicos) numa única invocação, dentro do
+ * maxDuration de 300s (architecture).
+ */
+export const BATCH_SIZE = 150;
 
 export interface SelecaoDeps {
   execucaoId: string;
@@ -318,9 +328,25 @@ export async function processarProximoLote(
   // Lido uma vez por lote (não por médico) — config global, singleton (Story 10.2).
   const valorConsultaPediatria = await deps.lerValorConsultaPediatria();
 
-  for (const selecao of selecoesLote) {
-    await processarUmMedico(execucaoId, execucao.competencia, selecao, deps, valorConsultaPediatria);
-  }
+  // Busca todos os médicos do lote em 1 query (antes eram N idas ao banco, 1 por médico).
+  const medicosDoLote = await deps.listarMedicosPorIds(selecoesLote.map((s) => s.medicoId));
+  const medicosPorId = new Map(medicosDoLote.map((m) => [m.id, m]));
+
+  // Processa o lote com concorrência limitada (antes era 100% sequencial — o gargalo real,
+  // já que cada médico faz 1-2 chamadas de rede à API da Carmem). `processarUmMedico` nunca
+  // rejeita (try/catch interno sempre grava um resultado), então a falha de 1 médico não
+  // afeta os demais mesmo em paralelo.
+  const concorrencia = getServerEnv().EXECUCAO_CONCORRENCIA_MEDICO;
+  await executarComLimite(selecoesLote, concorrencia, (selecao) =>
+    processarUmMedico(
+      execucaoId,
+      execucao.competencia,
+      selecao,
+      medicosPorId.get(selecao.medicoId) ?? null,
+      deps,
+      valorConsultaPediatria,
+    ),
+  );
 
   const processadosAgora = jaProcessados + selecoesLote.length;
   const progresso = calcularProgresso(processadosAgora, total);
@@ -337,17 +363,20 @@ export async function processarProximoLote(
   return { concluido: false, processadosNoLote: selecoesLote.length, progresso };
 }
 
-/** Processa um médico isolando falhas de rede (vira alerta, não derruba o lote). */
+/**
+ * Processa um médico isolando falhas de rede (vira alerta, não derruba o lote).
+ * `medico` já vem resolvido do lote inteiro (1 query em `processarProximoLote`), em vez de
+ * uma busca individual por médico — elimina N-1 round-trips de banco por lote.
+ */
 async function processarUmMedico(
   execucaoId: string,
   competencia: string,
   selecao: SelecaoDeps,
+  medico: Medico | null,
   deps: OrchestratorDeps,
   valorConsultaPediatria: number,
 ): Promise<void> {
-  let medico: Medico | null = null;
   try {
-    medico = await deps.buscarMedico(selecao.medicoId);
     if (!medico) throw new Error('Médico não encontrado na base');
 
     const itens = await deps.buscarItens(selecao.producaoExternaId);
@@ -517,12 +546,15 @@ async function agendarProximoLoteHttp(execucaoId: string): Promise<void> {
     throw new Error('INTERNAL_SECRET/APP_BASE_URL não configurados para encadear lotes');
   }
   const url = new URL(`/api/execucoes/${execucaoId}/processar-lote`, env.APP_BASE_URL);
-  // Fire-and-forget: dispara o próximo lote sem aguardar sua conclusão.
+  // Fire-and-forget: dispara o próximo lote sem aguardar sua conclusão. Falha de rede/config
+  // real (DNS, APP_BASE_URL errado etc.) é logada — não resolve o caso da function morta por
+  // timeout no meio do processamento (isso não é um catch capturável), mas evita que uma falha
+  // de encadeamento capturável desapareça silenciosamente sem deixar rastro nos logs.
   void fetch(url, {
     method: 'POST',
     headers: { 'X-Internal-Secret': env.INTERNAL_SECRET },
-  }).catch(() => {
-    /* erro de encadeamento é registrado pelo próprio lote seguinte ao falhar */
+  }).catch((e) => {
+    console.error('[execucao] falha ao encadear próximo lote', execucaoId, e);
   });
 }
 

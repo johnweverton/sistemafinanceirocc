@@ -1,0 +1,3 @@
+nome,pagador_tipo,pagador_documento,pagador_nome,email,whatsapp,cep,logradouro,numero,complemento,bairro,cidade,uf,conta_emissora,dias_vencimento,multa_percent,juros_mes_percent,desconto_percent,desconto_dias,regra_preco_forma,regra_preco_base,regra_preco_limiar,regra_preco_taxa,regra_preco_valor_fixo
+MEDISA Participacoes LTDA,PJ,12345678000199,MEDISA Participacoes LTDA,contato@medisa.com.br,85999998888,60110000,Avenida Beira Mar,2000,Sala 10,Meireles,Fortaleza,CE,mc,,,,,,por_guia,,,6.41,
+Clinica Exemplo LTDA,PJ,98765432000188,Clinica Exemplo LTDA,contato@exemplo.com.br,,60000000,Rua das Flores,100,,Centro,Fortaleza,CE,mc,10,2,1,,,,,,,

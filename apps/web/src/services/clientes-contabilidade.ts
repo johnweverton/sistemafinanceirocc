@@ -10,7 +10,11 @@ import type {
   RegimeTributario,
   ModoCobrancaContabilidade,
 } from '@cobranca/shared';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import type { ApiErrorBody } from '@/lib/api-error';
+import type { ImportarResultado } from './shared/importar';
+
+export type { ImportarResultado };
 
 export interface LancarFaturamentoPayload {
   competencia: string;
@@ -57,6 +61,17 @@ export const clientesContabilidadeService = {
   historico: (id: string) =>
     apiFetch<ClienteContabilidadeHistorico[]>(`/clientes-contabilidade/${id}/historico`),
   excluir: (id: string) => apiFetch<void>(`/clientes-contabilidade/${id}`, { method: 'DELETE' }),
+  importar: async (arquivo: File): Promise<ImportarResultado> => {
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+    const res = await fetch('/api/clientes-contabilidade/importar', { method: 'POST', body: form });
+    if (!res.ok) {
+      let body: ApiErrorBody | null = null;
+      try { body = (await res.json()) as ApiErrorBody; } catch { /* non-JSON */ }
+      throw new ApiClientError(res.status, body?.error?.message ?? `Erro ${res.status}`, body?.error?.code ?? 'ERROR');
+    }
+    return res.json() as Promise<ImportarResultado>;
+  },
   listarFaturamentos: (id: string) =>
     apiFetch<ClienteContabilidadeFaturamento[]>(`/clientes-contabilidade/${id}/faturamentos`),
   execucoes: (id: string) =>

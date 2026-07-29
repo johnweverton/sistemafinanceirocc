@@ -1,5 +1,9 @@
 import type { Empresa, EmpresaHistorico, DadosCobranca, CondicoesCobranca, RegraPreco, ContaEmissora } from '@cobranca/shared';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import type { ApiErrorBody } from '@/lib/api-error';
+import type { ImportarResultado } from './shared/importar';
+
+export type { ImportarResultado };
 
 export interface NovaEmpresaPayload {
   nome: string;
@@ -21,6 +25,17 @@ export const empresasService = {
     apiFetch<Empresa>(`/empresas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   historico: (id: string) => apiFetch<EmpresaHistorico[]>(`/empresas/${id}/historico`),
   excluir: (id: string) => apiFetch<void>(`/empresas/${id}`, { method: 'DELETE' }),
+  importar: async (arquivo: File): Promise<ImportarResultado> => {
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+    const res = await fetch('/api/empresas/importar', { method: 'POST', body: form });
+    if (!res.ok) {
+      let body: ApiErrorBody | null = null;
+      try { body = (await res.json()) as ApiErrorBody; } catch { /* non-JSON */ }
+      throw new ApiClientError(res.status, body?.error?.message ?? `Erro ${res.status}`, body?.error?.code ?? 'ERROR');
+    }
+    return res.json() as Promise<ImportarResultado>;
+  },
 };
 
 export const empresaQueryKeys = {

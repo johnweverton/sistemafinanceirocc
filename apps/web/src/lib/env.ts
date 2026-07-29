@@ -31,6 +31,9 @@ const serverSchema = z.object({
   // Base URL da própria app, usada pela função para se auto-invocar entre lotes (Fase 2).
   // Em Vercel, derivar de VERCEL_URL; local, http://localhost:3000.
   APP_BASE_URL: z.string().url().optional(),
+  // Quantos médicos processar em paralelo dentro de um lote (chamadas à API da Carmem).
+  // Ajustável sem deploy caso a origem reaja mal a rajadas (429). Default conservador: 8.
+  EXECUCAO_CONCORRENCIA_MEDICO: z.string().regex(/^\d+$/).transform(Number).default('8'),
 
   // ---------------------------------------------------------------------------
   // GATEWAY DE BOLETOS — Fase 3 (Cora mTLS)
@@ -98,6 +101,7 @@ export function getServerEnv() {
     APP_BASE_URL:
       process.env.APP_BASE_URL ??
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
+    EXECUCAO_CONCORRENCIA_MEDICO: process.env.EXECUCAO_CONCORRENCIA_MEDICO,
     GATEWAY_EMISSAO_HABILITADA: process.env.GATEWAY_EMISSAO_HABILITADA,
     BOLETO_GATEWAY: process.env.BOLETO_GATEWAY,
     MOCK_INVOICE_STATUS: process.env.MOCK_INVOICE_STATUS,

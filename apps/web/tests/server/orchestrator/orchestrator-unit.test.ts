@@ -20,8 +20,8 @@ describe('numeroDeLotes (lógica pura de divisão)', () => {
   it('zero médicos = zero lotes', () => {
     expect(numeroDeLotes(0, 20)).toBe(0);
   });
-  it('BATCH_SIZE exportado é 20', () => {
-    expect(BATCH_SIZE).toBe(20);
+  it('BATCH_SIZE exportado é 150', () => {
+    expect(BATCH_SIZE).toBe(150);
   });
 });
 

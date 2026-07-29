@@ -1,11 +1,17 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Empresa } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import { ApiClientError } from '@/lib/api-client';
-import { empresasService, empresaQueryKeys, type NovaEmpresaPayload, type AtualizarEmpresaPayload } from '@/services/empresas';
+import {
+  empresasService,
+  empresaQueryKeys,
+  type NovaEmpresaPayload,
+  type AtualizarEmpresaPayload,
+  type ImportarResultado,
+} from '@/services/empresas';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
@@ -20,6 +26,8 @@ export function EmpresasManager() {
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
   const [confirmacao, setConfirmacao] = useState<Empresa | null>(null);
+  const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: empresas, isLoading, isError } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
@@ -58,6 +66,27 @@ export function EmpresasManager() {
       const msg = e instanceof ApiClientError ? e.message : 'Erro ao salvar';
       setErro(msg);
       toast(msg, 'error');
+    },
+  });
+
+  const importar = useMutation({
+    mutationFn: (arquivo: File) => empresasService.importar(arquivo),
+    onSuccess: (resultado) => {
+      void qc.invalidateQueries({ queryKey: empresaQueryKeys.empresas() });
+      setImportResult(resultado);
+      setErro(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (resultado.erros.length === 0) {
+        toast(`${resultado.criados} empresa(s) importada(s) com sucesso`, 'success');
+      } else {
+        toast(`Importação com ${resultado.erros.length} erro(s) — veja os detalhes`, 'info');
+      }
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro na importação';
+      setErro(msg);
+      toast(msg, 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
     },
   });
 
@@ -123,12 +152,56 @@ export function EmpresasManager() {
 
       <div className="page-header">
         <h1 className="page-title">Empresas</h1>
-        <button onClick={() => setModo({ tipo: 'nova' })} className="btn-primary btn btn-sm">
-          Nova empresa
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <a href="/templates/empresas-modelo.xlsx" download className="btn btn-primary btn-sm">
+            Baixar modelo Excel
+          </a>
+          <label className={`btn btn-primary btn-sm cursor-pointer ${importar.isPending ? 'opacity-50 cursor-not-allowed' : ''}`}>
+            {importar.isPending ? 'Importando...' : 'Importar Planilha'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              disabled={importar.isPending}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setImportResult(null);
+                  setErro(null);
+                  importar.mutate(f);
+                }
+              }}
+            />
+          </label>
+          <button onClick={() => setModo({ tipo: 'nova' })} className="btn-primary btn btn-sm">
+            Nova empresa
+          </button>
+        </div>
       </div>
 
       {erro && <p role="alert" className="alert-error">{erro}</p>}
+
+      {importResult && (
+        <div className={importResult.erros.length === 0 ? 'alert-success' : 'alert-warning'}>
+          <p className="font-medium">
+            Importação concluída: {importResult.criados} criada{importResult.criados !== 1 ? 's' : ''}.
+            {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s) encontrado(s).`}
+          </p>
+          {importResult.erros.length > 0 && (
+            <ul className="mt-2 list-disc pl-4 space-y-1 text-xs">
+              {importResult.erros.map((e) => (
+                <li key={`${e.linha}-${e.chave}`}>
+                  Linha {e.linha} ({e.chave}): {e.erro}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button onClick={() => setImportResult(null)} className="mt-2 text-xs underline underline-offset-2">
+            Fechar
+          </button>
+        </div>
+      )}
 
       {isLoading ? (
         <TableSkeleton rows={5} cols={5} />

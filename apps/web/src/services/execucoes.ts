@@ -52,6 +52,8 @@ export const execucoesService = {
     }),
   listar: () => apiFetch<Execucao[]>('/execucoes'),
   detalhe: (id: string) => apiFetch<Execucao>(`/execucoes/${id}`),
+  /** Retoma manualmente uma execução travada em "processando" (encadeamento entre lotes falhou). */
+  retomar: (id: string) => apiFetch<{ ok: true }>(`/execucoes/${id}/retomar`, { method: 'POST' }),
   resultados: (id: string) => apiFetch<ExecucaoResultado[]>(`/execucoes/${id}/resultados`),
   /** Auditoria "qual médico contribuiu quanto" de um resultado agregado (Story 10.4c). */
   contribuicoes: (resultadoId: string) =>
