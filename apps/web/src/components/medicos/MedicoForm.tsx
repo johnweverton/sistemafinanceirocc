@@ -488,7 +488,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
         className={`rounded-lg border px-4 py-3 text-sm ${
           combinacaoValida
             ? 'border-cc-hairline bg-cc-accent-soft text-cc-accent-hover'
-            : 'border-red-200 bg-cc-danger-soft text-cc-danger'
+            : 'border-cc-danger/25 bg-cc-danger-soft text-cc-danger'
         }`}
         aria-live="polite"
       >
