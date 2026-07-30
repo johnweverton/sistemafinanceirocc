@@ -105,7 +105,10 @@ export function MedicosManager() {
       setErro(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (resultado.erros.length === 0) {
-        toast(`${resultado.criados} médico(s) importado(s) com sucesso`, 'success');
+        toast(
+          `${resultado.criados} médico(s) importado(s), ${resultado.atualizados} atualizado(s)`,
+          'success',
+        );
       } else {
         toast(`Importação com ${resultado.erros.length} erro(s) — veja os detalhes`, 'info');
       }
@@ -436,7 +439,8 @@ export function MedicosManager() {
       {importResult && (
         <div className={importResult.erros.length === 0 ? 'alert-success' : 'alert-warning'}>
           <p className="font-medium">
-            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
+            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''},{' '}
+            {importResult.atualizados} atualizado{importResult.atualizados !== 1 ? 's' : ''}.
             {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s) encontrado(s).`}
           </p>
           {importResult.erros.length > 0 && (

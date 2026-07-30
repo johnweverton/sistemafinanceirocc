@@ -11,6 +11,7 @@ import {
   clienteContabilidadeQueryKeys,
   type NovoClienteContabilidadePayload,
   type ImportarResultado,
+  type ExclusaoLoteResultado,
 } from '@/services/clientes-contabilidade';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -23,6 +24,14 @@ import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
 // (2026-07-24): as ações estavam "lá embaixo" só depois de abrir o cadastro pra edição. O modo
 // 'editar' saiu deste componente; cadastro só é editado dentro do hub (DetalheCliente.tsx).
 type Modo = { tipo: 'lista' } | { tipo: 'novo' };
+type Confirmacao = { tipo: 'unico'; cliente: ClienteContabilidade } | { tipo: 'lote'; ids: string[] };
+
+function normalizarBusca(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
 
 export function ClientesContabilidadeManager() {
   const router = useRouter();
@@ -30,8 +39,11 @@ export function ClientesContabilidadeManager() {
   const { toast } = useToast();
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
-  const [confirmacao, setConfirmacao] = useState<ClienteContabilidade | null>(null);
+  const [busca, setBusca] = useState('');
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
+  const [excluirLoteResultado, setExcluirLoteResultado] = useState<ExclusaoLoteResultado | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: clientes, isLoading, isError } = useQuery({
@@ -66,7 +78,10 @@ export function ClientesContabilidadeManager() {
       setErro(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (resultado.erros.length === 0) {
-        toast(`${resultado.criados} cliente(s) importado(s) com sucesso`, 'success');
+        toast(
+          `${resultado.criados} cliente(s) importado(s), ${resultado.atualizados} atualizado(s)`,
+          'success',
+        );
       } else {
         toast(`Importação com ${resultado.erros.length} erro(s). Veja os detalhes.`, 'info');
       }
@@ -79,15 +94,39 @@ export function ClientesContabilidadeManager() {
     },
   });
 
-  const excluir = useMutation({
+  const excluirUm = useMutation({
     mutationFn: (id: string) => clientesContabilidadeService.excluir(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.clientes() });
+      setSelecionados((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       setConfirmacao(null);
       toast('Cliente excluído', 'success');
     },
     onError: (e) => {
       const msg = e instanceof ApiClientError ? e.message : 'Erro ao excluir cliente';
+      toast(msg, 'error');
+    },
+  });
+
+  const excluirVarios = useMutation({
+    mutationFn: (ids: string[]) => clientesContabilidadeService.excluirLote(ids),
+    onSuccess: (resultado) => {
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.clientes() });
+      setSelecionados(new Set());
+      setConfirmacao(null);
+      setExcluirLoteResultado(resultado);
+      if (resultado.bloqueados.length > 0) {
+        toast(`${resultado.excluidos} excluído(s); ${resultado.bloqueados.length} bloqueado(s)`, 'info');
+      } else {
+        toast(`${resultado.excluidos} cliente(s) excluído(s)`, 'success');
+      }
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao excluir clientes';
       toast(msg, 'error');
     },
   });
@@ -104,15 +143,63 @@ export function ClientesContabilidadeManager() {
     );
   }
 
+  const termoBusca = normalizarBusca(busca.trim());
+  const clientesFiltrados = (clientes ?? []).filter((c) => {
+    if (!termoBusca) return true;
+    return normalizarBusca(c.nome).includes(termoBusca);
+  });
+
+  function atualizarBusca(v: string) {
+    setBusca(v);
+  }
+
+  function alternarSelecao(id: string) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const idsExibidos = clientesFiltrados.map((c) => c.id);
+  const todosExibidosSelecionados =
+    idsExibidos.length > 0 && idsExibidos.every((id) => selecionados.has(id));
+
+  function alternarSelecionarTodos() {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (todosExibidosSelecionados) {
+        for (const id of idsExibidos) next.delete(id);
+      } else {
+        for (const id of idsExibidos) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  const clientesPorId = new Map((clientes ?? []).map((c) => [c.id, c]));
+  const nomesSelecionados = [...selecionados]
+    .map((id) => clientesPorId.get(id)?.nome)
+    .filter((n): n is string => Boolean(n));
+
   return (
     <section className="space-y-5">
       {confirmacao && (
         <ConfirmDialog
-          titulo="Excluir cliente contábil"
-          mensagem={`Tem certeza que deseja excluir permanentemente "${confirmacao.nome}"?`}
-          confirmando={excluir.isPending}
+          titulo={confirmacao.tipo === 'unico' ? 'Excluir cliente contábil' : `Excluir ${confirmacao.ids.length} clientes`}
+          mensagem={
+            confirmacao.tipo === 'unico'
+              ? `Tem certeza que deseja excluir permanentemente "${confirmacao.cliente.nome}"?`
+              : `Tem certeza que deseja excluir permanentemente estes ${confirmacao.ids.length} clientes?`
+          }
+          itens={confirmacao.tipo === 'lote' ? nomesSelecionados : undefined}
+          confirmando={excluirUm.isPending || excluirVarios.isPending}
           onCancel={() => setConfirmacao(null)}
-          onConfirm={() => excluir.mutate(confirmacao.id)}
+          onConfirm={() => {
+            if (confirmacao.tipo === 'unico') excluirUm.mutate(confirmacao.cliente.id);
+            else excluirVarios.mutate(confirmacao.ids);
+          }}
         />
       )}
 
@@ -146,12 +233,26 @@ export function ClientesContabilidadeManager() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="search"
+          value={busca}
+          onChange={(e) => atualizarBusca(e.target.value)}
+          placeholder="Buscar por nome..."
+          className="input max-w-xs"
+        />
+        <span className="text-xs text-cc-muted">
+          {clientesFiltrados.length} cliente{clientesFiltrados.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
       {erro && <p role="alert" className="alert-error">{erro}</p>}
 
       {importResult && (
         <div className={importResult.erros.length === 0 ? 'alert-success' : 'alert-warning'}>
           <p className="font-medium">
-            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''}.
+            Importação concluída: {importResult.criados} criado{importResult.criados !== 1 ? 's' : ''},{' '}
+            {importResult.atualizados} atualizado{importResult.atualizados !== 1 ? 's' : ''}.
             {importResult.erros.length > 0 && ` ${importResult.erros.length} erro(s) encontrado(s).`}
           </p>
           {importResult.erros.length > 0 && (
@@ -169,20 +270,74 @@ export function ClientesContabilidadeManager() {
         </div>
       )}
 
+      {excluirLoteResultado && (
+        <div className={excluirLoteResultado.bloqueados.length === 0 ? 'alert-success' : 'alert-warning'}>
+          <p className="font-medium">
+            Exclusão concluída: {excluirLoteResultado.excluidos} excluído{excluirLoteResultado.excluidos !== 1 ? 's' : ''}.
+            {excluirLoteResultado.bloqueados.length > 0 &&
+              ` ${excluirLoteResultado.bloqueados.length} bloqueado(s).`}
+          </p>
+          {excluirLoteResultado.bloqueados.length > 0 && (
+            <ul className="mt-2 list-disc pl-4 space-y-1 text-xs">
+              {excluirLoteResultado.bloqueados.map((b) => (
+                <li key={b.id}>
+                  {b.nome}: {b.motivo}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button onClick={() => setExcluirLoteResultado(null)} className="mt-2 text-xs underline underline-offset-2">
+            Fechar
+          </button>
+        </div>
+      )}
+
+      {selecionados.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-cc-accent/30 bg-cc-accent-soft px-4 py-2.5">
+          <span className="text-sm font-medium text-cc-ink">
+            {selecionados.size} selecionado{selecionados.size !== 1 ? 's' : ''}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSelecionados(new Set())} className="btn-ghost btn btn-sm">
+              Limpar seleção
+            </button>
+            <button
+              onClick={() => setConfirmacao({ tipo: 'lote', ids: [...selecionados] })}
+              className="btn-danger btn btn-sm"
+            >
+              Excluir selecionados ({selecionados.size})
+            </button>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
-        <TableSkeleton rows={5} cols={5} />
+        <TableSkeleton rows={5} cols={6} />
       ) : isError ? (
         <p className="alert-error" role="alert">Falha ao carregar clientes contábeis.</p>
-      ) : !clientes || clientes.length === 0 ? (
+      ) : clientesFiltrados.length === 0 ? (
         <EmptyState
-          title="Nenhum cliente contábil cadastrado"
-          description="Cadastre o primeiro cliente para lançar faturamento e emitir boletos de honorários contábeis."
+          title={clientes && clientes.length > 0 ? 'Nenhum cliente encontrado' : 'Nenhum cliente contábil cadastrado'}
+          description={
+            clientes && clientes.length > 0
+              ? 'Ajuste a busca para ver outros resultados.'
+              : 'Cadastre o primeiro cliente para lançar faturamento e emitir boletos de honorários contábeis.'
+          }
         />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-cc-hairline text-left text-cc-muted">
+                <th className="w-10 py-2.5 px-4">
+                  <input
+                    type="checkbox"
+                    checked={todosExibidosSelecionados}
+                    onChange={alternarSelecionarTodos}
+                    className="rounded border-cc-hairline accent-cc-accent"
+                    aria-label="Selecionar todos os clientes"
+                  />
+                </th>
                 <th className="py-2.5 px-4 font-medium">Nome</th>
                 <th className="py-2.5 px-4 font-medium">Regime</th>
                 <th className="py-2.5 px-4 font-medium">Modo de cobrança</th>
@@ -192,12 +347,22 @@ export function ClientesContabilidadeManager() {
               </tr>
             </thead>
             <tbody>
-              {clientes.map((c) => (
+              {clientesFiltrados.map((c) => (
                 <tr
                   key={c.id}
                   className="border-b border-cc-hairline last:border-0 hover:bg-cc-surface-2/50 cursor-pointer"
                   onClick={() => router.push(`/clientes-contabilidade/${c.id}`)}
                 >
+                  <td className="py-2.5 px-4">
+                    <input
+                      type="checkbox"
+                      checked={selecionados.has(c.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => alternarSelecao(c.id)}
+                      className="rounded border-cc-hairline accent-cc-accent"
+                      aria-label={`Selecionar ${c.nome}`}
+                    />
+                  </td>
                   <td className="py-2.5 px-4 font-medium text-cc-ink">{c.nome}</td>
                   <td className="py-2.5 px-4 text-cc-ink-2">{regimeLabel(c.regimeTributario)}</td>
                   <td className="py-2.5 px-4 text-cc-ink-2">
@@ -223,7 +388,7 @@ export function ClientesContabilidadeManager() {
                       <button
                         onClick={(ev) => {
                           ev.stopPropagation();
-                          setConfirmacao(c);
+                          setConfirmacao({ tipo: 'unico', cliente: c });
                         }}
                         className="text-xs font-medium text-cc-danger hover:underline"
                       >

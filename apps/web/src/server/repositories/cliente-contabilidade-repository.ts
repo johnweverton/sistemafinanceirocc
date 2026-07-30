@@ -156,6 +156,31 @@ export async function excluirClienteContabilidade(id: string): Promise<void> {
   }
 }
 
+export interface ExclusaoLoteResultado {
+  excluidos: number;
+  bloqueados: { id: string; nome: string; motivo: string }[];
+}
+
+/** Exclui vários clientes contábeis; falha individual não aborta o lote. */
+export async function excluirClientesContabilidade(ids: string[]): Promise<ExclusaoLoteResultado> {
+  const resultado: ExclusaoLoteResultado = { excluidos: 0, bloqueados: [] };
+  for (const id of ids) {
+    const cliente = await buscarClienteContabilidade(id);
+    if (!cliente) {
+      resultado.bloqueados.push({ id, nome: '—', motivo: 'Cliente contábil não encontrado' });
+      continue;
+    }
+    try {
+      await excluirClienteContabilidade(id);
+      resultado.excluidos += 1;
+    } catch (e) {
+      const motivo = e instanceof ApiError ? e.message : 'Falha ao excluir cliente contábil';
+      resultado.bloqueados.push({ id, nome: cliente.nome, motivo });
+    }
+  }
+  return resultado;
+}
+
 export async function historicoDoClienteContabilidade(id: string): Promise<ClienteContabilidadeHistorico[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db

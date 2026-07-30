@@ -9,5 +9,6 @@ export interface ImportarErro {
 
 export interface ImportarResultado {
   criados: number;
+  atualizados: number;
   erros: ImportarErro[];
 }

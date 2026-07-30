@@ -2,11 +2,11 @@
 // Formato esperado: ver /templates/medicos-modelo.csv (download na tela de médicos).
 import { withErrorHandler } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
-import { criarMedico } from '@/server/repositories/medico-repository';
+import { criarMedico, atualizarMedico, listarMedicos } from '@/server/repositories/medico-repository';
 import { listarEmpresas } from '@/server/repositories/empresa-repository';
 import { novoMedicoSchema } from '@/server/validation/medico-schema';
 import { rowToInput } from '@/server/csv/medicos-import';
-import { extrairLinhasDoArquivo, processarLinhas } from '@/server/csv/planilha-import';
+import { extrairLinhasDoArquivo, processarLinhas, normalizarNome } from '@/server/csv/planilha-import';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
 import type { ImportarResultado } from '@/services/medicos';
 
@@ -17,14 +17,6 @@ const MAX_CSV_ROWS = 5000;
 
 // Achado I-1: rate limit — máximo 5 imports por minuto por usuário.
 const importLimiter = createRateLimiter('medicos-importar', { limit: 5, windowMs: 60_000 });
-
-function normalizarNome(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim()
-    .toLowerCase();
-}
 
 export const POST = withErrorHandler(async (req) => {
   const sessao = await requireRole(['admin']);
@@ -46,15 +38,24 @@ export const POST = withErrorHandler(async (req) => {
   }
   for (const chave of nomesAmbiguos) empresasPorNome.delete(chave);
 
+  // Achado do dono (2026-07-30): reimportar a mesma planilha (ex.: após corrigir erros da 1ª
+  // tentativa) duplicava médicos já cadastrados. CPF é a chave natural (UNIQUE no banco, 0001) —
+  // se a linha trouxer um CPF já cadastrado, atualiza o médico existente em vez de tentar criar.
+  const medicosExistentes = await listarMedicos();
+  const idsPorCpf = new Map(medicosExistentes.filter((m) => m.cpf).map((m) => [m.cpf as string, m.id]));
+
   const resultado = await processarLinhas(rows, {
     rowToInput: (row) => rowToInput(row, empresasPorNome),
     schema: novoMedicoSchema,
     criar: criarMedico,
+    encontrarExistenteId: (data) => (data.cpf ? idsPorCpf.get(data.cpf) : undefined),
+    atualizar: (id, data) => atualizarMedico(id, data, sessao.userId, 'Atualizado via reimportação de planilha'),
     chaveLinha: (row) => row.cpf ?? '',
   });
 
   return Response.json({
     criados: resultado.criados,
+    atualizados: resultado.atualizados,
     erros: resultado.erros.map((e) => ({ linha: e.linha, cpf: e.chave, erro: e.erro })),
   } satisfies ImportarResultado);
 });

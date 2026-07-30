@@ -70,6 +70,12 @@ export const atualizarClienteContabilidadeSchema = z
   .strict()
   .refine(adicionalCoerente, { message: MSG_ADICIONAL, path: ['adicionalValor'] });
 
+export const excluirClientesContabilidadeSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1, 'Informe pelo menos um cliente'),
+  })
+  .strict();
+
 export type NovoClienteContabilidadeInput = z.infer<typeof novoClienteContabilidadeSchema>;
 export type AtualizarClienteContabilidadeInput = z.infer<typeof atualizarClienteContabilidadeSchema>;
 

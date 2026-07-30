@@ -45,6 +45,11 @@ export type AtualizarClienteContabilidadePayload = Partial<NovoClienteContabilid
   motivo: string;
 };
 
+export interface ExclusaoLoteResultado {
+  excluidos: number;
+  bloqueados: { id: string; nome: string; motivo: string }[];
+}
+
 export const clientesContabilidadeService = {
   listar: () => apiFetch<ClienteContabilidade[]>('/clientes-contabilidade'),
   detalhe: (id: string) => apiFetch<ClienteContabilidade>(`/clientes-contabilidade/${id}`),
@@ -61,6 +66,11 @@ export const clientesContabilidadeService = {
   historico: (id: string) =>
     apiFetch<ClienteContabilidadeHistorico[]>(`/clientes-contabilidade/${id}/historico`),
   excluir: (id: string) => apiFetch<void>(`/clientes-contabilidade/${id}`, { method: 'DELETE' }),
+  excluirLote: (ids: string[]) =>
+    apiFetch<ExclusaoLoteResultado>('/clientes-contabilidade/excluir-lote', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   importar: async (arquivo: File): Promise<ImportarResultado> => {
     const form = new FormData();
     form.append('arquivo', arquivo);

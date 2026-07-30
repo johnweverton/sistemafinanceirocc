@@ -6,6 +6,19 @@
 import ExcelJS from 'exceljs';
 import { ApiError } from '@/lib/api-error';
 
+/**
+ * Normaliza nome para comparação tolerante a acentuação/caixa/espaços — usada tanto para
+ * resolver vínculos (ex.: empresa_grupo por nome) quanto para casar uma linha da planilha com
+ * um registro já existente na reimportação (upsert por nome, ver `processarLinhas`).
+ */
+export function normalizarNome(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 export function parseCsv(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2 || !lines[0]) return [];
@@ -152,6 +165,7 @@ export interface ErroLinha {
 
 export interface ResultadoImportacao {
   criados: number;
+  atualizados: number;
   erros: ErroLinha[];
 }
 
@@ -162,10 +176,17 @@ interface SchemaLike<TSaida> {
 }
 
 /**
- * Loop comum de importação: linha → input (domínio) → validação (Zod) → criação (repositório).
+ * Loop comum de importação: linha → input (domínio) → validação (Zod) → upsert (repositório).
  * `rowToInput` pode lançar para reportar um problema de pré-validação (ex.: nome de empresa não
  * encontrado) — o erro vira uma entrada em `erros[]` como qualquer outra falha de linha, sem
  * abortar as demais.
+ *
+ * Achado do dono (2026-07-30): reimportar uma planilha (ex.: mesma base após corrigir erros
+ * apontados na 1ª importação) sempre CRIAVA de novo, duplicando quem já tinha sido importado com
+ * sucesso — nada aqui casava a linha com um registro existente. `encontrarExistenteId` é opcional
+ * de propósito (nem todo domínio tem uma chave natural de match pronta), mas os 3 chamadores atuais
+ * (médicos/empresas/clientes de contabilidade) sempre o informam: se a linha casar com um registro
+ * já existente, atualiza em vez de criar.
  */
 export async function processarLinhas<TInput, TSaida>(
   rows: Record<string, string>[],
@@ -173,10 +194,14 @@ export async function processarLinhas<TInput, TSaida>(
     rowToInput: (row: Record<string, string>) => TInput;
     schema: SchemaLike<TSaida>;
     criar: (data: TSaida) => Promise<{ id: string }>;
+    /** Retorna o id do registro já existente que a linha corresponde, ou undefined se for novo. */
+    encontrarExistenteId?: (data: TSaida) => string | undefined;
+    atualizar?: (id: string, data: TSaida) => Promise<{ id: string }>;
     chaveLinha: (row: Record<string, string>) => string;
   },
 ): Promise<ResultadoImportacao> {
   const criados: string[] = [];
+  const atualizados: string[] = [];
   const erros: ErroLinha[] = [];
 
   for (let i = 0; i < rows.length; i++) {
@@ -198,13 +223,24 @@ export async function processarLinhas<TInput, TSaida>(
       continue;
     }
 
+    const idExistente = opts.encontrarExistenteId?.(parsed.data);
+
     try {
-      const criado = await opts.criar(parsed.data);
-      criados.push(criado.id);
+      if (idExistente && opts.atualizar) {
+        await opts.atualizar(idExistente, parsed.data);
+        atualizados.push(idExistente);
+      } else {
+        const criado = await opts.criar(parsed.data);
+        criados.push(criado.id);
+      }
     } catch (e) {
-      erros.push({ linha, chave, erro: e instanceof Error ? e.message : 'Erro ao criar' });
+      erros.push({
+        linha,
+        chave,
+        erro: e instanceof Error ? e.message : idExistente ? 'Erro ao atualizar' : 'Erro ao criar',
+      });
     }
   }
 
-  return { criados: criados.length, erros };
+  return { criados: criados.length, atualizados: atualizados.length, erros };
 }

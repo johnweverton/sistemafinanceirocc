@@ -1,20 +1,8 @@
 // Parsing de linha de importação de médicos (Story 3.4). parseCsv/parseExcel e os blocos de
 // condições/regra de preço são genéricos e vivem em planilha-import.ts (reaproveitados por
 // empresas/clientes-contabilidade); aqui fica só o mapeamento específico do domínio médico.
-import { parseCsv, parseExcel, condicoesDaLinha, regraPrecoDaLinha } from './planilha-import';
+import { parseCsv, parseExcel, condicoesDaLinha, regraPrecoDaLinha, normalizarNome } from './planilha-import';
 export { parseCsv, parseExcel };
-
-/**
- * Resolve o vínculo com empresa de agrupamento por NOME (não UUID) — é o que uma planilha
- * preenchida à mão vai ter. Mesma normalização usada em medico-sync.ts (tolera acentuação/caixa).
- */
-function normalizarNome(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim()
-    .toLowerCase();
-}
 
 // Retorno tipado frouxamente (Record) de propósito: os blocos condicionais abaixo geram uma
 // união de formatos que só interessa ao `novoMedicoSchema.safeParse` (recebe `unknown`) — travar

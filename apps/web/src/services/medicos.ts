@@ -4,6 +4,7 @@ import type { ApiErrorBody } from '@/lib/api-error';
 
 export interface ImportarResultado {
   criados: number;
+  atualizados: number;
   erros: { linha: number; cpf: string; erro: string }[];
 }
 
