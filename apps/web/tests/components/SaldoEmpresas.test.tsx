@@ -59,4 +59,20 @@ describe('SaldoEmpresas', () => {
     await waitFor(() => expect(mockSaldos).toHaveBeenCalled());
     await waitFor(() => expect(container.querySelector('.card')).toBeNull());
   });
+
+  it('saldo negativo mostra alerta de saldo negativo (melhoria pós-Épico 8/9)', async () => {
+    mockSaldos.mockResolvedValue([
+      {
+        conta: 'mc', nome: 'MC', configurada: true,
+        saldo: { disponivel: -150.32, bloqueado: null, consultadoEm: '2026-07-29T10:00:00Z' },
+      },
+    ]);
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByText('Saldo negativo — verificar lançamentos')).toBeInTheDocument();
+    expect(
+      screen.getByText((t) => t.replace(/ /g, ' ') === '-R$ 150,32'),
+    ).toBeInTheDocument();
+  });
 });

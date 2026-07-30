@@ -48,9 +48,18 @@ export function SaldoEmpresas() {
             </p>
           ) : s.saldo ? (
             <>
-              <p className="mt-1 tabular text-lg font-semibold text-cc-ink">
+              <p
+                className={`mt-1 tabular text-lg font-semibold ${
+                  s.saldo.disponivel < 0 ? 'text-cc-danger' : 'text-cc-ink'
+                }`}
+              >
                 {brl(s.saldo.disponivel)}
               </p>
+              {s.saldo.disponivel < 0 && (
+                <p className="mt-1 text-xs font-medium text-cc-danger" role="alert">
+                  Saldo negativo — verificar lançamentos
+                </p>
+              )}
               <p className="text-2xs text-cc-muted">
                 {s.saldo.bloqueado != null && s.saldo.bloqueado > 0
                   ? `Bloqueado: ${brl(s.saldo.bloqueado)} · `

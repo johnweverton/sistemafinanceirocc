@@ -35,6 +35,14 @@ vi.mock('../../src/services/plano-contas', () => ({
   planoContasQueryKeys: { categorias: (ativo: unknown) => ['plano-contas', 'categorias', ativo] },
 }));
 
+// ConciliacaoResumo (melhoria pós-Épico 8/9) busca o saldo pela mesma query do dashboard —
+// mockado aqui para não disparar fetch real nestes testes (o bloco tem teste próprio).
+const mockSaldos = vi.fn();
+vi.mock('../../src/services/contas', () => ({
+  contasService: { saldos: (...a: unknown[]) => mockSaldos(...a) },
+  contasQueryKeys: { saldos: () => ['contas', 'saldos'] },
+}));
+
 import { ExtratoManager } from '../../src/components/extrato/ExtratoManager';
 
 function renderComProviders() {
@@ -82,6 +90,10 @@ describe('ExtratoManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListarCategoriasAtivas.mockResolvedValue([CATEGORIA_RECEITA, CATEGORIA_ALUGUEL]);
+    mockSaldos.mockResolvedValue([
+      { conta: 'mc', nome: 'MC', configurada: true, saldo: { disponivel: 1000, bloqueado: null, consultadoEm: '2026-07-29T10:00:00Z' } },
+      { conta: 'cavalcante_viana', nome: 'Cavalcante Viana', configurada: false, saldo: null },
+    ]);
   });
 
   it('fila de sugestões: Confirmar chama conciliar com a transação e o boletoId certos', async () => {

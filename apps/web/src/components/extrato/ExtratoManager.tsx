@@ -19,6 +19,7 @@ import { ApiClientError } from '@/lib/api-client';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
+import { ConciliacaoResumo } from './ConciliacaoResumo';
 
 function brl(v: number | null): string {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -549,6 +550,9 @@ export function ExtratoManager() {
           </div>
         </div>
       )}
+
+      {/* Conciliação formal do período (extrato ajustado × processado pelo sistema) */}
+      {totais && <ConciliacaoResumo conta={conta} transacoes={transacoes} periodo={{ inicio, fim }} />}
 
       {/* Fila de sugestões em destaque */}
       {sugestoes.length > 0 && (
