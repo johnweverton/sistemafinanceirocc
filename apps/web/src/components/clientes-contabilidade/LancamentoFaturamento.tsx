@@ -43,7 +43,7 @@ export function LancamentoFaturamento({ clienteId }: { clienteId: string }) {
       if (resp.preview.alertas.length > 0) {
         toast(resp.preview.alertas[0] ?? 'Faturamento lançado com alerta na regra de preço', 'error');
       } else {
-        toast(`Faturamento lançado — boleto calculado: R$ ${resp.preview.valor.toFixed(2)}`, 'success');
+        toast(`Faturamento lançado. Boleto calculado: R$ ${resp.preview.valor.toFixed(2)}`, 'success');
       }
     },
     onError: (e) => {
@@ -59,7 +59,7 @@ export function LancamentoFaturamento({ clienteId }: { clienteId: string }) {
   if (cliente && cliente.modoCobranca !== 'faixa_faturamento') {
     return (
       <p className="text-sm text-cc-muted">
-        Este cliente está no modo de cobrança &ldquo;valor fixo&rdquo; — não usa lançamento de
+        Este cliente está no modo de cobrança &ldquo;valor fixo&rdquo;, que não usa lançamento de
         faturamento mensal.
       </p>
     );
@@ -68,7 +68,10 @@ export function LancamentoFaturamento({ clienteId }: { clienteId: string }) {
   return (
     <section className="space-y-6">
       <div className="page-header">
-        <h1 className="page-title">Lançar faturamento{cliente ? ` — ${cliente.nome}` : ''}</h1>
+        <div>
+          <h1 className="page-title">Lançar faturamento</h1>
+          {cliente && <p className="mt-0.5 text-sm text-cc-ink-2">{cliente.nome}</p>}
+        </div>
         <Link href="/clientes-contabilidade" className="btn-ghost btn btn-sm">
           Voltar
         </Link>

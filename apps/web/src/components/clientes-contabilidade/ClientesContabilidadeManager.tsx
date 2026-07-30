@@ -68,7 +68,7 @@ export function ClientesContabilidadeManager() {
       if (resultado.erros.length === 0) {
         toast(`${resultado.criados} cliente(s) importado(s) com sucesso`, 'success');
       } else {
-        toast(`Importação com ${resultado.erros.length} erro(s) — veja os detalhes`, 'info');
+        toast(`Importação com ${resultado.erros.length} erro(s). Veja os detalhes.`, 'info');
       }
     },
     onError: (e) => {
@@ -208,8 +208,10 @@ export function ClientesContabilidadeManager() {
                     <span className={c.ativo ? 'badge-green' : 'badge-slate'}>{c.ativo ? 'Ativo' : 'Inativo'}</span>
                   </td>
                   <td className="py-2.5 px-4 text-right">
-                    {/* Ações rápidas na própria linha (feedback do dono, 2026-07-24) — não exige
-                        abrir o hub pra emitir/lançar faturamento dos casos comuns. */}
+                    {/* Ação rápida na própria linha (feedback do dono, 2026-07-24) — não exige
+                        abrir o hub pra emitir. Para clientes faixa_faturamento, "Emissão" leva ao
+                        fluxo combinado que já inclui o lançamento de faturamento (polimento UX,
+                        2026-07-30 — antes havia um link "Faturamento" separado aqui). */}
                     <div className="flex items-center justify-end gap-3">
                       <Link
                         href={`/clientes-contabilidade/${c.id}/execucao`}
@@ -218,15 +220,6 @@ export function ClientesContabilidadeManager() {
                       >
                         Emissão
                       </Link>
-                      {c.modoCobranca === 'faixa_faturamento' && (
-                        <Link
-                          href={`/clientes-contabilidade/${c.id}/faturamento`}
-                          onClick={(ev) => ev.stopPropagation()}
-                          className="link-action"
-                        >
-                          Faturamento
-                        </Link>
-                      )}
                       <button
                         onClick={(ev) => {
                           ev.stopPropagation();

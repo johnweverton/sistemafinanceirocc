@@ -75,16 +75,16 @@ describe('ClientesContabilidadeManager', () => {
     expect(screen.queryByRole('textbox', { name: /Nome do cliente/i })).not.toBeInTheDocument();
   });
 
-  it('linha do cliente faixa_faturamento mostra os atalhos Emissão e Faturamento', async () => {
+  it('linha do cliente faixa_faturamento mostra só o atalho Emissão (fluxo combinado com faturamento, 2026-07-30)', async () => {
     renderComProviders();
     await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
 
     const linhaFaixa = screen.getByText('Padaria Bom Pão Ltda').closest('tr')!;
     expect(linhaFaixa).toHaveTextContent('Emissão');
-    expect(linhaFaixa).toHaveTextContent('Faturamento');
+    expect(linhaFaixa).not.toHaveTextContent('Faturamento');
   });
 
-  it('linha do cliente fixo mostra Emissão mas NÃO mostra o atalho Faturamento', async () => {
+  it('linha do cliente fixo mostra o atalho Emissão', async () => {
     renderComProviders();
     await waitFor(() => expect(screen.getByText('Clínica X')).toBeInTheDocument());
 

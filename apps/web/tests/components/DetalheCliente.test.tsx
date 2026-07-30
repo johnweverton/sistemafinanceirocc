@@ -109,23 +109,19 @@ describe('DetalheCliente', () => {
     expect(screen.queryByText(/Reajuste anual pendente/i)).not.toBeInTheDocument();
   });
 
-  it('a barra de ações mostra Emissão/Faturamento/Editar cadastro/Histórico em destaque (reorganização 2026-07-24)', async () => {
+  it('a barra de ações mostra Emissão/Editar cadastro/Histórico em destaque (reorganização 2026-07-24; fluxo combinado 2026-07-30)', async () => {
     vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue(clienteFaixaBase);
 
     renderComQuery('cc-1');
 
     await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
     expect(screen.getByRole('link', { name: 'Emissão' })).toHaveAttribute('href', '/clientes-contabilidade/cc-1/execucao');
-    expect(screen.getByRole('link', { name: 'Faturamento' })).toHaveAttribute('href', '/clientes-contabilidade/cc-1/faturamento');
     expect(screen.getByRole('link', { name: 'Histórico' })).toHaveAttribute('href', '/clientes-contabilidade/cc-1/historico');
     expect(screen.getByRole('button', { name: 'Editar cadastro' })).toBeInTheDocument();
   });
 
-  it('cliente modo fixo não mostra o link "Faturamento" na barra de ações', async () => {
-    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue({
-      ...clienteFaixaBase,
-      modoCobranca: 'fixo',
-    });
+  it('não mostra mais um link "Faturamento" separado na barra de ações (combinado dentro de Emissão, 2026-07-30)', async () => {
+    vi.mocked(clientesContabilidadeService.detalhe).mockResolvedValue(clienteFaixaBase);
 
     renderComQuery('cc-1');
 

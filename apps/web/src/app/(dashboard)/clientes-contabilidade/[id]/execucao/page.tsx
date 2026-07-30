@@ -1,5 +1,5 @@
-import { GerarExecucao } from '@/components/clientes-contabilidade/GerarExecucao';
+import { EmissaoCliente } from '@/components/clientes-contabilidade/EmissaoCliente';
 
 export default function ExecucaoPage({ params }: { params: { id: string } }) {
-  return <GerarExecucao clienteId={params.id} />;
+  return <EmissaoCliente clienteId={params.id} />;
 }

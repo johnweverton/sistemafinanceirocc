@@ -48,7 +48,10 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
   return (
     <section className="space-y-6">
       <div className="page-header">
-        <h1 className="page-title">Emissão{cliente ? ` — ${cliente.nome}` : ''}</h1>
+        <div>
+          <h1 className="page-title">Emissão</h1>
+          {cliente && <p className="mt-0.5 text-sm text-cc-ink-2">{cliente.nome}</p>}
+        </div>
         <Link href="/clientes-contabilidade" className="btn-ghost btn btn-sm">
           Voltar
         </Link>
@@ -97,7 +100,7 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
               </label>
               {cicloVencendo && (
                 <p className="mt-1.5 text-2xs text-cc-muted">
-                  Esta competência bate o ciclo do adicional semestral — toggle pré-marcado (confirme antes de gerar).
+                  Esta competência bate o ciclo do adicional semestral. Toggle pré-marcado (confirme antes de gerar).
                 </p>
               )}
             </div>
@@ -110,7 +113,10 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
   );
 }
 
-function Acompanhamento({ execucaoId }: { execucaoId: string }) {
+// Exportado para reaproveitamento pelo fluxo combinado faturamento+emissão de clientes
+// `faixa_faturamento` (FaturamentoEEmissao.tsx) — mesma lógica de acompanhar a execução e emitir
+// o boleto, sem duplicar código (Story de polimento UX, 2026-07-30).
+export function Acompanhamento({ execucaoId }: { execucaoId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { execucao } = useExecucaoRealtime(execucaoId);

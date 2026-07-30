@@ -256,7 +256,7 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
       {/* Nota fora do <label> — texto dentro do <Field> entraria no accessible name do select
           (label envolve todo o conteúdo), colidindo com buscas por "Modo de cobrança". */}
       <p className="-mt-3 text-2xs text-cc-muted">
-        Regime tributário é um metadado informativo — quem decide o cálculo do boleto é o modo de
+        Regime tributário é um metadado informativo. Quem decide o cálculo do boleto é o modo de
         cobrança (há exceções fixas dentro do Simples Nacional).
       </p>
 
@@ -288,8 +288,8 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
               </Field>
             </div>
             <p className="text-2xs text-cc-muted">
-              O faturamento do mês é informado na tela de lançamento (Story 11.2) — o boleto usa o
-              valor conforme o faturamento estiver abaixo ou a partir do limite.
+              O faturamento do mês é informado na tela de lançamento. O boleto usa o valor
+              conforme o faturamento estiver abaixo ou a partir do limite.
             </p>
           </>
         ) : (
@@ -299,7 +299,7 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
                 onChange={(e) => setRegraNum('valorFixo', e.target.value)} className="input tabular" placeholder="0.00" />
             </Field>
             <p className="text-2xs text-cc-muted">
-              Reajustado uma vez por ano (manual) — edite este valor com o motivo do reajuste; o
+              Reajustado uma vez por ano (manual). Edite este valor com o motivo do reajuste; o
               histórico fica registrado.
             </p>
           </>
@@ -344,8 +344,8 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
               </Field>
             </div>
             <p className="text-2xs text-cc-muted">
-              Boleto avulso separado do mensal (ex.: Vital Soluções, R$15.000 a cada 6 meses) —
-              geração entra na Story 11.4.
+              Boleto avulso separado do mensal (ex.: Vital Soluções, R$15.000 a cada 6 meses).
+              Geração entra na Story 11.4.
             </p>
             {!adicionalOk && (
               <p className="text-xs text-cc-danger" role="alert">
@@ -413,7 +413,7 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
 
             <Field label="UF" optional>
               <select value={cobranca.uf} onChange={(e) => setCob('uf', e.target.value)} className="input">
-                <option value="">—</option>
+                <option value="">Selecione…</option>
                 {UFS.map((uf) => (
                   <option key={uf} value={uf}>{uf}</option>
                 ))}
@@ -453,7 +453,7 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
         open={!!inicial?.condicoes && temAlgumaCondicao(inicial.condicoes)}
       >
         <summary className="cursor-pointer text-sm font-semibold text-cc-ink">
-          Condições do boleto <span className="font-normal text-cc-muted">(override — vazio herda o padrão global)</span>
+          Condições do boleto <span className="font-normal text-cc-muted">(override: vazio herda o padrão global)</span>
         </summary>
 
         <div className="mt-4 space-y-4">

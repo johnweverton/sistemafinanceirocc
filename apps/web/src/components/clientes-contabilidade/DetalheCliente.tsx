@@ -78,16 +78,14 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
         </Link>
       </div>
 
-      {/* Barra de ações em destaque, logo abaixo do título — nunca atrás de um formulário. */}
+      {/* Barra de ações em destaque, logo abaixo do título — nunca atrás de um formulário.
+          Clientes faixa_faturamento tinham dois links (Emissão + Faturamento) que exigiam digitar
+          a competência duas vezes; agora "Emissão" leva ao fluxo combinado (lançar faturamento +
+          calcular/emitir na mesma tela — EmissaoCliente.tsx decide qual fluxo mostrar). */}
       <div className="flex flex-wrap gap-4">
         <Link href={`/clientes-contabilidade/${clienteId}/execucao`} className="link-action">
           Emissão
         </Link>
-        {cliente.modoCobranca === 'faixa_faturamento' && (
-          <Link href={`/clientes-contabilidade/${clienteId}/faturamento`} className="link-action">
-            Faturamento
-          </Link>
-        )}
         <button type="button" onClick={() => setEditando((v) => !v)} className="link-action">
           {editando ? 'Cancelar edição' : 'Editar cadastro'}
         </button>
@@ -117,7 +115,7 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
 
       {reajustePendente && (
         <p className="alert-error" role="alert">
-          Reajuste anual pendente — a regra de preço deste cliente não é alterada há 12 meses ou
+          Reajuste anual pendente. A regra de preço deste cliente não é alterada há 12 meses ou
           mais. Confira o índice de reajuste do ano e atualize o valor fixo no cadastro.
         </p>
       )}
