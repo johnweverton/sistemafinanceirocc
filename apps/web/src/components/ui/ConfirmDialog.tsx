@@ -2,24 +2,38 @@ interface ConfirmDialogProps {
   titulo: string;
   mensagem: string;
   itens?: string[];
+  /**
+   * 'danger' (padrão) — ação destrutiva irreversível (ex.: exclusão permanente): botão vermelho
+   * + aviso fixo "NÃO PODE ser desfeita". 'neutral' — confirmação de uma ação permanente mas NÃO
+   * destrutiva (ex.: vincular um registro, criar em lote): botão no tom padrão, sem o aviso de
+   * exclusão — qualquer ressalva (como "o vínculo é permanente") deve vir na própria `mensagem`.
+   */
+  tone?: 'danger' | 'neutral';
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmandoLabel?: string;
   confirmando?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-/** Confirmação para ações destrutivas irreversíveis (ex.: exclusão permanente). */
+/** Confirmação de ação — destrutiva (`tone="danger"`, padrão) ou não (`tone="neutral"`). */
 export function ConfirmDialog({
   titulo,
   mensagem,
   itens,
-  confirmLabel = 'Excluir permanentemente',
+  tone = 'danger',
+  confirmLabel,
   cancelLabel = 'Cancelar',
+  confirmandoLabel,
   confirmando = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const isDanger = tone === 'danger';
+  const resolvedConfirmLabel = confirmLabel ?? (isDanger ? 'Excluir permanentemente' : 'Confirmar');
+  const resolvedConfirmandoLabel = confirmandoLabel ?? (isDanger ? 'Excluindo...' : 'Confirmando...');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-cc-surface card w-full max-w-md shadow-2xl">
@@ -35,16 +49,22 @@ export function ConfirmDialog({
               ))}
             </ul>
           )}
-          <p className="text-xs font-semibold text-cc-danger">
-            Esta ação NÃO PODE ser desfeita.
-          </p>
+          {isDanger && (
+            <p className="text-xs font-semibold text-cc-danger">
+              Esta ação NÃO PODE ser desfeita.
+            </p>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
           <button onClick={onCancel} disabled={confirmando} className="btn-ghost btn btn-sm">
             {cancelLabel}
           </button>
-          <button onClick={onConfirm} disabled={confirmando} className="btn-danger btn btn-sm">
-            {confirmando ? 'Excluindo...' : confirmLabel}
+          <button
+            onClick={onConfirm}
+            disabled={confirmando}
+            className={`btn btn-sm ${isDanger ? 'btn-danger' : 'btn-primary'}`}
+          >
+            {confirmando ? resolvedConfirmandoLabel : resolvedConfirmLabel}
           </button>
         </div>
       </div>

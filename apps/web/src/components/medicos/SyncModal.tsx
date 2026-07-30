@@ -4,6 +4,7 @@ import { medicosService, queryKeys, type SyncRelatorio, type SyncCandidata, type
 import { ApiClientError } from '@/lib/api-client';
 import type { ClienteExterno } from '@cobranca/shared';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface SyncModalProps {
   relatorio: SyncRelatorio;
@@ -20,12 +21,23 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
   const [vinculados, setVinculados] = useState(relatorio.jaVinculados);
   const [criados, setCriados] = useState(0);
 
+  // Confirmações (tom neutro: são permanentes, mas não destrutivas — não usam o ConfirmDialog
+  // vermelho de exclusão).
+  const [confirmVinculo, setConfirmVinculo] = useState<{
+    medicoId: string;
+    externalId: string;
+    medicoNome: string;
+    clienteNome: string;
+  } | null>(null);
+  const [confirmCriarTodos, setConfirmCriarTodos] = useState(false);
+
   const vincular = useMutation({
     mutationFn: (p: { medicoId: string; externalId: string }) => medicosService.vincularExterno(p),
     onSuccess: (_, vars) => {
       void qc.invalidateQueries({ queryKey: queryKeys.medicos() });
       setComSugestao(prev => prev.filter(p => p.cliente.id !== vars.externalId));
       setVinculados(prev => prev + 1);
+      setConfirmVinculo(null);
       toast('Médico vinculado com sucesso', 'success');
     },
     onError: (e) => {
@@ -55,6 +67,7 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
       const idsIgnorados = new Set(resultado.ignorados.map(i => i.externalId));
       setSemPar(prev => prev.filter(c => idsIgnorados.has(c.id)));
       setCriados(prev => prev + resultado.criados);
+      setConfirmCriarTodos(false);
       if (resultado.ignorados.length > 0) {
         toast(`${resultado.criados} médicos criados; ${resultado.ignorados.length} não puderam ser criados`, 'error');
       } else {
@@ -133,11 +146,14 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
                             )}
                           </div>
                           <button
-                            onClick={() => {
-                              if (confirm('Atenção: O vínculo é PERMANENTE. Tem certeza que deseja confirmar este par?')) {
-                                vincular.mutate({ medicoId: cand.medicoId, externalId: pend.cliente.id });
-                              }
-                            }}
+                            onClick={() =>
+                              setConfirmVinculo({
+                                medicoId: cand.medicoId,
+                                externalId: pend.cliente.id,
+                                medicoNome: cand.nome,
+                                clienteNome: pend.cliente.nome,
+                              })
+                            }
                             disabled={isPending}
                             className="btn-primary btn btn-sm"
                           >
@@ -160,11 +176,7 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
                   Sem par local - Criar novos ({semPar.length})
                 </h3>
                 <button
-                  onClick={() => {
-                    if (confirm(`Criar os ${semPar.length} médicos de uma vez? Eles entram como "necessita configuração" até o cadastro ser completado.`)) {
-                      criarTodos.mutate(semPar.map(c => c.id));
-                    }
-                  }}
+                  onClick={() => setConfirmCriarTodos(true)}
                   disabled={isPending}
                   className="btn-primary btn btn-sm"
                 >
@@ -216,6 +228,34 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
 
         </div>
       </div>
+
+      {confirmVinculo && (
+        <ConfirmDialog
+          tone="neutral"
+          titulo="Confirmar vínculo"
+          mensagem={`Vincular "${confirmVinculo.clienteNome}" (origem) a "${confirmVinculo.medicoNome}" (local)? Atenção: o vínculo é PERMANENTE.`}
+          confirmLabel="Confirmar vínculo"
+          confirmandoLabel="Vinculando..."
+          confirmando={vincular.isPending}
+          onCancel={() => setConfirmVinculo(null)}
+          onConfirm={() =>
+            vincular.mutate({ medicoId: confirmVinculo.medicoId, externalId: confirmVinculo.externalId })
+          }
+        />
+      )}
+
+      {confirmCriarTodos && (
+        <ConfirmDialog
+          tone="neutral"
+          titulo="Criar médicos em lote"
+          mensagem={`Criar os ${semPar.length} médicos de uma vez? Eles entram como "necessita configuração" até o cadastro ser completado.`}
+          confirmLabel={`Criar todos (${semPar.length})`}
+          confirmandoLabel="Criando..."
+          confirmando={criarTodos.isPending}
+          onCancel={() => setConfirmCriarTodos(false)}
+          onConfirm={() => criarTodos.mutate(semPar.map(c => c.id))}
+        />
+      )}
     </div>
   );
 }
