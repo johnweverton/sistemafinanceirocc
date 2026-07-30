@@ -17,7 +17,7 @@ const serverSchema = z.object({
   // Formato: e-mails separados por vírgula. Vazio = nenhum auto-provisionamento.
   BOOTSTRAP_ADMIN_EMAILS: z.string().optional(),
   // ---------------------------------------------------------------------------
-  // API REAL do Sistema Web (Épico 5) — fin-clientes/fin-producoes/fin-itens.
+  // API REAL do Sistema Web — fin-clientes/fin-producoes/fin-itens.
   // ---------------------------------------------------------------------------
   API_FINANCEIRO_URL: z.string().url().optional(),
   // Achado M-2: entropia mínima de 20 caracteres quando presente.
@@ -42,9 +42,9 @@ const serverSchema = z.object({
   GATEWAY_EMISSAO_HABILITADA: z.enum(['true', 'false']).default('false'),
   // Qual gateway usar: 'cora' (real, mTLS) ou 'mock' (testes/dev).
   BOLETO_GATEWAY: z.enum(['cora', 'mock']).default('mock'),
-  // Status devolvido pela reconsulta (consultarInvoice) do MockGateway em dev (débito M-1 da
-  // Story 6.1): 'paid' (default) testa webhook/baixa; 'open' permite testar o CANCELAMENTO
-  // (com 'paid', todo cancelamento em mock cai no ramo de corrida e grava baixa falsa).
+  // Status devolvido pela reconsulta (consultarInvoice) do MockGateway em dev (débito M-1):
+  // 'paid' (default) testa webhook/baixa; 'open' permite testar o CANCELAMENTO (com 'paid',
+  // todo cancelamento em mock cai no ramo de corrida e grava baixa falsa).
   MOCK_INVOICE_STATUS: z.enum(['paid', 'open', 'overdue', 'canceled', 'unknown']).default('paid'),
   // Certificado e chave privada mTLS da Cora, em base64.
   CORA_CERT_BASE64: z.string().optional(),
@@ -53,12 +53,12 @@ const serverSchema = z.object({
   CORA_API_URL: z.string().url().optional(),
   // Client ID da Cora para autenticação OAuth2 + mTLS.
   CORA_CLIENT_ID: z.string().optional(),
-  // Segredo do path do webhook do Cora (Épico 4). Comparado em tempo constante.
+  // Segredo do path do webhook do Cora. Comparado em tempo constante.
   // Achado M-1: entropia mínima quando presente.
   CORA_WEBHOOK_SECRET: z.string().min(16, 'CORA_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
 
   // ---------------------------------------------------------------------------
-  // MULTI-CONTA EMISSORA (Épico 7) — credenciais por conta, prefixadas.
+  // MULTI-CONTA EMISSORA — credenciais por conta, prefixadas.
   // As CORA_* legadas (acima) valem como FALLBACK da conta 'mc': deploy sem env
   // nova = comportamento atual. A CV só opera quando CORA_CV_* for configurada.
   // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ export function getServerEnv() {
 }
 
 // ---------------------------------------------------------------------------
-// Credenciais por conta emissora (Épico 7, arquitetura §2-D2)
+// Credenciais por conta emissora
 // ---------------------------------------------------------------------------
 
 /** Credenciais mTLS/OAuth de UMA conta Cora, já resolvidas (prefixadas ?? legadas). */
@@ -147,8 +147,7 @@ export interface CredenciaisConta {
  * Resolve as credenciais da conta emissora a partir das env vars prefixadas
  * (CORA_MC_* / CORA_CV_*). Para 'mc', as CORA_* legadas valem como fallback —
  * deploy sem env nova mantém a MC funcionando exatamente como hoje.
- * Lança erro nomeando a conta e as vars faltantes (AC 4 da Story 7.1); a outra
- * conta não é afetada.
+ * Lança erro nomeando a conta e as vars faltantes; a outra conta não é afetada.
  */
 export function getCredenciaisConta(conta: ContaEmissora): CredenciaisConta {
   const env = getServerEnv();

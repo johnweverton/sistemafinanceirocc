@@ -1,5 +1,3 @@
-// Service do relatório DRE + lançamentos manuais (Story 9.3) — chamadas às rotas
-// internas da 9.2.
 import type { ContaEmissora, GrupoPlanoContas, LancamentoManual, TipoLancamentoManual } from '@cobranca/shared';
 import { apiFetch } from '@/lib/api-client';
 

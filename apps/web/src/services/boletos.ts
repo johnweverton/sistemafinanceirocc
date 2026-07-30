@@ -11,7 +11,7 @@ export const boletosService = {
     apiFetch<{ message: string }>(`/execucoes/resultados/${execucaoResultadoId}/reenviar_boleto`, {
       method: 'POST',
     }),
-  // Cancelamento ativo (Story 6.1) — motivo obrigatório; boleto pago não cancela.
+  // Cancelamento ativo — motivo obrigatório; boleto pago não cancela.
   cancelar: (boletoId: string, motivo: string) =>
     apiFetch<{ boleto: Boleto }>(`/boletos/${boletoId}/cancelar`, {
       method: 'POST',

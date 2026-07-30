@@ -1,8 +1,8 @@
 'use client';
-// Página DRE (Story 9.3, Épico 9). Relatório: agrupado por grupo (ordem da fórmula do
-// DRE, não alfabética — os 4 totais da resposta JÁ SÃO os subtotais por grupo, sem
-// re-soma no cliente) + resultado líquido. Lançamentos manuais: lista + diálogo de
-// criação com campos condicionais por tipo (avulso/recorrente).
+// Relatório: agrupado por grupo (ordem da fórmula do DRE, não alfabética — os 4 totais
+// da resposta JÁ SÃO os subtotais por grupo, sem re-soma no cliente) + resultado líquido.
+// Lançamentos manuais: lista + diálogo de criação com campos condicionais por tipo
+// (avulso/recorrente).
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';

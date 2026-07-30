@@ -90,11 +90,11 @@ export function NovaExecucao() {
 
   // Custom manual selections (modo "Por competência")
   const [manualSelections, setManualSelections] = useState<Record<string, string>>({});
-  // Produção de consultas de pediatria (Story 10.2) — sempre manual, nunca auto-match
-  // (evita heurística arriscada sobre nome de produção numa mudança que afeta valor cobrado).
+  // Produção de consultas de pediatria — sempre manual, nunca auto-match (evita heurística
+  // arriscada sobre nome de produção numa mudança que afeta valor cobrado).
   const [consultaSelections, setConsultaSelections] = useState<Record<string, string>>({});
-  // Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — sempre manual, mesmo
-  // motivo do consultaSelections acima: nunca auto-match numa seleção que afeta valor cobrado.
+  // Lotes separados de Outros Hospitais/Imobilizações — sempre manual, mesmo motivo do
+  // consultaSelections acima: nunca auto-match numa seleção que afeta valor cobrado.
   const [outrosHospitaisSelections, setOutrosHospitaisSelections] = useState<Record<string, string>>({});
   const [imobilizacoesSelections, setImobilizacoesSelections] = useState<Record<string, string>>({});
 
@@ -105,8 +105,8 @@ export function NovaExecucao() {
   const [outrosHospitaisProducaoId, setOutrosHospitaisProducaoId] = useState('');
   const [imobilizacoesProducaoId, setImobilizacoesProducaoId] = useState('');
 
-  // Seleção do modo "Por empresa" (Story 10.4c) — empresa + produção de guias cardíacas de
-  // cada médico vinculado, sempre manual (mesmo padrão da 10.2 — nunca auto-match).
+  // Seleção do modo "Por empresa" — empresa + produção de guias cardíacas de cada médico
+  // vinculado, sempre manual (nunca auto-match).
   const [empresaId, setEmpresaId] = useState('');
   const [empresaProducaoSelecoes, setEmpresaProducaoSelecoes] = useState<Record<string, string>>({});
 
@@ -195,14 +195,14 @@ export function NovaExecucao() {
 
       if (match) {
         matched.push({ medico: med, producao: match });
-        // Story 10.2: produção de consultas é sempre escolha manual do operador (nunca
-        // auto-match) — só entra no payload se o pediatra tiver uma selecionada.
+        // Produção de consultas é sempre escolha manual do operador (nunca auto-match) —
+        // só entra no payload se o pediatra tiver uma selecionada.
         const consultaProdId = consultaSelections[med.id];
         const consultaProd = consultaProdId
           ? producoesDoMedico.find((p) => p.id === consultaProdId)
           : undefined;
-        // Story 10.5: mesmo mecanismo acima para os lotes separados de Outros
-        // Hospitais/Imobilizações — sempre manual, nunca auto-match (afeta valor cobrado).
+        // Mesmo mecanismo acima para os lotes separados de Outros Hospitais/Imobilizações —
+        // sempre manual, nunca auto-match (afeta valor cobrado).
         const outrosHospitaisProdId = outrosHospitaisSelections[med.id];
         const outrosHospitaisProd = outrosHospitaisProdId
           ? producoesDoMedico.find((p) => p.id === outrosHospitaisProdId)
@@ -273,7 +273,6 @@ export function NovaExecucao() {
   const producaoSelecionada = producoesDoMedicoSelecionado.find(p => p.id === producaoId);
   const canDispararMedico = Boolean(medicoId && producaoSelecionada && competenciaValida) && !disparar.isPending;
 
-  // Story 10.4c: médicos vinculados à empresa selecionada (Story 10.4a — empresaGrupoId).
   const medicosDaEmpresa = validMedicos.filter((m) => m.empresaGrupoId === empresaId);
   const empresaSelecoesPayload: ExecucaoSelecaoPayload[] = medicosDaEmpresa
     .map((m) => {
@@ -741,7 +740,6 @@ export function NovaExecucao() {
                                   </button>
                                 </div>
                               </div>
-                              {/* Story 10.2: produção de consultas de pediatria — sempre manual */}
                               {pediatra && outrasProducoes.length > 0 && (
                                 <select
                                   className="input text-xs py-1 h-auto w-full"
@@ -759,9 +757,9 @@ export function NovaExecucao() {
                                   ))}
                                 </select>
                               )}
-                              {/* Story 10.5: lote separado de Outros Hospitais — sempre manual (nunca
-                                  auto-match, afeta valor cobrado). Sem lote selecionado, o motor gera
-                                  alerta e NÃO cobra a classe (nunca reaproveita a produção principal). */}
+                              {/* Lote separado de Outros Hospitais — sempre manual (nunca auto-match, afeta
+                                  valor cobrado). Sem lote selecionado, o motor gera alerta e NÃO cobra a
+                                  classe (nunca reaproveita a produção principal). */}
                               {medico.fazOutrosHospitais && outrasProducoes.length > 0 && (
                                 <select
                                   className="input text-xs py-1 h-auto w-full"

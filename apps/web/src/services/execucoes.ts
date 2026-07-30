@@ -12,10 +12,10 @@ export interface ExecucaoSelecaoPayload {
   medicoId: string;
   producaoExternaId: string;
   producaoNome: string;
-  /** Produção de consultas de pediatria (Story 10.2) — opcional. */
+  /** Produção de consultas de pediatria — opcional. */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
-  /** Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — opcionais. */
+  /** Lotes separados de Outros Hospitais/Imobilizações — opcionais. */
   producaoOutrosHospitaisExternaId?: string | null;
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
@@ -34,9 +34,9 @@ export interface ApoioData {
 export const execucoesService = {
   apoio: () => apiFetch<ApoioData>('/execucoes/apoio'),
   /**
-   * `empresaId` (Story 10.4c) marca a execução como agregada por empresa; `clienteContabilidadeId`
-   * (Story 11.3) marca como execução de cliente contábil; `ehAdicional` (Story 11.4) marca como o
-   * boleto avulso do adicional semestral (só válido com `clienteContabilidadeId`).
+   * `empresaId` marca a execução como agregada por empresa; `clienteContabilidadeId` marca como
+   * execução de cliente contábil; `ehAdicional` marca como o boleto avulso do adicional
+   * semestral (só válido com `clienteContabilidadeId`).
    */
   disparar: (
     competencia: string,
@@ -60,7 +60,7 @@ export const execucoesService = {
   /** Retoma manualmente uma execução travada em "processando" (encadeamento entre lotes falhou). */
   retomar: (id: string) => apiFetch<{ ok: true }>(`/execucoes/${id}/retomar`, { method: 'POST' }),
   resultados: (id: string) => apiFetch<ExecucaoResultado[]>(`/execucoes/${id}/resultados`),
-  /** Auditoria "qual médico contribuiu quanto" de um resultado agregado (Story 10.4c). */
+  /** Auditoria "qual médico contribuiu quanto" de um resultado agregado. */
   contribuicoes: (resultadoId: string) =>
     apiFetch<ExecucaoResultadoContribuicao[]>(`/execucoes/resultados/${resultadoId}/contribuicoes`),
   revisarResultado: (execucaoId: string, resultadoId: string, motivo: string) =>

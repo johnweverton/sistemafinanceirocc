@@ -1,7 +1,7 @@
 'use client';
-// Página Extrato/Conciliação (Story 8.3, Épico 8). Padrões reusados: filtros/badges/tabela
-// de Recebíveis, EmptyState, Toast, diálogo próprio (7.3). A fila de sugestões fica em
-// destaque no topo (transação × boleto candidato lado a lado); tudo reversível.
+// Padrões reusados: filtros/badges/tabela de Recebíveis, EmptyState, Toast, diálogo próprio.
+// A fila de sugestões fica em destaque no topo (transação × boleto candidato lado a lado);
+// tudo reversível.
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
@@ -52,7 +52,7 @@ function StatusConciliacaoBadge({ status }: { status: StatusConciliacao }) {
   return <span className="badge-slate">Sem match</span>;
 }
 
-/** Badge do eixo de categorização do DRE (Épico 9) — independente da conciliação. */
+/** Badge do eixo de categorização do DRE — independente da conciliação. */
 function CategorizacaoBadge({ status, nome }: { status: StatusCategorizacao; nome: string | null }) {
   if (status === 'confirmada') return <span className="badge-green">{nome}</span>;
   if (status === 'sugerida') return <span className="badge-amber">Sugestão: {nome}</span>;
@@ -187,8 +187,8 @@ function VincularBoletoDialog({
 }
 
 /**
- * Diálogo de categorização manual (Story 9.3): lista o plano de contas ATIVO agrupado
- * na ordem da fórmula do DRE, para escolher/corrigir a categoria de uma transação.
+ * Diálogo de categorização manual: lista o plano de contas ATIVO agrupado na ordem
+ * da fórmula do DRE, para escolher/corrigir a categoria de uma transação.
  */
 function CategorizarDialog({
   transacao,

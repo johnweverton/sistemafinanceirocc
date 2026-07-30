@@ -112,7 +112,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Protege tudo exceto assets estáticos, o endpoint de saúde e os webhooks públicos.
-  // Webhooks NÃO usam sessão — a segurança é o secret no path + reconsulta na API Cora (Épico 4).
+  // Webhooks NÃO usam sessão — a segurança é o secret no path + reconsulta na API Cora.
   // manifest/sw.js/icons/logo precisam ficar fora do gate de auth: o navegador os busca
   // mesmo deslogado (tela de login, instalação do PWA), e um redirect para /login quebraria
   // o parse do manifest e o registro do service worker (SecurityError em fetch redirecionado).

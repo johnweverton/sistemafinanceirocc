@@ -42,19 +42,19 @@ export interface NovoMedicoPayload {
   fazOutrosHospitais: boolean;
   fazImobilizacoes: boolean;
   modoMudancaData: Medico['modoMudancaData'];
-  // Modo de cobrança (Story 6.2) — percentual obrigatório quando modo = percentual_producao.
+  // Modo de cobrança — percentual obrigatório quando modo = percentual_producao.
   modoCobranca: Medico['modoCobranca'];
   percentualProducao: number | null;
-  // Regra de preço própria (Story 10.1) — obrigatória quando modoCobranca = 'preco_proprio'.
+  // Regra de preço própria — obrigatória quando modoCobranca = 'preco_proprio'.
   regraPreco: RegraPreco | null;
-  /** Empresa que emite os boletos deste médico (Story 7.3) — obrigatório no form. */
+  /** Empresa que emite os boletos deste médico — obrigatório no form. */
   contaEmissora: ContaEmissora;
   colaboradorResponsavel: string | null;
   ativo: boolean;
-  // Cobrança (Fase 3) — opcional; médico pode ser salvo e completado depois.
+  // Cobrança — opcional; médico pode ser salvo e completado depois.
   cobranca?: DadosCobranca | null;
   condicoes?: CondicoesCobranca | null;
-  /** Empresa de agrupamento (Story 10.4a) — opcional, null = produção 100% individual. */
+  /** Empresa de agrupamento — opcional, null = produção 100% individual. */
   empresaGrupoId?: string | null;
 }
 

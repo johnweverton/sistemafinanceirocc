@@ -5,8 +5,8 @@ import { CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared
 import type { NovaEmpresaPayload } from '@/services/empresas';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
 
-// contaEmissora admite '' no ESTADO (empresa nova começa sem escolha, mesmo padrão do médico
-// desde a Story 7.3); o submit só habilita com empresa emissora selecionada.
+// contaEmissora admite '' no ESTADO (empresa nova começa sem escolha, mesmo padrão do médico);
+// o submit só habilita com empresa emissora selecionada.
 type FormState = Omit<NovaEmpresaPayload, 'contaEmissora'> & { contaEmissora: ContaEmissora | '' };
 
 const UFS = [
@@ -87,7 +87,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
 
   const motivoOk = !exigeMotivo || motivo.trim().length > 0;
   // Regra de preço, se preenchida, precisa ser coerente com a forma (espelho da CHECK 0028) —
-  // igual à validação de médico (Story 10.1), mas aqui a regra é sempre opcional (nenhum "modo").
+  // igual à validação de médico, mas aqui a regra é sempre opcional (nenhum "modo").
   const regraPrecoOk =
     regraPreco == null ||
     (regraPreco.forma === 'por_guia'
@@ -204,7 +204,6 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
         label="Empresa ativa"
       />
 
-      {/* Regra de preço da produção agregada (Story 10.4b consome isto) */}
       <div className="rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold text-cc-ink">Regra de preço da produção agregada</p>

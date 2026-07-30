@@ -1,5 +1,5 @@
 // Indicador (só sugestão de UI, nunca dispara nada sozinho) de que a competência informada bate
-// o ciclo do adicional semestral de um cliente contábil (Story 11.4). Função pura, sem I/O.
+// o ciclo do adicional semestral de um cliente contábil. Função pura, sem I/O.
 
 /**
  * True quando `competencia` ('YYYY-MM') cai exatamente num múltiplo de `intervaloMeses` a partir

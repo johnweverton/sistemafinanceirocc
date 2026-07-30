@@ -2,7 +2,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { clientesContabilidadeService, clienteContabilidadeQueryKeys } from '@/services/clientes-contabilidade';
 
-// Timeline do histórico de alteração de um cliente contábil (Story 11.1, mesmo padrão de empresa).
 export function HistoricoTimeline({ clienteId }: { clienteId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: clienteContabilidadeQueryKeys.clienteHistorico(clienteId),

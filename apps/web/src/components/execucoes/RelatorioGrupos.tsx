@@ -14,7 +14,6 @@ function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-/** Label amigável para classes sintéticas de subtotal (Story 6.2, 10.1, 10.2). */
 function classeLabel(classe: string): string {
   switch (classe) {
     case 'PERCENTUAL_PRODUCAO':
@@ -29,7 +28,7 @@ function classeLabel(classe: string): string {
 }
 
 /**
- * Auditoria "qual médico contribuiu quanto" de um resultado AGREGADO por empresa (Story 10.4c).
+ * Auditoria "qual médico contribuiu quanto" de um resultado AGREGADO por empresa.
  * Busca sob demanda (só quando o `<details>` é aberto) — a lista de resultados normalmente não
  * precisa desse detalhe, só quando o operador quer conferir/disputar.
  */
@@ -99,8 +98,8 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
   const { toast } = useToast();
   const [emitidos, setEmitidos] = useState<Set<string>>(new Set());
   const [busca, setBusca] = useState('');
-  // Confirmação de emissão (Story 7.3): mostra POR QUAL EMPRESA o boleto sairá antes do
-  // clique final — última barreira contra emissão pela conta errada.
+  // Confirmação de emissão mostra POR QUAL EMPRESA o boleto sairá antes do clique final —
+  // última barreira contra emissão pela conta errada.
   const [confirmandoEmissao, setConfirmandoEmissao] = useState<ExecucaoResultado | null>(null);
   const { data: medicos } = useQuery({
     queryKey: medicoQueryKeys.medicos(),
@@ -258,9 +257,9 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
 }
 
 /**
- * Confirmação de emissão (Story 7.3): a EMPRESA EMISSORA fica visível antes do clique final —
- * o beneficiário do boleto é parte da cobrança, não detalhe técnico. `conta` null = lista de
- * médicos ainda carregando (ou resultado sem médico): confirma desabilitado até resolver.
+ * A EMPRESA EMISSORA fica visível antes do clique final — o beneficiário do boleto é parte
+ * da cobrança, não detalhe técnico. `conta` null = lista de médicos ainda carregando (ou
+ * resultado sem médico): confirma desabilitado até resolver.
  */
 function EmitirBoletoDialog({
   resultado,
@@ -387,8 +386,8 @@ function Grupo({
                   <tbody>
                     {r.subtotais.map((s, i) => (
                       <tr key={i} className="border-t border-cc-hairline">
-                        {/* Subtotais sintéticos (Story 6.2 percentual, 10.1 preço próprio, 10.2
-                            consultas pediatria): label amigável; a memória de cálculo vem em `faixa`. */}
+                        {/* Subtotais sintéticos (percentual, preço próprio, consultas pediatria):
+                            label amigável; a memória de cálculo vem em `faixa`. */}
                         <td className="py-1.5 text-cc-ink-2">{classeLabel(s.classe)}</td>
                         <td className="py-1.5 tabular text-cc-ink-2">
                           {s.classe === 'PERCENTUAL_PRODUCAO'
@@ -405,7 +404,6 @@ function Grupo({
                 </table>
                 </div>
               )}
-              {/* Story 10.4c: resultado AGREGADO por empresa — auditoria "qual médico contribuiu quanto". */}
               {!resumido && r.empresaId && <ContribuicoesEmpresa resultadoId={r.id} />}
               {mostrarAlertas &&
                 r.alertas.map((a, i) => (

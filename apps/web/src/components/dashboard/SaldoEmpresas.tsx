@@ -1,5 +1,4 @@
 'use client';
-// Cards de saldo por empresa no dashboard (Story 8.3, AC 2 / D5 da arquitetura).
 // Degradação por conta espelhando o GET /api/contas/saldo: conta sem credenciais →
 // "não configurada"; consulta falhou → "indisponível"; NUNCA quebra o dashboard.
 import { useQuery } from '@tanstack/react-query';

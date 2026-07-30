@@ -1,4 +1,3 @@
-// Service do extrato/conciliação (Story 8.3) — chamadas às rotas internas do Épico 8.
 import type {
   ContaEmissora,
   ExtratoTransacaoComBoleto,

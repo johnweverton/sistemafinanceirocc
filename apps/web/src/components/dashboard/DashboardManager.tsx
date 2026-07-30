@@ -60,7 +60,7 @@ export function DashboardManager() {
     return (
       <section className="space-y-5">
         <div className="page-header"><h1 className="page-title">Dashboard financeiro</h1></div>
-        {/* Saldo independe de boletos emitidos (Story 8.3, AC 2). */}
+        {/* Saldo independe de boletos emitidos. */}
         <SaldoEmpresas />
         <EmptyState title="Sem dados financeiros ainda" description="Emita boletos para ver os indicadores por competência, médico e inadimplência." />
       </section>
@@ -79,7 +79,6 @@ export function DashboardManager() {
         </select>
       </div>
 
-      {/* Saldo por empresa (Story 8.3, AC 2) */}
       <SaldoEmpresas />
 
       {/* KPIs */}

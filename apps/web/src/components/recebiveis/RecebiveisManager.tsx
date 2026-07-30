@@ -41,7 +41,7 @@ const STATUS_OPCOES: { valor: StatusRecebivel | ''; label: string }[] = [
   { valor: 'cancelado', label: 'Cancelado' },
 ];
 
-// Filtro por empresa emissora (Story 7.3) — rótulos da fonte única do shared.
+// Filtro por empresa emissora — rótulos da fonte única do shared.
 const CONTA_OPCOES: { valor: ContaEmissora | ''; label: string }[] = [
   { valor: '', label: 'Todas as empresas' },
   ...CONTAS_EMISSORAS_VALIDAS.map((c) => ({ valor: c, label: CONTA_EMISSORA_LABEL[c] })),
@@ -50,8 +50,8 @@ const CONTA_OPCOES: { valor: ContaEmissora | ''; label: string }[] = [
 const MOTIVO_MIN = 5;
 
 /**
- * Diálogo de cancelamento com motivo obrigatório (Story 6.1). Não reusa ConfirmDialog porque
- * o cancelamento exige entrada de texto (trilha de auditoria), não só confirmação.
+ * Diálogo de cancelamento com motivo obrigatório. Não reusa ConfirmDialog porque o
+ * cancelamento exige entrada de texto (trilha de auditoria), não só confirmação.
  */
 function CancelarBoletoDialog({
   recebivel,

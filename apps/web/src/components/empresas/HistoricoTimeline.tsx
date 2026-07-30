@@ -2,7 +2,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { empresasService, empresaQueryKeys } from '@/services/empresas';
 
-// Timeline do histórico de alteração de uma empresa (Story 10.4a, mesmo padrão de médico — PRD §8.2).
 export function HistoricoTimeline({ empresaId }: { empresaId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: empresaQueryKeys.empresaHistorico(empresaId),

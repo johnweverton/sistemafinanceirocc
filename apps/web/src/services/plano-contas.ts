@@ -1,6 +1,6 @@
-// Service do plano de contas + regras de categorização (Story 9.3) — chamadas às rotas
-// internas da 9.2. Escrita é admin-only no backend; o service não filtra por papel (a
-// UI confia no 403 do servidor, mesmo padrão de config-cobranca).
+// Service do plano de contas + regras de categorização. Escrita é admin-only no backend;
+// o service não filtra por papel (a UI confia no 403 do servidor, mesmo padrão de
+// config-cobranca).
 import type {
   PlanoContas,
   GrupoPlanoContas,

@@ -1,7 +1,6 @@
 'use client';
-// Cadastro do plano de contas + regras de categorização (Story 9.3, Épico 9). Escrita é
-// admin-only no backend — esta tela NÃO esconde os controles por papel (mesmo padrão de
-// ConfigCobrancaForm: confia no 403 do servidor, mostra o erro em toast).
+// Escrita é admin-only no backend — esta tela NÃO esconde os controles por papel (mesmo
+// padrão de ConfigCobrancaForm: confia no 403 do servidor, mostra o erro em toast).
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CampoRegraCategorizacao, GrupoPlanoContas } from '@cobranca/shared';

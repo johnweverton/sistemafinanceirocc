@@ -1,5 +1,5 @@
 'use client';
-// Bloco de conciliação formal — melhoria pós-Épico 8/9, adaptação do formato clássico de
+// Bloco de conciliação formal — adaptação do formato clássico de
 // conciliação bancária (NBC TG 1000/03, skill `analisar-extrato-bancario`) ao nosso
 // domínio: não existe "razão contábil" formal aqui — o equivalente é o total já
 // CONCILIADO (auto+manual) no nosso sistema para o período. Cálculo 100% de leitura sobre

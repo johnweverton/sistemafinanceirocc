@@ -76,7 +76,7 @@ export function HistoricoExecucoes() {
   });
 
   // Agrupa por competência — cada grupo pode conter várias execuções (em massa + reprocessamentos
-  // pontuais), já que não há unique constraint em competencia (arquitetura §Épico 3).
+  // pontuais), já que não há unique constraint em competencia.
   const grupos = useMemo(() => {
     const map = new Map<string, Execucao[]>();
     for (const e of execucoesFiltradas) {

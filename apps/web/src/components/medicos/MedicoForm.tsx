@@ -7,9 +7,9 @@ import type { NovoMedicoPayload } from '@/services/medicos';
 import { empresasService, empresaQueryKeys } from '@/services/empresas';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
 
-// contaEmissora admite '' no ESTADO (novo médico começa sem escolha — decisão consciente,
-// Story 7.3); o submit só habilita com empresa selecionada, e o payload sai tipado.
-// empresaGrupoId (Story 10.4a) usa '' como sentinela de "sem vínculo" no SELECT — vira null no submit.
+// contaEmissora admite '' no ESTADO (novo médico começa sem escolha — decisão consciente);
+// o submit só habilita com empresa selecionada, e o payload sai tipado.
+// empresaGrupoId usa '' como sentinela de "sem vínculo" no SELECT — vira null no submit.
 type FormState = Omit<NovoMedicoPayload, 'contaEmissora' | 'empresaGrupoId'> & {
   contaEmissora: ContaEmissora | '';
   empresaGrupoId: string;
@@ -46,10 +46,10 @@ const VAZIO: FormState = {
   modoCobranca: 'faixa_guias',
   percentualProducao: null,
   regraPreco: null,
-  contaEmissora: '', // escolha explícita obrigatória em médicos novos (Story 7.3)
+  contaEmissora: '', // escolha explícita obrigatória em médicos novos
   colaboradorResponsavel: null,
   ativo: true,
-  empresaGrupoId: '', // sem vínculo — produção 100% individual (Story 10.4a)
+  empresaGrupoId: '', // sem vínculo — produção 100% individual
 };
 
 const REGRA_PRECO_VAZIA: RegraPreco = {
@@ -117,7 +117,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const [condicoes, setCondicoes] = useState<CondicoesCobranca>(inicial?.condicoes ?? CONDICOES_VAZIAS);
   const [cepBuscando, setCepBuscando] = useState(false);
 
-  // Empresas ativas para o vínculo de agrupamento (Story 10.4a) — lista pequena, sem paginação.
+  // Empresas ativas para o vínculo de agrupamento — lista pequena, sem paginação.
   const { data: empresas } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
     queryFn: () => empresasService.listar(),
@@ -129,11 +129,11 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   const motivoOk = !exigeMotivo || motivo.trim().length > 0;
   // CPF opcional: se tem tamanho, tem que ser 11, se não, é válido.
   const cpfOk = form.cpf.length === 0 || form.cpf.length === 11;
-  // Modo percentual exige percentual > 0 (Story 6.2 — espelho da CHECK 0018).
+  // Modo percentual exige percentual > 0 (espelho da CHECK 0018).
   const percentualOk =
     form.modoCobranca !== 'percentual_producao' ||
     (form.percentualProducao != null && form.percentualProducao > 0);
-  // Modo preço próprio exige a regra coerente com a forma (Story 10.1 — espelho das CHECKs 0025/0027).
+  // Modo preço próprio exige a regra coerente com a forma (espelho das CHECKs 0025/0027).
   const regraPrecoOk =
     form.modoCobranca !== 'preco_proprio' ||
     (form.regraPreco != null &&
@@ -142,7 +142,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
         : form.regraPreco.forma === 'base_excedente'
           ? form.regraPreco.base != null && form.regraPreco.limiar != null && form.regraPreco.taxa != null
           : form.regraPreco.valorFixo != null));
-  // Empresa emissora é obrigatória (Story 7.3): boleto pela empresa errada = contestação.
+  // Empresa emissora é obrigatória: boleto pela empresa errada = contestação.
   const contaOk = form.contaEmissora !== '';
   const podeSalvar =
     combinacaoValida && motivoOk && cpfOk && percentualOk && regraPrecoOk && contaOk && form.nome.trim().length > 0;
