@@ -6,6 +6,7 @@ import type {
   ResultadoMedico,
   TabelaPreco,
   Subtotal,
+  Classe,
 } from '@cobranca/shared';
 import {
   itensValidos,
@@ -34,7 +35,7 @@ export function processarMedico(
   tabela: TabelaPreco = TABELA_PRECO_PADRAO,
   valorConsultaPediatria: number = VALOR_CONSULTA_PEDIATRIA_PADRAO,
 ): ResultadoMedico {
-  const { medico, itens, historicoGuias, itensConsultas } = entrada;
+  const { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes } = entrada;
   const { validos } = itensValidos(itens);
   const consultasValidas = itensConsultas ? itensValidos(itensConsultas).validos : [];
 
@@ -134,14 +135,55 @@ export function processarMedico(
       subtotais.push({ classe: 'PRECO_PROPRIO', guias, valor: resultado.valor, faixa: resultado.subtotalFaixa });
     }
   } else {
+    // Story 10.5 — OUTROS_HOSPITAIS/IMOBILIZACOES vêm de um LOTE SEPARADO (produção distinta na
+    // origem, mesmo padrão do lote de consultas do pediatra — Story 10.2), com contagem e tabela
+    // de preço PRÓPRIAS. Antes desta story o motor reaproveitava a MESMA `guias` (do lote
+    // principal) para TODAS as classes do médico — cobrando a mesma produção 2x em tabelas
+    // diferentes (bug real: Dr. Marcel Rolim Queiroz — 50 guias do lote principal aplicadas
+    // tanto em HAPVIDA_CRED quanto em OUTROS_HOSPITAIS, em vez de 42 Hapvida + 19 Outros
+    // Hospitais, cada um na sua própria tabela). Nunca chuta (PRD §2): se o médico está
+    // configurado para a classe mas o lote separado não foi selecionado nesta execução, vira
+    // alerta explícito em vez de reaproveitar a contagem do lote principal.
+    const guiasPorLoteSecundario: Partial<Record<Classe, number>> = {};
+    if (medico.fazOutrosHospitais) {
+      if (itensOutrosHospitais !== undefined) {
+        guiasPorLoteSecundario.OUTROS_HOSPITAIS = contarGuiasProducao(
+          itensOutrosHospitais,
+          medico.especialidade,
+        ).guias;
+      } else {
+        alertas.push(
+          'Médico faz Outros Hospitais mas o lote separado de produção não foi selecionado nesta execução — guias de Outros Hospitais NÃO cobradas, selecionar a produção correspondente.',
+        );
+      }
+    }
+    if (medico.fazImobilizacoes) {
+      if (itensImobilizacoes !== undefined) {
+        guiasPorLoteSecundario.IMOBILIZACOES = contarGuiasProducao(
+          itensImobilizacoes,
+          medico.especialidade,
+        ).guias;
+      } else {
+        alertas.push(
+          'Médico faz Imobilizações mas o lote separado de produção não foi selecionado nesta execução — guias de Imobilizações NÃO cobradas, selecionar a produção correspondente.',
+        );
+      }
+    }
+
     for (const classe of classesDoMedico(medico)) {
-      const { valor, faixa } = valorDaFaixa(tabela[classe], guias);
-      subtotais.push({ classe, guias, valor: valor ?? 0, faixa });
+      const ehClasseSecundaria = classe === 'OUTROS_HOSPITAIS' || classe === 'IMOBILIZACOES';
+      const guiasClasse = ehClasseSecundaria ? guiasPorLoteSecundario[classe] : guias;
+      if (guiasClasse == null) {
+        // Lote separado não informado (alerta já registrado acima) — nunca chuta valor.
+        continue;
+      }
+      const { valor, faixa } = valorDaFaixa(tabela[classe], guiasClasse);
+      subtotais.push({ classe, guias: guiasClasse, valor: valor ?? 0, faixa });
       totalValor += valor ?? 0;
       // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.
       if (valor == null) {
         alertas.push(
-          `Classe ${classe} com ${guias} guias está FORA DA TABELA — faixa não definida, verificar.`,
+          `Classe ${classe} com ${guiasClasse} guias está FORA DA TABELA — faixa não definida, verificar.`,
         );
       }
     }

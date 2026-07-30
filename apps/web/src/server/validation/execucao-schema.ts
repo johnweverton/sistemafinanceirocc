@@ -15,6 +15,11 @@ export const dispararExecucaoSchema = z
           // Produção de consultas de pediatria (Story 10.2) — opcional.
           producaoConsultasExternaId: z.string().min(1).nullable().optional(),
           producaoConsultasNome: z.string().min(1).nullable().optional(),
+          // Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — opcionais.
+          producaoOutrosHospitaisExternaId: z.string().min(1).nullable().optional(),
+          producaoOutrosHospitaisNome: z.string().min(1).nullable().optional(),
+          producaoImobilizacoesExternaId: z.string().min(1).nullable().optional(),
+          producaoImobilizacoesNome: z.string().min(1).nullable().optional(),
         }),
       )
       .default([]),

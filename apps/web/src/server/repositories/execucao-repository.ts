@@ -37,6 +37,10 @@ export async function criarExecucao(
     producaoNome: string;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
+    producaoOutrosHospitaisExternaId?: string | null;
+    producaoOutrosHospitaisNome?: string | null;
+    producaoImobilizacoesExternaId?: string | null;
+    producaoImobilizacoesNome?: string | null;
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
@@ -71,6 +75,10 @@ export async function criarExecucao(
       producao_nome: s.producaoNome,
       producao_consultas_externa_id: s.producaoConsultasExternaId ?? null,
       producao_consultas_nome: s.producaoConsultasNome ?? null,
+      producao_outros_hospitais_externa_id: s.producaoOutrosHospitaisExternaId ?? null,
+      producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
+      producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,
+      producao_imobilizacoes_nome: s.producaoImobilizacoesNome ?? null,
     }))
   );
   if (selecoesError) {

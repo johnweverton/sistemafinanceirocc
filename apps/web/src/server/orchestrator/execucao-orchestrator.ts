@@ -65,6 +65,11 @@ export interface SelecaoDeps {
   /** Produção de consultas de pediatria (Story 10.2) — opcional. */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  /** Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — opcionais. */
+  producaoOutrosHospitaisExternaId?: string | null;
+  producaoOutrosHospitaisNome?: string | null;
+  producaoImobilizacoesExternaId?: string | null;
+  producaoImobilizacoesNome?: string | null;
 }
 
 export interface OrchestratorDeps {
@@ -89,6 +94,10 @@ export interface OrchestratorDeps {
       producaoNome: string;
       producaoConsultasExternaId?: string | null;
       producaoConsultasNome?: string | null;
+      producaoOutrosHospitaisExternaId?: string | null;
+      producaoOutrosHospitaisNome?: string | null;
+      producaoImobilizacoesExternaId?: string | null;
+      producaoImobilizacoesNome?: string | null;
     }[],
     empresaId?: string | null,
     clienteContabilidadeId?: string | null,
@@ -198,6 +207,10 @@ export async function iniciarExecucao(
     producaoNome: string;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
+    producaoOutrosHospitaisExternaId?: string | null;
+    producaoOutrosHospitaisNome?: string | null;
+    producaoImobilizacoesExternaId?: string | null;
+    producaoImobilizacoesNome?: string | null;
   }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
@@ -385,11 +398,21 @@ async function processarUmMedico(
     const itensConsultas = selecao.producaoConsultasExternaId
       ? await deps.buscarItens(selecao.producaoConsultasExternaId)
       : undefined;
+    // Story 10.5: lotes separados de Outros Hospitais/Imobilizações — cada um com sua própria
+    // contagem e tabela de preço (o Engine nunca reaproveita a contagem de `itens` para essas
+    // classes; ver processar-medico.ts). `undefined` quando o operador não selecionou o lote
+    // nesta execução — o Engine gera alerta em vez de chutar.
+    const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
+      ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
+      : undefined;
+    const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
+      ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
+      : undefined;
 
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
     const resultado = processarMedico(
-      { medico, itens, historicoGuias, itensConsultas },
+      { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes },
       undefined,
       valorConsultaPediatria,
     );

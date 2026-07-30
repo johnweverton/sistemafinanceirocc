@@ -49,11 +49,17 @@ export function NovaExecucao() {
   // Produção de consultas de pediatria (Story 10.2) — sempre manual, nunca auto-match
   // (evita heurística arriscada sobre nome de produção numa mudança que afeta valor cobrado).
   const [consultaSelections, setConsultaSelections] = useState<Record<string, string>>({});
+  // Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — sempre manual, mesmo
+  // motivo do consultaSelections acima: nunca auto-match numa seleção que afeta valor cobrado.
+  const [outrosHospitaisSelections, setOutrosHospitaisSelections] = useState<Record<string, string>>({});
+  const [imobilizacoesSelections, setImobilizacoesSelections] = useState<Record<string, string>>({});
 
   // Seleção do modo "Por médico"
   const [medicoId, setMedicoId] = useState('');
   const [producaoId, setProducaoId] = useState('');
   const [consultaProducaoId, setConsultaProducaoId] = useState('');
+  const [outrosHospitaisProducaoId, setOutrosHospitaisProducaoId] = useState('');
+  const [imobilizacoesProducaoId, setImobilizacoesProducaoId] = useState('');
 
   // Seleção do modo "Por empresa" (Story 10.4c) — empresa + produção de guias cardíacas de
   // cada médico vinculado, sempre manual (mesmo padrão da 10.2 — nunca auto-match).
@@ -152,12 +158,34 @@ export function NovaExecucao() {
         const consultaProd = consultaProdId
           ? producoesDoMedico.find((p) => p.id === consultaProdId)
           : undefined;
+        // Story 10.5: mesmo mecanismo acima para os lotes separados de Outros
+        // Hospitais/Imobilizações — sempre manual, nunca auto-match (afeta valor cobrado).
+        const outrosHospitaisProdId = outrosHospitaisSelections[med.id];
+        const outrosHospitaisProd = outrosHospitaisProdId
+          ? producoesDoMedico.find((p) => p.id === outrosHospitaisProdId)
+          : undefined;
+        const imobilizacoesProdId = imobilizacoesSelections[med.id];
+        const imobilizacoesProd = imobilizacoesProdId
+          ? producoesDoMedico.find((p) => p.id === imobilizacoesProdId)
+          : undefined;
         finalPayload.push({
           medicoId: med.id,
           producaoExternaId: match.id,
           producaoNome: match.nome,
           ...(consultaProd
             ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
+            : {}),
+          ...(outrosHospitaisProd
+            ? {
+                producaoOutrosHospitaisExternaId: outrosHospitaisProd.id,
+                producaoOutrosHospitaisNome: outrosHospitaisProd.nome,
+              }
+            : {}),
+          ...(imobilizacoesProd
+            ? {
+                producaoImobilizacoesExternaId: imobilizacoesProd.id,
+                producaoImobilizacoesNome: imobilizacoesProd.nome,
+              }
             : {}),
         });
       } else {
@@ -166,7 +194,15 @@ export function NovaExecucao() {
     }
 
     return { matched, unmatched, finalPayload };
-  }, [medicosParaCompetencia, producoes, manualSelections, consultaSelections, competencia]);
+  }, [
+    medicosParaCompetencia,
+    producoes,
+    manualSelections,
+    consultaSelections,
+    outrosHospitaisSelections,
+    imobilizacoesSelections,
+    competencia,
+  ]);
 
   const disparar = useMutation({
     mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[]; empresaId?: string }) =>
@@ -352,6 +388,8 @@ export function NovaExecucao() {
                     setMedicoId(e.target.value);
                     setProducaoId('');
                     setConsultaProducaoId('');
+                    setOutrosHospitaisProducaoId('');
+                    setImobilizacoesProducaoId('');
                   }}
                   disabled={isApoioLoading}
                 >
@@ -417,6 +455,58 @@ export function NovaExecucao() {
                 </div>
               )}
 
+              {medicoId && validMedicos.find((m) => m.id === medicoId)?.fazOutrosHospitais && (
+                <div>
+                  <label htmlFor="producao-outros-hospitais-select" className="field-label mb-1.5">
+                    Lote de Outros Hospitais
+                  </label>
+                  <select
+                    id="producao-outros-hospitais-select"
+                    className="input"
+                    value={outrosHospitaisProducaoId}
+                    onChange={(e) => setOutrosHospitaisProducaoId(e.target.value)}
+                  >
+                    <option value="">-- Selecione o lote --</option>
+                    {producoesDoMedicoSelecionado
+                      .filter((p) => p.id !== producaoId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-cc-muted">
+                    Este médico faz Outros Hospitais (Story 10.5) — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                  </p>
+                </div>
+              )}
+
+              {medicoId && validMedicos.find((m) => m.id === medicoId)?.fazImobilizacoes && (
+                <div>
+                  <label htmlFor="producao-imobilizacoes-select" className="field-label mb-1.5">
+                    Lote de Imobilizações
+                  </label>
+                  <select
+                    id="producao-imobilizacoes-select"
+                    className="input"
+                    value={imobilizacoesProducaoId}
+                    onChange={(e) => setImobilizacoesProducaoId(e.target.value)}
+                  >
+                    <option value="">-- Selecione o lote --</option>
+                    {producoesDoMedicoSelecionado
+                      .filter((p) => p.id !== producaoId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-cc-muted">
+                    Este médico faz Imobilizações (Story 10.5) — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label htmlFor="competencia-medico" className="field-label mb-1.5">
                   Competência
@@ -438,6 +528,12 @@ export function NovaExecucao() {
                 onClick={() => {
                   if (!producaoSelecionada) return;
                   const consultaProd = producoesDoMedicoSelecionado.find((p) => p.id === consultaProducaoId);
+                  const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
+                    (p) => p.id === outrosHospitaisProducaoId,
+                  );
+                  const imobilizacoesProd = producoesDoMedicoSelecionado.find(
+                    (p) => p.id === imobilizacoesProducaoId,
+                  );
                   disparar.mutate({
                     competencia,
                     selecoes: [
@@ -447,6 +543,18 @@ export function NovaExecucao() {
                         producaoNome: producaoSelecionada.nome,
                         ...(consultaProd
                           ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
+                          : {}),
+                        ...(outrosHospitaisProd
+                          ? {
+                              producaoOutrosHospitaisExternaId: outrosHospitaisProd.id,
+                              producaoOutrosHospitaisNome: outrosHospitaisProd.nome,
+                            }
+                          : {}),
+                        ...(imobilizacoesProd
+                          ? {
+                              producaoImobilizacoesExternaId: imobilizacoesProd.id,
+                              producaoImobilizacoesNome: imobilizacoesProd.nome,
+                            }
                           : {}),
                       },
                     ],
@@ -590,6 +698,43 @@ export function NovaExecucao() {
                                   aria-label={`Produção de consultas de ${medico.nome} (opcional)`}
                                 >
                                   <option value="">+ Produção de consultas (opcional)</option>
+                                  {outrasProducoes.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.nome}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              {/* Story 10.5: lote separado de Outros Hospitais — sempre manual (nunca
+                                  auto-match, afeta valor cobrado). Sem lote selecionado, o motor gera
+                                  alerta e NÃO cobra a classe (nunca reaproveita a produção principal). */}
+                              {medico.fazOutrosHospitais && outrasProducoes.length > 0 && (
+                                <select
+                                  className="input text-xs py-1 h-auto w-full"
+                                  value={outrosHospitaisSelections[medico.id] ?? ''}
+                                  onChange={(e) =>
+                                    setOutrosHospitaisSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
+                                  }
+                                  aria-label={`Lote de Outros Hospitais de ${medico.nome}`}
+                                >
+                                  <option value="">+ Lote de Outros Hospitais (obrigatório p/ cobrar)</option>
+                                  {outrasProducoes.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.nome}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              {medico.fazImobilizacoes && outrasProducoes.length > 0 && (
+                                <select
+                                  className="input text-xs py-1 h-auto w-full"
+                                  value={imobilizacoesSelections[medico.id] ?? ''}
+                                  onChange={(e) =>
+                                    setImobilizacoesSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
+                                  }
+                                  aria-label={`Lote de Imobilizações de ${medico.nome}`}
+                                >
+                                  <option value="">+ Lote de Imobilizações (obrigatório p/ cobrar)</option>
                                   {outrasProducoes.map((p) => (
                                     <option key={p.id} value={p.id}>
                                       {p.nome}

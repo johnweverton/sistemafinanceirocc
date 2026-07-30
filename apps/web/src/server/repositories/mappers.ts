@@ -665,6 +665,11 @@ export interface ExecucaoSelecaoRow {
   /** Produção de consultas de pediatria (migration 0026) — opcional em bancos sem a migration. */
   producao_consultas_externa_id?: string | null;
   producao_consultas_nome?: string | null;
+  /** Lotes separados de Outros Hospitais/Imobilizações (Story 10.5, migration 0027). */
+  producao_outros_hospitais_externa_id?: string | null;
+  producao_outros_hospitais_nome?: string | null;
+  producao_imobilizacoes_externa_id?: string | null;
+  producao_imobilizacoes_nome?: string | null;
 }
 
 export function toExecucaoSelecaoRow(selecao: {
@@ -674,6 +679,10 @@ export function toExecucaoSelecaoRow(selecao: {
   producaoNome: string;
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  producaoOutrosHospitaisExternaId?: string | null;
+  producaoOutrosHospitaisNome?: string | null;
+  producaoImobilizacoesExternaId?: string | null;
+  producaoImobilizacoesNome?: string | null;
 }): ExecucaoSelecaoRow {
   return {
     execucao_id: selecao.execucaoId,
@@ -682,6 +691,10 @@ export function toExecucaoSelecaoRow(selecao: {
     producao_nome: selecao.producaoNome,
     producao_consultas_externa_id: selecao.producaoConsultasExternaId ?? null,
     producao_consultas_nome: selecao.producaoConsultasNome ?? null,
+    producao_outros_hospitais_externa_id: selecao.producaoOutrosHospitaisExternaId ?? null,
+    producao_outros_hospitais_nome: selecao.producaoOutrosHospitaisNome ?? null,
+    producao_imobilizacoes_externa_id: selecao.producaoImobilizacoesExternaId ?? null,
+    producao_imobilizacoes_nome: selecao.producaoImobilizacoesNome ?? null,
   };
 }
 
@@ -693,6 +706,10 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     producaoNome: row.producao_nome,
     producaoConsultasExternaId: row.producao_consultas_externa_id ?? null,
     producaoConsultasNome: row.producao_consultas_nome ?? null,
+    producaoOutrosHospitaisExternaId: row.producao_outros_hospitais_externa_id ?? null,
+    producaoOutrosHospitaisNome: row.producao_outros_hospitais_nome ?? null,
+    producaoImobilizacoesExternaId: row.producao_imobilizacoes_externa_id ?? null,
+    producaoImobilizacoesNome: row.producao_imobilizacoes_nome ?? null,
   };
 }
 

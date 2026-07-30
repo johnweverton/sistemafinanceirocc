@@ -15,6 +15,11 @@ export interface ExecucaoSelecaoPayload {
   /** Produção de consultas de pediatria (Story 10.2) — opcional. */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  /** Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — opcionais. */
+  producaoOutrosHospitaisExternaId?: string | null;
+  producaoOutrosHospitaisNome?: string | null;
+  producaoImobilizacoesExternaId?: string | null;
+  producaoImobilizacoesNome?: string | null;
 }
 
 export interface ApoioData {

@@ -50,7 +50,7 @@ describe('valorDaFaixa — IMOBILIZACOES (excedente fixo)', () => {
   });
 });
 
-describe('processarMedico — OUTROS_HOSPITAIS acima de 80, somado a Hapvida (Story 10.3)', () => {
+describe('processarMedico — OUTROS_HOSPITAIS acima de 80, somado a Hapvida (Story 10.3, split de lote corrigido na 10.5)', () => {
   function item(id: number): ItemProducao {
     return {
       data: '2026-04-01',
@@ -66,26 +66,79 @@ describe('processarMedico — OUTROS_HOSPITAIS acima de 80, somado a Hapvida (St
     };
   }
 
-  it('médico não-credenciado + outros hospitais, 90 guias → HAPVIDA_NAO_CRED + OUTROS_HOSPITAIS somados, sem alerta de FORA DA TABELA', () => {
-    const itens = Array.from({ length: 90 }, (_, i) => item(i));
+  it('médico não-credenciado + outros hospitais: 18 guias no lote principal + 118 no lote de outros hospitais (Anderson Ferreira, abr/2026) → cada lote na sua tabela, sem alerta de FORA DA TABELA', () => {
+    const itensPrincipal = Array.from({ length: 18 }, (_, i) => item(i));
+    const itensOutrosHospitais = Array.from({ length: 118 }, (_, i) => item(1000 + i));
     const r = processarMedico({
       medico: {
         id: 'anderson', cpf: '00000000004', nome: 'Dr. Anderson Ferreira',
         statusHapvida: 'nao_credenciado', fazOutrosHospitais: true,
         fazImobilizacoes: false, modoMudancaData: 'nao', especialidade: 'Cardiologia',
       } as any,
-      itens,
+      itens: itensPrincipal,
+      itensOutrosHospitais,
     });
 
-    // 90 guias: HAPVIDA_NAO_CRED cai na faixa até 150 (852,84) + OUTROS_HOSPITAIS acima de 80
-    // agora cobra o teto fixo (367,36) em vez de FORA DA TABELA.
+    // 18 guias no lote principal → HAPVIDA_NAO_CRED até 30 (310,06); 118 no lote de outros
+    // hospitais → OUTROS_HOSPITAIS acima de 80 cobra o teto fixo (367,36). Total: 677,42
+    // (evidência real: Dr. Anderson Ferreira, abr/2026).
     expect(r.subtotais).toEqual([
-      expect.objectContaining({ classe: 'HAPVIDA_NAO_CRED', valor: 852.84 }),
-      expect.objectContaining({ classe: 'OUTROS_HOSPITAIS', valor: 367.36 }),
+      expect.objectContaining({ classe: 'HAPVIDA_NAO_CRED', guias: 18, valor: 310.06 }),
+      expect.objectContaining({ classe: 'OUTROS_HOSPITAIS', guias: 118, valor: 367.36 }),
     ]);
-    expect(r.totalValor).toBeCloseTo(852.84 + 367.36, 2);
+    expect(r.totalValor).toBeCloseTo(310.06 + 367.36, 2);
     expect(r.status).toBe('ok');
-    expect(r.alertas.some((a) => a.includes('FORA DA TABELA'))).toBe(false);
+    expect(r.alertas).toEqual([]);
+  });
+
+  // Story 10.5 — bug real corrigido: o motor reaproveitava a MESMA contagem de guias do lote
+  // principal para a tabela de OUTROS_HOSPITAIS (cobrando a mesma produção 2x em tabelas
+  // diferentes). Caso de ouro: Dr. Marcel Rolim Queiroz — 42 guias de produção normal
+  // (credenciado) + 19 guias de outros hospitais, em LOTES SEPARADOS.
+  it('Dr. Marcel Rolim Queiroz: 42 guias credenciado + 19 guias outros hospitais (lotes separados) → R$566,32, não R$652,42', () => {
+    const itensPrincipal = Array.from({ length: 42 }, (_, i) => item(i));
+    const itensOutrosHospitais = Array.from({ length: 19 }, (_, i) => item(1000 + i));
+    const r = processarMedico({
+      medico: {
+        id: 'marcel', cpf: '00000000005', nome: 'Dr. Marcel Rolim Queiroz',
+        statusHapvida: 'credenciado', fazOutrosHospitais: true,
+        fazImobilizacoes: false, modoMudancaData: 'nao', especialidade: 'Ortopedia',
+      } as any,
+      itens: itensPrincipal,
+      itensOutrosHospitais,
+    });
+
+    expect(r.subtotais).toEqual([
+      expect.objectContaining({ classe: 'HAPVIDA_CRED', guias: 42, valor: 394.12 }),
+      expect.objectContaining({ classe: 'OUTROS_HOSPITAIS', guias: 19, valor: 172.2 }),
+    ]);
+    expect(r.totalValor).toBeCloseTo(566.32, 2);
+    // Bug antigo (corrigido nesta story): reaproveitava as 50 guias "consolidadas" nas duas
+    // tabelas → 394,12 (50 guias Hapvida) + 258,30 (50 guias Outros Hospitais) = 652,42.
+    expect(r.totalValor).not.toBeCloseTo(652.42, 2);
+    expect(r.status).toBe('ok');
+  });
+
+  it('médico com fazOutrosHospitais mas SEM o lote separado selecionado → alerta explícito, guias de Outros Hospitais NÃO cobradas (nunca chuta)', () => {
+    const itensPrincipal = Array.from({ length: 42 }, (_, i) => item(i));
+    const r = processarMedico({
+      medico: {
+        id: 'marcel', cpf: '00000000005', nome: 'Dr. Marcel Rolim Queiroz',
+        statusHapvida: 'credenciado', fazOutrosHospitais: true,
+        fazImobilizacoes: false, modoMudancaData: 'nao', especialidade: 'Ortopedia',
+      } as any,
+      itens: itensPrincipal,
+      // itensOutrosHospitais ausente (undefined) — operador não selecionou o lote.
+    });
+
+    expect(r.subtotais).toEqual([
+      expect.objectContaining({ classe: 'HAPVIDA_CRED', guias: 42, valor: 394.12 }),
+    ]);
+    expect(r.totalValor).toBeCloseTo(394.12, 2);
+    expect(r.status).toBe('alerta');
+    expect(
+      r.alertas.some((a) => a.includes('Outros Hospitais') && a.includes('não foi selecionado')),
+    ).toBe(true);
   });
 });
 

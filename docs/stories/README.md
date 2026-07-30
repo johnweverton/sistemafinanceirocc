@@ -370,6 +370,7 @@ confirmada pelo dono); estas stories cobrem só o que sobrou.
 | 10.4a | Cadastro de empresas e vínculo médico↔empresa | D2 | **Done** — @qa PASS 2026-07-20 (1 achado corrigido na iteração) | tabela `empresas`, `medicos.empresa_grupo_id`, CRUD reaproveitando padrões de médico |
 | 10.4b | Execução e resultado agregado por empresa | D2 | **Done** — @qa PASS 2026-07-20 (achado QA-104C-1 corrigido) | extração de `aplicarRegraPreco`, `execucao_resultado_contribuicoes`, orquestrador |
 | 10.4c | Emissão de boleto por empresa | D2 | **Done** — @qa PASS 2026-07-20 (achado QA-104C-1 corrigido) | branch na rota de emissão, UI de nova execução por empresa |
+| 10.5 | Lote separado para Outros Hospitais/Imobilizações (corrige dupla contagem) | Nova (reportada 2026-07-29) | **Done** — revisão própria PASS, sem achados | motor reaproveitava a MESMA contagem de guias do lote principal para OUTROS_HOSPITAIS/IMOBILIZACOES (bug real: Dr. Marcel R$652,42 → correto R$566,32); agora cada classe conta seu próprio lote (mesmo padrão da 10.2) |
 
 10.1–10.4c estão `Done` (gates em `docs/qa/gates/`). A 10.4 nasceu durante a GATE da 10.1:
 Nefrologia/guias cardíacas não são override de médico, são produção de vários médicos agrupada e
@@ -381,7 +382,13 @@ médicos selecionados pertencem à empresa informada — corrigida em `iniciarEx
 ciclo. D6 (conta emissora por médico varia por mês) é validação de cadastro, não código — tratada
 fora do épico.
 
-**Próximo passo:** épico 10 concluído — @devops publica (commit + push) as sub-stories 10.4b/10.4c.
+A 10.5 reabriu o épico em 2026-07-29: o dono reportou boleto errado do Dr. Marcel Rolim Queiroz
+(evidência: captura de tela da execução) e a investigação confirmou a lacuna já sinalizada (mas
+deixada fora de escopo) na nota de teste da 10.3 — o motor reaproveitava a mesma contagem de
+guias do lote principal para TODAS as classes do médico. Corrigido com o mesmo padrão de lote
+separado/manual da 10.2, ver `docs/stories/10.5.lote-separado-outros-hospitais-imobilizacoes.story.md`.
+
+**Próximo passo:** épico 10 concluído (novamente) — @devops publica (commit + push) a 10.5.
 
 ## Fora de escopo
 - D1 (>180 guias) e D5 (reajuste dez/2025): resolvidos, sem trabalho.

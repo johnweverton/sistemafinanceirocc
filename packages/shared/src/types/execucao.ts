@@ -122,6 +122,20 @@ export interface ExecucaoSelecao {
    */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  /**
+   * Produção separada com as guias de OUTROS_HOSPITAIS (Story 10.5) — opcional, só relevante
+   * para médicos com `fazOutrosHospitais`. É um LOTE DISTINTO do de `producaoExternaId` (produção
+   * normal/Hapvida): antes desta story o motor reaproveitava a MESMA contagem de guias do lote
+   * principal para a tabela de OUTROS_HOSPITAIS, cobrando 2x a mesma produção em tabelas
+   * diferentes (bug real — Dr. Marcel Rolim Queiroz). Null/ausente = médico com
+   * `fazOutrosHospitais` mas sem o lote selecionado nesta execução → guias de Outros Hospitais
+   * NÃO são cobradas (o motor nunca chuta, vira alerta explícito em vez de reaproveitar).
+   */
+  producaoOutrosHospitaisExternaId?: string | null;
+  producaoOutrosHospitaisNome?: string | null;
+  /** Mesmo mecanismo acima, para médicos com `fazImobilizacoes` (Story 10.5). */
+  producaoImobilizacoesExternaId?: string | null;
+  producaoImobilizacoesNome?: string | null;
 }
 
 /** Um médico por linha: ocorrência mais recente em qualquer execução (visão "Por médico"). */

@@ -43,6 +43,15 @@ export interface EntradaProcessamentoMedico {
    * Ausente/vazio = médico sem componente de consultas nesta execução (comportamento atual).
    */
   itensConsultas?: ItemProducao[];
+  /**
+   * Itens do lote separado de OUTROS_HOSPITAIS (Story 10.5) — produção distinta de `itens`
+   * (guias normais/Hapvida). `undefined` = lote não selecionado nesta execução (o Engine gera
+   * alerta e NÃO cobra a classe, nunca reaproveita a contagem de `itens`). Array presente
+   * (mesmo vazio) = lote selecionado e contado normalmente.
+   */
+  itensOutrosHospitais?: ItemProducao[];
+  /** Mesmo mecanismo acima, para o lote de IMOBILIZACOES (Story 10.5). */
+  itensImobilizacoes?: ItemProducao[];
 }
 
 /** Resultado puro do Engine — sem ids de banco (preenchidos pelo orquestrador ao persistir). */
