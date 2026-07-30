@@ -7,7 +7,7 @@ export default function ExecucaoPage({ params }: { params: { id: string } }) {
   return (
     <section className="space-y-6">
       <div className="page-header">
-        <h1 className="page-title">Relatório da execução</h1>
+        <h1 className="page-title">Relatório da emissão</h1>
         <Link href="/execucoes" className="link-action">
           ← Voltar
         </Link>

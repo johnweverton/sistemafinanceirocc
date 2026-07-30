@@ -118,7 +118,7 @@ export function HistoricoExecucoes() {
           description="Dispare o processamento de uma competência para gerar o primeiro relatório."
           action={
             <Link href="/execucoes/nova" className="btn-primary btn-sm btn">
-              Nova execução
+              Nova emissão
             </Link>
           }
         />

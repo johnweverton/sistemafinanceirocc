@@ -114,7 +114,7 @@ export function HistoricoExecucoesPorMedico() {
                   <th>Última competência</th>
                   <th>Status</th>
                   <th className="text-right">Valor</th>
-                  <th className="text-right">Execuções</th>
+                  <th className="text-right">Emissões</th>
                   <th className="text-right">Ações</th>
                 </tr>
               </thead>

@@ -12,9 +12,9 @@ export default function ExecucoesPage() {
   return (
     <section className="space-y-5">
       <div className="page-header">
-        <h1 className="page-title">Execuções</h1>
+        <h1 className="page-title">Emissão</h1>
         <Link href="/execucoes/nova" className="btn-primary btn-sm btn">
-          Nova execução
+          Nova emissão
         </Link>
       </div>
 
