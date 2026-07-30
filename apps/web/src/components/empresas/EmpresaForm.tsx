@@ -228,7 +228,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
                 <option value="fixo">Valor fixo mensal</option>
               </select>
               <p className="mt-1.5 text-2xs text-cc-muted">
-                A execução agregada (Story 10.4b) hoje só suporta a forma &ldquo;por guia
+                A execução agregada hoje só suporta a forma &ldquo;por guia
                 linear&rdquo; — as demais geram alerta em vez de um rateio entre médicos.
               </p>
             </Field>

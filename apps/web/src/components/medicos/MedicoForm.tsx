@@ -332,7 +332,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
             ))}
           </select>
           <p className="mt-1.5 text-2xs text-cc-muted">
-            Se este médico tem produção agregada a uma empresa (ex.: MEDISA — Story 10.4), vincule
+            Se este médico tem produção agregada a uma empresa (ex.: MEDISA), vincule
             aqui. Não afeta a produção individual dele, que continua neste cadastro normalmente.
           </p>
         </Field>

@@ -71,7 +71,7 @@ export function ConfigCobrancaForm() {
         />
       </Campo>
 
-      <Campo label="Valor da consulta pediátrica (R$)" hint="Story 10.2 — somado às guias hospitalares do pediatra">
+      <Campo label="Valor da consulta pediátrica (R$)" hint="Somado às guias hospitalares do pediatra">
         <input
           type="number"
           min={0.01}

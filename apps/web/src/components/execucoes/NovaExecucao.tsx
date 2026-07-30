@@ -342,7 +342,7 @@ export function NovaExecucao() {
                   ))}
                 </select>
                 <p className="mt-1.5 text-xs text-cc-muted">
-                  Agrupa a produção de guias cardíacas (ou análoga) dos médicos vinculados a esta empresa (Story 10.4) num único boleto.
+                  Agrupa a produção de guias cardíacas (ou análoga) dos médicos vinculados a esta empresa num único boleto.
                 </p>
               </div>
 
@@ -500,7 +500,7 @@ export function NovaExecucao() {
                       ))}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
-                    Se este pediatra tem um lote separado de consultas ambulatoriais (Story 10.2), selecione aqui para somar ao valor de guias.
+                    Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias.
                   </p>
                 </div>
               )}
@@ -526,7 +526,7 @@ export function NovaExecucao() {
                       ))}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
-                    Este médico faz Outros Hospitais (Story 10.5) — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                    Este médico faz Outros Hospitais — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
                   </p>
                 </div>
               )}
@@ -552,7 +552,7 @@ export function NovaExecucao() {
                       ))}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
-                    Este médico faz Imobilizações (Story 10.5) — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                    Este médico faz Imobilizações — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
                   </p>
                 </div>
               )}

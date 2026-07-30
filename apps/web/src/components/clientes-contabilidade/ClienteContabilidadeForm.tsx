@@ -345,7 +345,6 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
             </div>
             <p className="text-2xs text-cc-muted">
               Boleto avulso separado do mensal (ex.: Vital Soluções, R$15.000 a cada 6 meses).
-              Geração entra na Story 11.4.
             </p>
             {!adicionalOk && (
               <p className="text-xs text-cc-danger" role="alert">
