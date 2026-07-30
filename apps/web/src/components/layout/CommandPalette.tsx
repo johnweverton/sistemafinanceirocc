@@ -9,7 +9,8 @@ interface Item {
   id: string;
   label: string;
   hint: string;
-  group: 'Médicos' | 'Execuções' | 'Navegação';
+  // Rótulo visível "Emissão" (feedback do dono, 2026-07-30) — a rota /execucoes não muda.
+  group: 'Médicos' | 'Emissão' | 'Navegação';
   href: string;
 }
 
@@ -71,8 +72,8 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const nav: Item[] = [
       { id: 'nav-medicos', label: 'Médicos', hint: 'Ver lista', group: 'Navegação', href: '/medicos' },
-      { id: 'nav-execucoes', label: 'Execuções', hint: 'Ver histórico', group: 'Navegação', href: '/execucoes' },
-      { id: 'nav-nova', label: 'Nova execução', hint: 'Disparar competência', group: 'Navegação', href: '/execucoes/nova' },
+      { id: 'nav-execucoes', label: 'Emissão', hint: 'Ver histórico', group: 'Navegação', href: '/execucoes' },
+      { id: 'nav-nova', label: 'Nova emissão', hint: 'Disparar competência', group: 'Navegação', href: '/execucoes/nova' },
     ];
     const med: Item[] = (medicos ?? []).map((m) => ({
       id: `med-${m.id}`,
@@ -85,7 +86,7 @@ export function CommandPalette() {
       id: `exe-${e.id}`,
       label: e.competencia,
       hint: e.status,
-      group: 'Execuções',
+      group: 'Emissão',
       href: `/execucoes/${e.id}`,
     }));
     return [...nav, ...med, ...exe];
@@ -148,7 +149,7 @@ export function CommandPalette() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Buscar médico, execução ou página…"
+            placeholder="Buscar médico, emissão ou página…"
             className="h-12 w-full bg-transparent text-sm text-cc-ink placeholder:text-cc-muted focus:outline-none"
           />
           <kbd className="hidden shrink-0 rounded border border-cc-hairline px-1.5 py-0.5 font-mono text-2xs text-cc-muted sm:block">

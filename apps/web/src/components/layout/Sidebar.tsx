@@ -8,8 +8,8 @@ import { ThemeToggle } from '@/components/layout/ThemeToggle';
 
 // Item avulso (Dashboard) fica fora de qualquer seção — visão cruzada, não pertence a uma
 // vertical só. As duas verticais de cobrança (médica vs contabilidade) ficam em seções
-// separadas visualmente (feedback do dono, 2026-07-24) — Configurações fica avulso no fim,
-// mesmo espírito do Dashboard.
+// separadas visualmente (feedback do dono, 2026-07-24), cada uma como um grupo que
+// expande/recolhe ao clicar no título (accordion — feedback do dono, 2026-07-30).
 const NAV_TOPO = [{ href: '/dashboard', label: 'Dashboard', icon: DashboardIcon }];
 
 const NAV_SECOES = [
@@ -18,7 +18,9 @@ const NAV_SECOES = [
     itens: [
       { href: '/medicos', label: 'Médicos', icon: MedicosIcon },
       { href: '/empresas', label: 'Empresas', icon: EmpresasIcon },
-      { href: '/execucoes', label: 'Execuções', icon: ExecucoesIcon },
+      // Rótulo visível renomeado de "Execuções" para "Emissão" (feedback do dono, 2026-07-30) —
+      // a rota /execucoes e os nomes internos (execucaoId, NovaExecucao...) não mudam.
+      { href: '/execucoes', label: 'Emissão', icon: ExecucoesIcon },
       { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
       { href: '/extrato', label: 'Extrato', icon: ExtratoIcon },
       { href: '/dre', label: 'DRE', icon: DreIcon },
@@ -32,12 +34,60 @@ const NAV_SECOES = [
   },
 ];
 
-const NAV_RODAPE = [{ href: '/configuracoes', label: 'Configurações', icon: ConfigIcon }];
+const CHAVE_COLAPSADA = 'cc-sidebar-collapsed';
+const CHAVE_SECOES = 'cc-sidebar-secoes';
 
-/** Navegação lateral: fixa no desktop, drawer deslizante no mobile. */
+function secoesAbertasPadrao(): Record<string, boolean> {
+  return Object.fromEntries(NAV_SECOES.map((s) => [s.titulo, true]));
+}
+
+/** Navegação lateral: fixa no desktop (recolhível), drawer deslizante no mobile. */
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  // Colapso do modo desktop (item 1 do feedback do dono, 2026-07-30) e accordion das seções
+  // (item 3) seguem o mesmo padrão de ThemeToggle.tsx: default estável (igual em server e
+  // client) e só aplicam o valor persistido em localStorage DEPOIS de montar, pra não gerar
+  // mismatch de hidratação. O conceito de "recolhido" é só para o modo desktop fixo — o drawer
+  // mobile sempre abre expandido.
+  const [collapsed, setCollapsed] = useState(false);
+  const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>(secoesAbertasPadrao);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    try {
+      const colapsadaSalva = localStorage.getItem(CHAVE_COLAPSADA);
+      if (colapsadaSalva === '1') setCollapsed(true);
+      const secoesSalvas = localStorage.getItem(CHAVE_SECOES);
+      if (secoesSalvas) setSecoesAbertas((atual) => ({ ...atual, ...JSON.parse(secoesSalvas) }));
+    } catch {
+      /* localStorage indisponível — mantém os defaults */
+    }
+    setMounted(true);
+  }, []);
+
+  function toggleCollapsed() {
+    const proximo = !collapsed;
+    setCollapsed(proximo);
+    try {
+      localStorage.setItem(CHAVE_COLAPSADA, proximo ? '1' : '0');
+    } catch {
+      /* localStorage indisponível — ignora */
+    }
+  }
+
+  function toggleSecao(titulo: string) {
+    setSecoesAbertas((atual) => {
+      const proximo = { ...atual, [titulo]: !atual[titulo] };
+      try {
+        localStorage.setItem(CHAVE_SECOES, JSON.stringify(proximo));
+      } catch {
+        /* localStorage indisponível — ignora */
+      }
+      return proximo;
+    });
+  }
 
   // Fecha o drawer ao trocar de rota.
   useEffect(() => {
@@ -56,6 +106,10 @@ export function Sidebar() {
       document.body.style.overflow = '';
     };
   }, [open]);
+
+  // Só considera "recolhida" de fato depois de montar (evita flash com o valor padrão antes do
+  // localStorage ser lido) — mesmo espírito do `mounted` de ThemeToggle.tsx.
+  const efetivamenteColapsada = mounted && collapsed;
 
   return (
     <>
@@ -88,14 +142,14 @@ export function Sidebar() {
       <aside
         className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r border-cc-hairline bg-cc-surface transition-transform duration-300 ease-out md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        } ${efetivamenteColapsada ? 'md:w-[76px]' : 'md:w-64'}`}
       >
         {/* Marca */}
-        <div className="flex h-16 items-center gap-3 border-b border-cc-hairline px-5">
+        <div className={`flex h-16 items-center gap-3 border-b border-cc-hairline px-5 ${efetivamenteColapsada ? 'md:justify-center md:px-0' : ''}`}>
           <Link href="/medicos" className="logo-3d-wrap group text-cc-accent">
             <LogoCC className="logo-3d logo-3d-slow h-8 w-auto drop-glow" />
           </Link>
-          <div className="min-w-0">
+          <div className={`min-w-0 ${efetivamenteColapsada ? 'md:hidden' : ''}`}>
             <p className="truncate text-sm font-semibold tracking-tight text-cc-ink">
               Carmem Cavalcante
             </p>
@@ -119,58 +173,105 @@ export function Sidebar() {
           <button
             type="button"
             onClick={() => document.dispatchEvent(new CustomEvent('cc:open-command'))}
-            className="flex w-full items-center gap-2 rounded-lg border border-cc-hairline bg-cc-surface-2 px-3 py-2 text-sm text-cc-muted transition-colors hover:border-cc-accent hover:text-cc-ink"
+            aria-label="Buscar"
+            title="Buscar (⌘K)"
+            className={`flex w-full items-center gap-2 rounded-lg border border-cc-hairline bg-cc-surface-2 px-3 py-2 text-sm text-cc-muted transition-colors hover:border-cc-accent hover:text-cc-ink ${efetivamenteColapsada ? 'md:justify-center' : ''}`}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
               <circle cx="11" cy="11" r="8" />
               <path d="m21 21-4.3-4.3" />
             </svg>
-            <span className="flex-1 text-left">Buscar…</span>
-            <kbd className="rounded border border-cc-hairline px-1.5 py-0.5 font-mono text-2xs">⌘K</kbd>
+            <span className={`flex-1 text-left ${efetivamenteColapsada ? 'md:hidden' : ''}`}>Buscar…</span>
+            <kbd className={`rounded border border-cc-hairline px-1.5 py-0.5 font-mono text-2xs ${efetivamenteColapsada ? 'md:hidden' : ''}`}>⌘K</kbd>
           </button>
         </div>
 
         {/* Navegação */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {NAV_TOPO.map((item) => (
-            <NavLink key={item.href} item={item} pathname={pathname} />
+            <NavLink key={item.href} item={item} pathname={pathname} colapsado={efetivamenteColapsada} />
           ))}
 
-          {NAV_SECOES.map((secao) => (
-            <div key={secao.titulo} className="pt-4 first:pt-1">
-              <p className="px-3 pb-1 text-2xs font-semibold uppercase tracking-[0.15em] text-cc-muted">
-                {secao.titulo}
-              </p>
-              {secao.itens.map((item) => (
-                <NavLink key={item.href} item={item} pathname={pathname} />
+          {efetivamenteColapsada ? (
+            // Sidebar recolhida: sem cabeçalho de seção (não há rótulo pra mostrar) — lista os
+            // itens de todas as seções em sequência, só com ícones.
+            <div className="space-y-1 pt-4 first:pt-1">
+              {NAV_SECOES.flatMap((s) => s.itens).map((item) => (
+                <NavLink key={item.href} item={item} pathname={pathname} colapsado />
               ))}
             </div>
-          ))}
-
-          <div className="pt-4">
-            {NAV_RODAPE.map((item) => (
-              <NavLink key={item.href} item={item} pathname={pathname} />
-            ))}
-          </div>
+          ) : (
+            NAV_SECOES.map((secao) => {
+              const aberta = secoesAbertas[secao.titulo] ?? true;
+              return (
+                <div key={secao.titulo} className="pt-4 first:pt-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleSecao(secao.titulo)}
+                    aria-expanded={aberta}
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-3 pb-1 text-2xs font-semibold uppercase tracking-[0.15em] text-cc-muted transition-colors hover:text-cc-ink-2"
+                  >
+                    {secao.titulo}
+                    <ChevronIcon className={`shrink-0 transition-transform ${aberta ? '' : '-rotate-90'}`} />
+                  </button>
+                  {aberta &&
+                    secao.itens.map((item) => (
+                      <NavLink key={item.href} item={item} pathname={pathname} colapsado={false} />
+                    ))}
+                </div>
+              );
+            })
+          )}
         </nav>
 
-        {/* Rodapé: tema + sair */}
-        <div className="flex items-center justify-between gap-2 border-t border-cc-hairline p-3">
+        {/* Recolher/expandir (só desktop — o drawer mobile não tem esse conceito) */}
+        <div className="hidden border-t border-cc-hairline p-3 md:block">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={efetivamenteColapsada ? 'Expandir menu' : 'Recolher menu'}
+            title={efetivamenteColapsada ? 'Expandir menu' : 'Recolher menu'}
+            className={`flex w-full items-center gap-2 rounded-lg border border-cc-hairline bg-cc-surface-2 px-3 py-2 text-xs font-medium text-cc-ink-2 transition-colors hover:border-cc-accent hover:text-cc-ink ${efetivamenteColapsada ? 'justify-center' : 'justify-center'}`}
+          >
+            <CollapseIcon className={efetivamenteColapsada ? 'rotate-180' : ''} />
+            {!efetivamenteColapsada && 'Recolher menu'}
+          </button>
+        </div>
+
+        {/* Rodapé: sair + configurações + tema */}
+        <div className={`flex items-center gap-2 border-t border-cc-hairline p-3 ${efetivamenteColapsada ? 'flex-col' : 'justify-between'}`}>
           <LogoutButton />
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            {/* Configurações (item 2 do feedback do dono, 2026-07-30): só o ícone de engrenagem,
+                ao lado do botão de tema, em vez de item de navegação cheio. */}
+            <Link
+              href="/configuracoes"
+              aria-label="Configurações"
+              title="Configurações"
+              aria-current={pathname.startsWith('/configuracoes') ? 'page' : undefined}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cc-hairline bg-cc-surface-2 transition-all duration-200 hover:border-cc-accent hover:text-cc-accent ${
+                pathname.startsWith('/configuracoes') ? 'text-cc-accent' : 'text-cc-ink-2'
+              }`}
+            >
+              <ConfigIcon />
+            </Link>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
     </>
   );
 }
 
-/** Um item de navegação — extraído para ser reaproveitado nas 3 áreas do menu (topo/seções/rodapé). */
+/** Um item de navegação — extraído para ser reaproveitado nas áreas do menu (topo/seções). */
 function NavLink({
   item,
   pathname,
+  colapsado,
 }: {
   item: { href: string; label: string; icon: (props: { className?: string }) => React.JSX.Element };
   pathname: string;
+  colapsado: boolean;
 }) {
   const { href, label, icon: Icon } = item;
   const active = pathname.startsWith(href);
@@ -178,7 +279,10 @@ function NavLink({
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
+      title={colapsado ? label : undefined}
       className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+        colapsado ? 'md:justify-center' : ''
+      } ${
         active
           ? 'bg-cc-accent-soft text-cc-accent'
           : 'text-cc-ink-2 hover:bg-cc-surface-2 hover:text-cc-ink'
@@ -190,8 +294,8 @@ function NavLink({
           active ? 'opacity-100' : 'opacity-0'
         }`}
       />
-      <Icon className={active ? 'text-cc-accent' : 'text-cc-muted group-hover:text-cc-ink'} />
-      {label}
+      <Icon className={`shrink-0 ${active ? 'text-cc-accent' : 'text-cc-muted group-hover:text-cc-ink'}`} />
+      <span className={colapsado ? 'md:sr-only' : ''}>{label}</span>
     </Link>
   );
 }
@@ -275,7 +379,7 @@ function ClientesContabeisIcon({ className = '' }: { className?: string }) {
 
 function ConfigIcon({ className = '' }: { className?: string }) {
   return (
-    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
@@ -294,6 +398,24 @@ function CloseIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function CollapseIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m14 10-2 2 2 2" />
     </svg>
   );
 }
