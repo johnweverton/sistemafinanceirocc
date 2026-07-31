@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,7 +17,10 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Pagination } from '@/components/ui/Pagination';
 import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
+
+const PAGE_SIZE = 20;
 
 // Clicar na linha leva direto para a página de detalhe (/clientes-contabilidade/[id]), que é o
 // hub único de ações (Emissão/Faturamento/Editar cadastro/Histórico) — feedback do dono
@@ -44,6 +47,7 @@ export function ClientesContabilidadeManager() {
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
   const [excluirLoteResultado, setExcluirLoteResultado] = useState<ExclusaoLoteResultado | null>(null);
+  const [pagina, setPagina] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: clientes, isLoading, isError } = useQuery({
@@ -54,6 +58,19 @@ export function ClientesContabilidadeManager() {
       return count < 2;
     },
   });
+
+  const termoBusca = normalizarBusca(busca.trim());
+  const clientesFiltrados = (clientes ?? []).filter((c) => {
+    if (!termoBusca) return true;
+    return normalizarBusca(c.nome).includes(termoBusca);
+  });
+
+  // Mantém a página dentro do intervalo válido quando a busca ou a lista mudam de tamanho
+  // (evita ficar numa página vazia depois de filtrar, excluir ou importar).
+  useEffect(() => {
+    const totalPaginas = Math.max(1, Math.ceil(clientesFiltrados.length / PAGE_SIZE));
+    setPagina((atual) => Math.min(atual, totalPaginas));
+  }, [clientesFiltrados.length]);
 
   const criar = useMutation({
     mutationFn: (p: NovoClienteContabilidadePayload) => clientesContabilidadeService.criar(p),
@@ -143,14 +160,9 @@ export function ClientesContabilidadeManager() {
     );
   }
 
-  const termoBusca = normalizarBusca(busca.trim());
-  const clientesFiltrados = (clientes ?? []).filter((c) => {
-    if (!termoBusca) return true;
-    return normalizarBusca(c.nome).includes(termoBusca);
-  });
-
   function atualizarBusca(v: string) {
     setBusca(v);
+    setPagina(1);
   }
 
   function alternarSelecao(id: string) {
@@ -347,7 +359,7 @@ export function ClientesContabilidadeManager() {
               </tr>
             </thead>
             <tbody>
-              {clientesFiltrados.map((c) => (
+              {clientesFiltrados.slice((pagina - 1) * PAGE_SIZE, pagina * PAGE_SIZE).map((c) => (
                 <tr
                   key={c.id}
                   className="border-b border-cc-hairline last:border-0 hover:bg-cc-surface-2/50 cursor-pointer"
@@ -401,6 +413,15 @@ export function ClientesContabilidadeManager() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {clientesFiltrados.length > 0 && (
+        <Pagination
+          page={pagina}
+          totalItems={clientesFiltrados.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPagina}
+        />
       )}
     </section>
   );

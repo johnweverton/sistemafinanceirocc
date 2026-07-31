@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Empresa } from '@cobranca/shared';
@@ -16,7 +16,10 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Pagination } from '@/components/ui/Pagination';
 import { EmpresaForm } from './EmpresaForm';
+
+const PAGE_SIZE = 20;
 
 type Modo = { tipo: 'lista' } | { tipo: 'nova' } | { tipo: 'editar'; empresa: Empresa };
 
@@ -27,6 +30,7 @@ export function EmpresasManager() {
   const [erro, setErro] = useState<string | null>(null);
   const [confirmacao, setConfirmacao] = useState<Empresa | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
+  const [pagina, setPagina] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: empresas, isLoading, isError } = useQuery({
@@ -37,6 +41,14 @@ export function EmpresasManager() {
       return count < 2;
     },
   });
+
+  // Mantém a página dentro do intervalo válido quando a lista muda de tamanho (exclusão,
+  // importação, ou carregamento inicial) — evita ficar numa página vazia.
+  useEffect(() => {
+    const total = empresas?.length ?? 0;
+    const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    setPagina((atual) => Math.min(atual, totalPaginas));
+  }, [empresas]);
 
   const criar = useMutation({
     mutationFn: (p: NovaEmpresaPayload) => empresasService.criar(p),
@@ -207,6 +219,12 @@ export function EmpresasManager() {
         </div>
       )}
 
+      {!isLoading && !isError && empresas && empresas.length > 0 && (
+        <p className="text-xs text-cc-muted">
+          {empresas.length} empresa{empresas.length !== 1 ? 's' : ''}
+        </p>
+      )}
+
       {isLoading ? (
         <TableSkeleton rows={5} cols={5} />
       ) : isError ? (
@@ -229,7 +247,7 @@ export function EmpresasManager() {
               </tr>
             </thead>
             <tbody>
-              {empresas.map((e) => (
+              {empresas.slice((pagina - 1) * PAGE_SIZE, pagina * PAGE_SIZE).map((e) => (
                 <tr
                   key={e.id}
                   className="border-b border-cc-hairline last:border-0 hover:bg-cc-surface-2/50 cursor-pointer"
@@ -263,6 +281,10 @@ export function EmpresasManager() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {empresas && empresas.length > 0 && (
+        <Pagination page={pagina} totalItems={empresas.length} pageSize={PAGE_SIZE} onPageChange={setPagina} />
       )}
     </section>
   );
