@@ -7,6 +7,7 @@ export * from './types/integracao';
 export * from './types/execucao';
 export * from './types/preco';
 export * from './types/boleto';
+export * from './types/lote-emissao';
 export * from './types/recebivel';
 export * from './types/extrato';
 export * from './types/dre';

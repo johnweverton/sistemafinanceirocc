@@ -135,6 +135,25 @@ export async function listarExecucoes(): Promise<Execucao[]> {
   return execucoes.map((e) => ({ ...e, iniciadoPorEmail: emails.get(e.iniciadoPor) ?? null }));
 }
 
+/**
+ * Resultados 'ok' de uma execução — candidatos ao preview de emissão em lote (migration 0038).
+ * Linhas CRUAS (snake_case), mesmo formato que `validarResultadoParaEmissao` espera — evita um
+ * adaptador camelCase↔snake_case só para isso.
+ */
+export async function listarResultadosOkParaEmissao(execucaoId: string): Promise<ExecucaoResultadoRow[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .select('*')
+    .eq('execucao_id', execucaoId)
+    .eq('status', 'ok')
+    .order('nome', { ascending: true });
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar resultados para emissão em lote', 'DB_ERROR', { error: error.message });
+  }
+  return data as ExecucaoResultadoRow[];
+}
+
 export async function listarResultados(execucaoId: string): Promise<ExecucaoResultado[]> {
   const db = getSupabaseAdmin();
   const { data, error } = await db

@@ -105,7 +105,7 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    await gateway.emitir(dadosPadrao);
+    await gateway.emitir(dadosPadrao, 'idem-key-1');
 
     // Verifica que o Agent foi criado com cert/key
     expect(mockAgent).toHaveBeenCalledWith(
@@ -117,14 +117,14 @@ describe('CoraGateway', () => {
     );
   });
 
-  it('usa POST /v2/invoices com header Idempotency-Key (contrato v2 da Cora)', async () => {
+  it('usa POST /v2/invoices com header Idempotency-Key = id da reserva (migration 0037 — determinística, não randomUUID() por tentativa)', async () => {
     mockRequest
       .mockImplementationOnce(simularResposta(200, { access_token: 'tok123', token_type: 'Bearer', expires_in: 3600 }))
       .mockImplementationOnce(simularResposta(201, { id: 'inv_abc123' }));
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    await gateway.emitir(dadosPadrao);
+    await gateway.emitir(dadosPadrao, 'reserva-uuid-fixa-123');
 
     // 1ª chamada = token; 2ª = invoice. Path v1 (/invoices) devolve 404 em produção.
     expect(mockRequest).toHaveBeenCalledTimes(2);
@@ -133,9 +133,7 @@ describe('CoraGateway', () => {
       headers: Record<string, string>;
     };
     expect(invoiceOptions.path).toBe('/v2/invoices');
-    expect(invoiceOptions.headers['Idempotency-Key']).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    expect(invoiceOptions.headers['Idempotency-Key']).toBe('reserva-uuid-fixa-123');
   });
 
   it('emite com sucesso (token + invoice)', async () => {
@@ -145,7 +143,7 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    const resultado = await gateway.emitir(dadosPadrao);
+    const resultado = await gateway.emitir(dadosPadrao, 'idem-key-teste');
 
     expect(resultado.status).toBe('emitido');
     expect(resultado.idExterno).toBe('inv_abc123');
@@ -158,7 +156,7 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    const resultado = await gateway.emitir(dadosPadrao);
+    const resultado = await gateway.emitir(dadosPadrao, 'idem-key-teste');
 
     expect(resultado.status).toBe('falha');
     expect(resultado.idExterno).toBe('');
@@ -173,7 +171,7 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    const resultado = await gateway.emitir(dadosPadrao);
+    const resultado = await gateway.emitir(dadosPadrao, 'idem-key-teste');
 
     expect(resultado.status).toBe('falha');
     expect(resultado.payloadResposta).toEqual(
@@ -188,7 +186,7 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    const resultado = await gateway.emitir(dadosPadrao);
+    const resultado = await gateway.emitir(dadosPadrao, 'idem-key-teste');
 
     expect(resultado.status).toBe('falha');
     expect(resultado.payloadResposta).toEqual(
@@ -230,7 +228,7 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    await gateway.emitir({ ...dadosPadrao, valor: 1234.56 });
+    await gateway.emitir({ ...dadosPadrao, valor: 1234.56 }, 'idem-key-teste');
 
     expect(invoicePayload.amount).toBe(123456); // centavos
 
@@ -292,10 +290,13 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    await gateway.emitir({
-      ...dadosPadrao,
-      pagador: { nome: 'Dr. Teste', documento: '12345678901', tipo: 'CPF' },
-    });
+    await gateway.emitir(
+      {
+        ...dadosPadrao,
+        pagador: { nome: 'Dr. Teste', documento: '12345678901', tipo: 'CPF' },
+      },
+      'idem-key-teste',
+    );
 
     const customer = invoicePayload.customer as Record<string, any>;
     expect(customer.name).toBe('Dr. Teste');
@@ -335,11 +336,14 @@ describe('CoraGateway', () => {
 
     const { CoraGateway } = await import('@/server/gateway/cora-gateway');
     const gateway = new CoraGateway(CRED_TESTE);
-    await gateway.emitir({
-      ...dadosPadrao,
-      pagador: { ...dadosPadrao.pagador, tipo: 'CNPJ', documento: '12345678000199' },
-      condicoes: { diasVencimento: 15, multaPercent: 2, jurosMesPercent: 1, descontoPercent: 5, descontoDias: 3 },
-    });
+    await gateway.emitir(
+      {
+        ...dadosPadrao,
+        pagador: { ...dadosPadrao.pagador, tipo: 'CNPJ', documento: '12345678000199' },
+        condicoes: { diasVencimento: 15, multaPercent: 2, jurosMesPercent: 1, descontoPercent: 5, descontoDias: 3 },
+      },
+      'idem-key-teste',
+    );
 
     const customer = invoicePayload.customer as Record<string, any>;
     expect(customer.document).toEqual({ identity: '12345678000199', type: 'CNPJ' });

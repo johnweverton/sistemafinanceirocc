@@ -7,6 +7,7 @@ import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { boletosService, CAMPO_COBRANCA_LABEL } from '@/services/boletos';
 import { medicosService, queryKeys as medicoQueryKeys } from '@/services/medicos';
 import { DisparoBadges } from '@/components/boletos/DisparoBadges';
+import { LoteEmissaoDialog } from './LoteEmissaoDialog';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
 
@@ -101,6 +102,7 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
   // Confirmação de emissão mostra POR QUAL EMPRESA o boleto sairá antes do clique final —
   // última barreira contra emissão pela conta errada.
   const [confirmandoEmissao, setConfirmandoEmissao] = useState<ExecucaoResultado | null>(null);
+  const [loteAberto, setLoteAberto] = useState(false);
   const { data: medicos } = useQuery({
     queryKey: medicoQueryKeys.medicos(),
     queryFn: medicosService.listar,
@@ -129,7 +131,9 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     },
   });
 
-  // Emissão é manual, um resultado por vez (PRD §10) — sem lote, sem automação.
+  // Emissão manual, um resultado por vez (PRD §10) — o botão "Emitir todos os pendentes" abaixo
+  // é o fluxo em lote (revisão de arquitetura 2026-07-31, decisão 5): preview + confirmação
+  // única + processamento assíncrono, sem pular a validação de cada item.
   const emitir = useMutation({
     mutationFn: (resultadoId: string) => boletosService.emitir(resultadoId),
     onSuccess: (_res, resultadoId) => {
@@ -223,6 +227,13 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         }}
         reenviarPendingId={reenviar.isPending ? reenviar.variables : null}
         onReenviar={(id) => reenviar.mutate(id)}
+        acaoEmLote={
+          ok.length > 0 ? (
+            <button onClick={() => setLoteAberto(true)} className="btn-secondary btn btn-sm">
+              Emitir todos os pendentes
+            </button>
+          ) : undefined
+        }
       />
       <Grupo
         titulo="Requerem revisão"
@@ -250,6 +261,14 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
           confirmando={emitir.isPending}
           onConfirm={() => emitir.mutate(confirmandoEmissao.id)}
           onCancel={() => setConfirmandoEmissao(null)}
+        />
+      )}
+
+      {loteAberto && (
+        <LoteEmissaoDialog
+          execucaoId={execucaoId}
+          onClose={() => setLoteAberto(false)}
+          onAlgumEmitido={() => void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) })}
         />
       )}
     </div>
@@ -326,6 +345,7 @@ function Grupo({
   revisarPendingId,
   reenviarPendingId,
   onReenviar,
+  acaoEmLote,
 }: {
   titulo: string;
   count: number;
@@ -340,6 +360,9 @@ function Grupo({
   onEmitir?: (resultadoId: string) => void;
   reenviarPendingId?: string | null;
   onReenviar?: (resultadoId: string) => void;
+  /** Ação de lote no cabeçalho do grupo (ex.: "Emitir todos os pendentes") — o grupo não sabe o
+   *  que é, só reserva o espaço; mantém a emissão individual intacta ao lado como fallback. */
+  acaoEmLote?: React.ReactNode;
 }) {
   const barra =
     cor === 'green' ? 'bg-cc-success' : cor === 'amber' ? 'bg-cc-warning' : 'bg-cc-muted';
@@ -348,11 +371,14 @@ function Grupo({
 
   return (
     <section>
-      <h2 className="mb-3 flex items-center gap-2.5 text-base font-semibold text-cc-ink">
-        <span className={`h-4 w-1 rounded-full ${barra}`} />
-        {titulo}
-        <span className={badge}>{count}</span>
-      </h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2.5 text-base font-semibold text-cc-ink">
+          <span className={`h-4 w-1 rounded-full ${barra}`} />
+          {titulo}
+          <span className={badge}>{count}</span>
+        </h2>
+        {acaoEmLote}
+      </div>
       {resultados.length === 0 ? (
         <p className="pl-3.5 text-sm text-cc-muted">Nenhum médico neste grupo.</p>
       ) : (

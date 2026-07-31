@@ -12,7 +12,7 @@ export class MockGateway implements BoletoGatewayPort {
   /** Resposta configurável de consultarInvoice (default: paga). */
   constructor(private statusInvoice: StatusInvoice = { status: 'paid', valorPago: null, pagoEm: null }) {}
 
-  async emitir(dados: DadosEmissaoBoleto): Promise<EmissaoBoleto> {
+  async emitir(dados: DadosEmissaoBoleto, idempotencyKey: string): Promise<EmissaoBoleto> {
     // Simula latência mínima para parecer realista em testes de integração.
     await new Promise((r) => setTimeout(r, 100));
 
@@ -27,6 +27,7 @@ export class MockGateway implements BoletoGatewayPort {
         nome: dados.pagador.nome,
         competencia: dados.competencia,
         emitidoEm: new Date().toISOString(),
+        idempotencyKey,
       },
     };
   }

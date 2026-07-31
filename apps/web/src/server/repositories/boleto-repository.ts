@@ -6,38 +6,76 @@ import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 import { toBoleto, toBoletoEvento, type BoletoRow, type BoletoEventoRow } from './mappers';
 
-export interface CriarBoletoParams {
+export interface ReservarBoletoParams {
   execucaoResultadoId: string;
   gateway: GatewayBoleto;
-  idExterno: string | null;
-  status: StatusBoleto;
   emitidoPor: string;
-  payloadResposta: unknown;
-  vencimento?: string | null; // AAAA-MM-DD — mesma data do payment_terms (Story 4.2)
-  /** Conta que emitiu o boleto (Épico 7). Omitida → default 'mc' do banco (pré-7.2/pré-migration). */
+  /** Conta que emitirá o boleto (Épico 7). Omitida → default 'mc' do banco (pré-7.2/pré-migration). */
   contaEmissora?: ContaEmissora;
+  /** Lote de emissão que originou esta reserva (migration 0038); omitido/null = emissão manual. */
+  loteId?: string | null;
 }
 
-/** Persiste um boleto na tabela de auditoria. */
-export async function criarBoleto(params: CriarBoletoParams): Promise<Boleto> {
+/**
+ * Reserva a linha do boleto com status 'processando' ANTES de chamar o gateway
+ * (migration 0037 — Achados 1/2 da revisão de arquitetura do lote). O índice único parcial
+ * `uq_boletos_resultado_ativo` é a barreira REAL contra corrida: duas reservas concorrentes
+ * para o mesmo `execucaoResultadoId` não podem coexistir — a segunda vira 23505 aqui, traduzido
+ * em 409 nomeado, em vez de deixar dois workers emitirem dois boletos reais na Cora.
+ * O `id` devolvido vira a Idempotency-Key determinística enviada ao gateway.
+ */
+export async function reservarBoleto(params: ReservarBoletoParams): Promise<Boleto> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from('boletos')
     .insert({
       execucao_resultado_id: params.execucaoResultadoId,
       gateway: params.gateway,
-      id_externo: params.idExterno,
-      status: params.status,
+      status: 'processando' satisfies StatusBoleto,
       emitido_por: params.emitidoPor,
-      payload_resposta: params.payloadResposta,
-      vencimento: params.vencimento ?? null,
       // Só envia a coluna quando informada: em banco pré-migration 0021 o insert
       // continua válido, e com a migration o default 'mc' cobre a omissão.
       ...(params.contaEmissora ? { conta_emissora: params.contaEmissora } : {}),
+      lote_id: params.loteId ?? null,
     })
     .select('*')
     .single();
-  if (error) throw new ApiError(500, 'Falha ao registrar boleto', 'DB_ERROR', { error: error.message });
+  if (error) {
+    if (error.code === '23505') {
+      throw new ApiError(
+        409,
+        'Já existe um boleto em processamento ou emitido para este resultado.',
+        'BOLETO_JA_EMITIDO',
+      );
+    }
+    throw new ApiError(500, 'Falha ao reservar boleto', 'DB_ERROR', { error: error.message });
+  }
+  return toBoleto(data as BoletoRow);
+}
+
+export interface FinalizarBoletoParams {
+  status: StatusBoleto; // 'emitido' | 'falha' — resultado real devolvido pelo gateway
+  idExterno: string | null;
+  payloadResposta: unknown;
+  vencimento?: string | null; // AAAA-MM-DD — mesma data do payment_terms (Story 4.2)
+}
+
+/** Atualiza a reserva (ver `reservarBoleto`) com o resultado real do gateway. */
+export async function finalizarBoleto(id: string, params: FinalizarBoletoParams): Promise<Boleto> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos')
+    .update({
+      status: params.status,
+      id_externo: params.idExterno,
+      payload_resposta: params.payloadResposta,
+      vencimento: params.vencimento ?? null,
+      atualizado_em: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new ApiError(500, 'Falha ao finalizar boleto', 'DB_ERROR', { error: error.message });
   return toBoleto(data as BoletoRow);
 }
 

@@ -22,10 +22,12 @@ vi.mock('@/server/auth/require-role', () => ({
   requireRole: (...args: unknown[]) => mockRequireRole(...args),
 }));
 
-const mockCriarBoleto = vi.fn();
+const mockReservarBoleto = vi.fn();
+const mockFinalizarBoleto = vi.fn();
 const mockBuscarBoletoEmitido = vi.fn();
 vi.mock('@/server/repositories/boleto-repository', () => ({
-  criarBoleto: (...args: unknown[]) => mockCriarBoleto(...args),
+  reservarBoleto: (...args: unknown[]) => mockReservarBoleto(...args),
+  finalizarBoleto: (...args: unknown[]) => mockFinalizarBoleto(...args),
   buscarBoletoEmitido: (...args: unknown[]) => mockBuscarBoletoEmitido(...args),
 }));
 
@@ -154,8 +156,18 @@ describe('Lógica de emissão de boleto', () => {
       status: 'emitido',
       payloadResposta: { mock: true },
     });
-    mockCriarBoleto.mockResolvedValue({
-      id: 'boleto-001',
+    mockReservarBoleto.mockResolvedValue({
+      id: 'reserva-001',
+      execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
+      gateway: 'mock',
+      idExterno: null,
+      status: 'processando',
+      emitidoPor: 'user-123',
+      emitidoEm: '2025-06-01T00:00:00Z',
+      payloadResposta: null,
+    });
+    mockFinalizarBoleto.mockResolvedValue({
+      id: 'reserva-001',
       execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
       gateway: 'mock',
       idExterno: 'MOCK-123',
@@ -234,7 +246,8 @@ describe('Lógica de emissão de boleto', () => {
     expect(body.boleto.status).toBe('emitido');
     expect(body.boleto.gateway).toBe('mock');
 
-    // Verificar que o gateway foi chamado com o pagador completo (novo contrato).
+    // Verificar que o gateway foi chamado com o pagador completo (novo contrato) e a
+    // Idempotency-Key = id da reserva (migration 0037).
     expect(mockGatewayEmitir).toHaveBeenCalledWith(
       expect.objectContaining({
         competencia: '2025-06',
@@ -248,14 +261,18 @@ describe('Lógica de emissão de boleto', () => {
         }),
         condicoes: expect.objectContaining({ diasVencimento: 30 }),
       }),
+      'reserva-001',
     );
 
-    // Verificar que o boleto foi persistido (auditoria) com o vencimento (Story 4.2).
-    expect(mockCriarBoleto).toHaveBeenCalledWith(
+    // Verificar que a reserva foi criada ANTES do gateway (migration 0037, Achados 1/2).
+    expect(mockReservarBoleto).toHaveBeenCalledWith(
+      expect.objectContaining({ gateway: 'mock', emitidoPor: 'user-123' }),
+    );
+    // Verificar que a reserva foi finalizada (auditoria) com o vencimento (Story 4.2).
+    expect(mockFinalizarBoleto).toHaveBeenCalledWith(
+      'reserva-001',
       expect.objectContaining({
-        gateway: 'mock',
         status: 'emitido',
-        emitidoPor: 'user-123',
         vencimento: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       }),
     );
@@ -295,6 +312,7 @@ describe('Lógica de emissão de boleto', () => {
           endereco: undefined,
         }),
       }),
+      expect.any(String),
     );
   });
 
@@ -335,8 +353,8 @@ describe('Lógica de emissão de boleto', () => {
       status: 'falha',
       payloadResposta: { error: 'gateway_error' },
     });
-    mockCriarBoleto.mockResolvedValue({
-      id: 'boleto-falha',
+    mockFinalizarBoleto.mockResolvedValue({
+      id: 'reserva-001',
       status: 'falha',
       gateway: 'mock',
       idExterno: null,
@@ -354,8 +372,8 @@ describe('Lógica de emissão de boleto', () => {
     const body = await resp.json();
     expect(body.boleto.status).toBe('falha');
 
-    // Auditoria: boleto com falha foi persistido.
-    expect(mockCriarBoleto).toHaveBeenCalled();
+    // Auditoria: a reserva foi finalizada com o resultado de falha.
+    expect(mockFinalizarBoleto).toHaveBeenCalled();
   });
 
   // QA-731-2 (débito D-721 do gate 7.2): conta sem credenciais não pode virar 500 mudo.
@@ -380,9 +398,10 @@ describe('Lógica de emissão de boleto', () => {
     const body = await resp.json();
     expect(body.error.code).toBe('CONTA_NAO_CONFIGURADA');
     expect(body.error.message).toContain('cavalcante_viana');
-    // Nada foi emitido nem persistido — falha segura ANTES do gateway.
+    // Nada foi emitido nem reservado — falha segura ANTES do gateway (e antes da reserva,
+    // para não deixar uma linha 'processando' órfã por conta sem credenciais).
     expect(mockGatewayEmitir).not.toHaveBeenCalled();
-    expect(mockCriarBoleto).not.toHaveBeenCalled();
+    expect(mockReservarBoleto).not.toHaveBeenCalled();
   });
 
   it('emite pela conta emissora do médico e grava a conta no boleto (Story 7.2)', async () => {
@@ -399,8 +418,8 @@ describe('Lógica de emissão de boleto', () => {
     expect(resp.status).toBe(201);
     // Factory recebe a conta do MÉDICO (beneficiário correto do boleto).
     expect(mockCriarGateway).toHaveBeenCalledWith('cavalcante_viana');
-    // Desnormalização: o boleto persiste a conta que o emitiu (arquitetura §3).
-    expect(mockCriarBoleto).toHaveBeenCalledWith(
+    // Desnormalização: a reserva persiste a conta que vai emitir (arquitetura §3).
+    expect(mockReservarBoleto).toHaveBeenCalledWith(
       expect.objectContaining({ contaEmissora: 'cavalcante_viana' }),
     );
   });

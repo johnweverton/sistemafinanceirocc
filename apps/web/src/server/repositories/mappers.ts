@@ -27,6 +27,8 @@ import type {
   PlanoContas,
   RegraCategorizacao,
   LancamentoManual,
+  LoteEmissao,
+  LoteEmissaoItem,
 } from '@cobranca/shared';
 
 /** Colunas de cobrança compartilhadas por `medicos` e `empresas` (mesmo formato, migration 0006/0028). */
@@ -860,6 +862,8 @@ export interface BoletoRow {
   cancelado_em: string | null;
   cancelado_por: string | null;
   motivo_cancelamento: string | null;
+  /** Lote de emissão (migration 0038) — opcional em bancos sem a migration. */
+  lote_id?: string | null;
 }
 
 export function toBoleto(row: BoletoRow): Boleto {
@@ -879,6 +883,7 @@ export function toBoleto(row: BoletoRow): Boleto {
     canceladoEm: row.cancelado_em ?? null,
     canceladoPor: row.cancelado_por ?? null,
     motivoCancelamento: row.motivo_cancelamento ?? null,
+    loteId: row.lote_id ?? null,
   };
 }
 
@@ -1123,5 +1128,81 @@ export function toLancamentoManual(row: LancamentoManualRow): LancamentoManual {
     dataFim: row.data_fim,
     criadoPor: row.criado_por,
     criadoEm: row.criado_em,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Lote de emissão (migration 0038)
+// ---------------------------------------------------------------------------
+
+export interface LoteEmissaoRow {
+  id: string;
+  escopo_tipo: LoteEmissao['escopoTipo'];
+  escopo_ref: string;
+  status: LoteEmissao['status'];
+  criado_por: string;
+  criado_em: string;
+  confirmado_por: string | null;
+  confirmado_em: string | null;
+  finalizado_em: string | null;
+  snapshot_total_itens: number;
+  snapshot_total_valor: number;
+  progresso: number;
+  falhas_consecutivas: number;
+  motivo_pausa: string | null;
+  total_emitidos: number;
+  total_pulados: number;
+  total_falhas: number;
+  total_valor_emitido: number;
+}
+
+export function toLoteEmissao(row: LoteEmissaoRow): LoteEmissao {
+  return {
+    id: row.id,
+    escopoTipo: row.escopo_tipo,
+    escopoRef: row.escopo_ref,
+    status: row.status,
+    criadoPor: row.criado_por,
+    criadoEm: row.criado_em,
+    confirmadoPor: row.confirmado_por,
+    confirmadoEm: row.confirmado_em,
+    finalizadoEm: row.finalizado_em,
+    snapshotTotalItens: row.snapshot_total_itens,
+    snapshotTotalValor: Number(row.snapshot_total_valor),
+    progresso: row.progresso,
+    falhasConsecutivas: row.falhas_consecutivas,
+    motivoPausa: row.motivo_pausa,
+    totalEmitidos: row.total_emitidos,
+    totalPulados: row.total_pulados,
+    totalFalhas: row.total_falhas,
+    totalValorEmitido: Number(row.total_valor_emitido),
+  };
+}
+
+export interface LoteEmissaoItemRow {
+  id: string;
+  lote_id: string;
+  execucao_resultado_id: string;
+  conta_emissora: LoteEmissaoItem['contaEmissora'];
+  valor_snapshot: number;
+  status: LoteEmissaoItem['status'];
+  codigo_erro: string | null;
+  mensagem_erro: string | null;
+  boleto_id: string | null;
+  processado_em: string | null;
+}
+
+export function toLoteEmissaoItem(row: LoteEmissaoItemRow): LoteEmissaoItem {
+  return {
+    id: row.id,
+    loteId: row.lote_id,
+    execucaoResultadoId: row.execucao_resultado_id,
+    contaEmissora: row.conta_emissora,
+    valorSnapshot: Number(row.valor_snapshot),
+    status: row.status,
+    codigoErro: row.codigo_erro,
+    mensagemErro: row.mensagem_erro,
+    boletoId: row.boleto_id,
+    processadoEm: row.processado_em,
   };
 }

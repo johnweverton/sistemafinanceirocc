@@ -18,10 +18,12 @@ vi.mock('@/server/auth/require-role', () => ({
   requireRole: (...args: unknown[]) => mockRequireRole(...args),
 }));
 
-const mockCriarBoleto = vi.fn();
+const mockReservarBoleto = vi.fn();
+const mockFinalizarBoleto = vi.fn();
 const mockBuscarBoletoEmitido = vi.fn();
 vi.mock('@/server/repositories/boleto-repository', () => ({
-  criarBoleto: (...args: unknown[]) => mockCriarBoleto(...args),
+  reservarBoleto: (...args: unknown[]) => mockReservarBoleto(...args),
+  finalizarBoleto: (...args: unknown[]) => mockFinalizarBoleto(...args),
   buscarBoletoEmitido: (...args: unknown[]) => mockBuscarBoletoEmitido(...args),
 }));
 
@@ -167,8 +169,18 @@ describe('Rota de emissão — branch cliente contábil (Story 11.3)', () => {
       status: 'emitido',
       payloadResposta: { mock: true },
     });
-    mockCriarBoleto.mockResolvedValue({
-      id: 'boleto-cc-001',
+    mockReservarBoleto.mockResolvedValue({
+      id: 'reserva-cc-001',
+      execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
+      gateway: 'mock',
+      idExterno: null,
+      status: 'processando',
+      emitidoPor: 'user-cc-101',
+      emitidoEm: '2026-07-01T00:00:00Z',
+      payloadResposta: null,
+    });
+    mockFinalizarBoleto.mockResolvedValue({
+      id: 'reserva-cc-001',
       execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
       gateway: 'mock',
       idExterno: 'MOCK-CC-1',
@@ -201,6 +213,7 @@ describe('Rota de emissão — branch cliente contábil (Story 11.3)', () => {
           tipo: 'CNPJ',
         }),
       }),
+      expect.any(String),
     );
     expect(mockCriarGateway).toHaveBeenCalledWith('mc');
   });

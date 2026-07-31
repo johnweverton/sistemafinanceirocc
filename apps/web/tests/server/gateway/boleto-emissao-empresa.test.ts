@@ -20,10 +20,12 @@ vi.mock('@/server/auth/require-role', () => ({
   requireRole: (...args: unknown[]) => mockRequireRole(...args),
 }));
 
-const mockCriarBoleto = vi.fn();
+const mockReservarBoleto = vi.fn();
+const mockFinalizarBoleto = vi.fn();
 const mockBuscarBoletoEmitido = vi.fn();
 vi.mock('@/server/repositories/boleto-repository', () => ({
-  criarBoleto: (...args: unknown[]) => mockCriarBoleto(...args),
+  reservarBoleto: (...args: unknown[]) => mockReservarBoleto(...args),
+  finalizarBoleto: (...args: unknown[]) => mockFinalizarBoleto(...args),
   buscarBoletoEmitido: (...args: unknown[]) => mockBuscarBoletoEmitido(...args),
 }));
 
@@ -152,8 +154,18 @@ describe('Rota de emissão — branch médico vs empresa (Story 10.4c)', () => {
       status: 'emitido',
       payloadResposta: { mock: true },
     });
-    mockCriarBoleto.mockResolvedValue({
-      id: 'boleto-empresa-001',
+    mockReservarBoleto.mockResolvedValue({
+      id: 'reserva-empresa-001',
+      execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
+      gateway: 'mock',
+      idExterno: null,
+      status: 'processando',
+      emitidoPor: 'user-empresa-101',
+      emitidoEm: '2025-06-01T00:00:00Z',
+      payloadResposta: null,
+    });
+    mockFinalizarBoleto.mockResolvedValue({
+      id: 'reserva-empresa-001',
       execucaoResultadoId: '00000000-0000-0000-0000-000000000001',
       gateway: 'mock',
       idExterno: 'MOCK-EMPRESA-1',
@@ -185,6 +197,7 @@ describe('Rota de emissão — branch médico vs empresa (Story 10.4c)', () => {
           tipo: 'CNPJ',
         }),
       }),
+      expect.any(String),
     );
     // Conta emissora usada na factory é a da EMPRESA (não a de nenhum médico individual).
     expect(mockCriarGateway).toHaveBeenCalledWith('mc');
@@ -231,6 +244,7 @@ describe('Rota de emissão — branch médico vs empresa (Story 10.4c)', () => {
       expect.objectContaining({
         pagador: expect.objectContaining({ nome: 'Dr. Teste', tipo: 'CPF' }),
       }),
+      expect.any(String),
     );
   });
 
@@ -315,6 +329,7 @@ describe('Rota de emissão — branch médico vs empresa (Story 10.4c)', () => {
     );
     expect(mockGatewayEmitir).toHaveBeenCalledWith(
       expect.objectContaining({ condicoes: expect.objectContaining({ diasVencimento: 15 }) }),
+      expect.any(String),
     );
   });
 });

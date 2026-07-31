@@ -40,6 +40,10 @@ const serverSchema = z.object({
   // ---------------------------------------------------------------------------
   // Feature flag principal: bloqueia emissão mesmo via API até alguém decidir ligar.
   GATEWAY_EMISSAO_HABILITADA: z.enum(['true', 'false']).default('false'),
+  // Feature flag do LOTE (revisão de arquitetura 2026-07-31, decisão 5) — independente da
+  // flag acima, que continua sendo o gate mestre (emissão individual pode seguir ligada em
+  // produção com o lote desligado, e vice-versa desligar só o lote sem parar o faturamento).
+  EMISSAO_LOTE_HABILITADA: z.enum(['true', 'false']).default('false'),
   // Qual gateway usar: 'cora' (real, mTLS) ou 'mock' (testes/dev).
   BOLETO_GATEWAY: z.enum(['cora', 'mock']).default('mock'),
   // Status devolvido pela reconsulta (consultarInvoice) do MockGateway em dev (débito M-1):
@@ -103,6 +107,7 @@ export function getServerEnv() {
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
     EXECUCAO_CONCORRENCIA_MEDICO: process.env.EXECUCAO_CONCORRENCIA_MEDICO,
     GATEWAY_EMISSAO_HABILITADA: process.env.GATEWAY_EMISSAO_HABILITADA,
+    EMISSAO_LOTE_HABILITADA: process.env.EMISSAO_LOTE_HABILITADA,
     BOLETO_GATEWAY: process.env.BOLETO_GATEWAY,
     MOCK_INVOICE_STATUS: process.env.MOCK_INVOICE_STATUS,
     CORA_CERT_BASE64: process.env.CORA_CERT_BASE64,

@@ -21,7 +21,6 @@ import type {
 import type { CredenciaisConta } from '@/lib/env';
 import { calcularVencimento } from './vencimento';
 import { CoraHttpClient } from './cora-http';
-import { randomUUID } from 'node:crypto';
 
 /**
  * Normaliza a resposta do `GET /invoices/{id}` da Cora para `StatusInvoice`. Isolada para permitir
@@ -85,7 +84,7 @@ export class CoraGateway implements BoletoGatewayPort {
     this.http = new CoraHttpClient(credenciais);
   }
 
-  async emitir(dados: DadosEmissaoBoleto): Promise<EmissaoBoleto> {
+  async emitir(dados: DadosEmissaoBoleto, idempotencyKey: string): Promise<EmissaoBoleto> {
     try {
       const token = await this.http.obterToken();
 
@@ -134,8 +133,9 @@ export class CoraGateway implements BoletoGatewayPort {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-          // Obrigatório na API v2 — evita emissão duplicada em retry de rede.
-          'Idempotency-Key': randomUUID(),
+          // Obrigatório na API v2 — determinística por registro (não randomUUID() por
+          // tentativa, migration 0037): reprocessar a MESMA reserva reusa a MESMA chave.
+          'Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify(invoicePayload),
       });

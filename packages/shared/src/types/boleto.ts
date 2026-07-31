@@ -14,8 +14,10 @@ export interface DisparoBoleto {
   enviadoEm: string;
 }
 // 'pago'/'cancelado' são resultado da baixa via webhook (Épico 4). 'vencido' NÃO é armazenado —
-// é derivado on-read (vencimento < hoje e sem baixa).
-export type StatusBoleto = 'emitido' | 'falha' | 'pago' | 'cancelado';
+// é derivado on-read (vencimento < hoje e sem baixa). 'processando' (migration 0037) é a
+// RESERVA gravada antes de chamar o gateway — existe só entre o INSERT e o UPDATE da emissão
+// (Achados 1/2 da revisão de arquitetura do lote); nunca deveria ficar visível por muito tempo.
+export type StatusBoleto = 'processando' | 'emitido' | 'falha' | 'pago' | 'cancelado';
 
 export interface Boleto {
   id: string;
@@ -37,6 +39,8 @@ export interface Boleto {
   canceladoEm: string | null;
   canceladoPor: string | null; // profiles.id de quem cancelou
   motivoCancelamento: string | null;
+  /** Lote de emissão que gerou este boleto (migration 0038); null = emissão manual/individual. */
+  loteId: string | null;
 }
 
 /** Evento de webhook do Cora — auditoria + idempotência (Épico 4). */
@@ -132,7 +136,13 @@ export interface ResultadoCancelamento {
  * uma nova implementação e registrar na factory.
  */
 export interface BoletoGatewayPort {
-  emitir(dados: DadosEmissaoBoleto): Promise<EmissaoBoleto>;
+  /**
+   * `idempotencyKey` é OBRIGATÓRIA e deve ser o id do registro `boletos` já reservado
+   * (status 'processando') ANTES desta chamada — nunca gerada aqui dentro (migration 0037,
+   * Achado 2 da revisão de arquitetura: uma chave por TENTATIVA, não por registro persistido,
+   * deixava reprocessamento gerar um segundo boleto real).
+   */
+  emitir(dados: DadosEmissaoBoleto, idempotencyKey: string): Promise<EmissaoBoleto>;
   /** Consulta o status real da invoice no gateway (usado na conciliação do webhook). */
   consultarInvoice(idExterno: string): Promise<StatusInvoice>;
   /** Cancela uma invoice em aberto no gateway (Story 6.1 — cancelamento ativo). */

@@ -34,7 +34,7 @@ const dadosPadrao: DadosEmissaoBoleto = {
 describe('MockGateway', () => {
   it('retorna status emitido com idExterno preenchido', async () => {
     const gateway = new MockGateway();
-    const resultado = await gateway.emitir(dadosPadrao);
+    const resultado = await gateway.emitir(dadosPadrao, 'idem-key-1');
 
     expect(resultado.status).toBe('emitido');
     expect(resultado.idExterno).toMatch(/^MOCK-/);
@@ -43,7 +43,7 @@ describe('MockGateway', () => {
 
   it('inclui dados de entrada no payloadResposta (auditoria)', async () => {
     const gateway = new MockGateway();
-    const resultado = await gateway.emitir(dadosPadrao);
+    const resultado = await gateway.emitir(dadosPadrao, 'idem-key-1');
     const payload = resultado.payloadResposta as Record<string, unknown>;
 
     expect(payload.mock).toBe(true);
@@ -51,12 +51,13 @@ describe('MockGateway', () => {
     expect(payload.documento).toBe('12345678901');
     expect(payload.nome).toBe('Dr. Teste');
     expect(payload.competencia).toBe('2025-06');
+    expect(payload.idempotencyKey).toBe('idem-key-1');
   });
 
   it('gera idExterno único a cada chamada', async () => {
     const gateway = new MockGateway();
-    const r1 = await gateway.emitir(dadosPadrao);
-    const r2 = await gateway.emitir(dadosPadrao);
+    const r1 = await gateway.emitir(dadosPadrao, 'idem-key-1');
+    const r2 = await gateway.emitir(dadosPadrao, 'idem-key-2');
 
     expect(r1.idExterno).not.toBe(r2.idExterno);
   });

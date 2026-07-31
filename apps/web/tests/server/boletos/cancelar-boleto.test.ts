@@ -53,6 +53,7 @@ function boletoBase(overrides: Partial<Boleto> = {}): Boleto {
     canceladoEm: null,
     canceladoPor: null,
     motivoCancelamento: null,
+    loteId: null,
     ...overrides,
   };
 }
