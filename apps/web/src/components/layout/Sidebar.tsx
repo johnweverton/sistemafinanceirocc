@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { LogoCC } from '@/components/layout/LogoCC';
 import { LogoutButton } from '@/components/layout/LogoutButton';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
+import { useSidebar } from '@/components/layout/SidebarContext';
 
 // Item avulso (Dashboard) fica fora de qualquer seção — visão cruzada, não pertence a uma
 // vertical só. As duas verticais de cobrança (médica vs contabilidade) ficam em seções
@@ -34,7 +35,6 @@ const NAV_SECOES = [
   },
 ];
 
-const CHAVE_COLAPSADA = 'cc-sidebar-collapsed';
 const CHAVE_SECOES = 'cc-sidebar-secoes';
 
 function secoesAbertasPadrao(): Record<string, boolean> {
@@ -46,36 +46,23 @@ export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  // Colapso do modo desktop (item 1 do feedback do dono, 2026-07-30) e accordion das seções
-  // (item 3) seguem o mesmo padrão de ThemeToggle.tsx: default estável (igual em server e
-  // client) e só aplicam o valor persistido em localStorage DEPOIS de montar, pra não gerar
-  // mismatch de hidratação. O conceito de "recolhido" é só para o modo desktop fixo — o drawer
-  // mobile sempre abre expandido.
-  const [collapsed, setCollapsed] = useState(false);
+  // Colapso do modo desktop vive em SidebarContext (compartilhado com o layout, que precisa
+  // ajustar o padding do <main> de acordo — feedback do dono 2026-08-03). Accordion das seções
+  // (item 3 do feedback 2026-07-30) segue o mesmo padrão de ThemeToggle.tsx: default estável
+  // (igual em server e client), só aplica o valor persistido em localStorage DEPOIS de montar,
+  // pra não gerar mismatch de hidratação. O conceito de "recolhido" é só para o modo desktop
+  // fixo — o drawer mobile sempre abre expandido.
+  const { collapsed: efetivamenteColapsada, toggleCollapsed } = useSidebar();
   const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>(secoesAbertasPadrao);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     try {
-      const colapsadaSalva = localStorage.getItem(CHAVE_COLAPSADA);
-      if (colapsadaSalva === '1') setCollapsed(true);
       const secoesSalvas = localStorage.getItem(CHAVE_SECOES);
       if (secoesSalvas) setSecoesAbertas((atual) => ({ ...atual, ...JSON.parse(secoesSalvas) }));
     } catch {
       /* localStorage indisponível — mantém os defaults */
     }
-    setMounted(true);
   }, []);
-
-  function toggleCollapsed() {
-    const proximo = !collapsed;
-    setCollapsed(proximo);
-    try {
-      localStorage.setItem(CHAVE_COLAPSADA, proximo ? '1' : '0');
-    } catch {
-      /* localStorage indisponível — ignora */
-    }
-  }
 
   function toggleSecao(titulo: string) {
     setSecoesAbertas((atual) => {
@@ -106,10 +93,6 @@ export function Sidebar() {
       document.body.style.overflow = '';
     };
   }, [open]);
-
-  // Só considera "recolhida" de fato depois de montar (evita flash com o valor padrão antes do
-  // localStorage ser lido) — mesmo espírito do `mounted` de ThemeToggle.tsx.
-  const efetivamenteColapsada = mounted && collapsed;
 
   return (
     <>
