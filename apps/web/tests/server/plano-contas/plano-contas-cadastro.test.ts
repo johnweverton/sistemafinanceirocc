@@ -145,7 +145,7 @@ describe('DELETE /api/plano-contas/[id]', () => {
 
   it('categoria em uso → 409 propagado', async () => {
     mockExcluirCategoria.mockRejectedValue(
-      new ApiError(409, 'Categoria em uso — desative em vez de excluir.', 'CATEGORIA_EM_USO'),
+      new ApiError(409, 'Categoria em uso. Desative em vez de excluir.', 'CATEGORIA_EM_USO'),
     );
     const res = await reqDelete('cat-1');
     expect(res.status).toBe(409);

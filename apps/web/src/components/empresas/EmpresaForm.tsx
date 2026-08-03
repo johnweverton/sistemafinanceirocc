@@ -229,7 +229,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
               </select>
               <p className="mt-1.5 text-2xs text-cc-muted">
                 A execução agregada hoje só suporta a forma &ldquo;por guia
-                linear&rdquo; — as demais geram alerta em vez de um rateio entre médicos.
+                linear&rdquo;. As demais geram alerta em vez de um rateio entre médicos.
               </p>
             </Field>
 
@@ -373,7 +373,7 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
         open={!!inicial?.condicoes && temAlgumaCondicao(inicial.condicoes)}
       >
         <summary className="cursor-pointer text-sm font-semibold text-cc-ink">
-          Condições do boleto <span className="font-normal text-cc-muted">(override — vazio herda o padrão global)</span>
+          Condições do boleto <span className="font-normal text-cc-muted">(override: vazio herda o padrão global)</span>
         </summary>
 
         <div className="mt-4 space-y-4">

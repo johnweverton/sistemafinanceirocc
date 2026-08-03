@@ -52,7 +52,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
     await expirarLote(lote.id);
     throw new ApiError(
       409,
-      'Este preview expirou (mais de 30 minutos) — gere um preview novo antes de confirmar.',
+      'Este preview expirou (mais de 30 minutos). Gere um preview novo antes de confirmar.',
       'LOTE_EXPIRADO',
     );
   }
@@ -65,7 +65,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
   if (divergiu) {
     throw new ApiError(
       409,
-      'O resumo mudou desde que o preview foi gerado — gere um preview novo antes de confirmar.',
+      'O resumo mudou desde que o preview foi gerado. Gere um preview novo antes de confirmar.',
       'SNAPSHOT_DIVERGENTE',
       {
         snapshotAtual: { totalItens: lote.snapshotTotalItens, totalValor: lote.snapshotTotalValor },

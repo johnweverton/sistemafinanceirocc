@@ -22,7 +22,7 @@ export function aplicarRegraPreco(regra: RegraPreco | null, quantidade: number):
   if (!regra) {
     return {
       valor: 0,
-      alertas: ['Modo preço próprio sem regra configurada — valor zerado, corrigir cadastro do médico.'],
+      alertas: ['Modo preço próprio sem regra configurada: valor zerado, corrigir cadastro do médico.'],
       subtotalFaixa: '',
     };
   }
@@ -31,7 +31,7 @@ export function aplicarRegraPreco(regra: RegraPreco | null, quantidade: number):
     if (regra.taxa == null) {
       return {
         valor: 0,
-        alertas: ['Regra de preço "por guia" sem taxa configurada — valor zerado, corrigir cadastro do médico.'],
+        alertas: ['Regra de preço "por guia" sem taxa configurada: valor zerado, corrigir cadastro do médico.'],
         subtotalFaixa: '',
       };
     }
@@ -46,7 +46,7 @@ export function aplicarRegraPreco(regra: RegraPreco | null, quantidade: number):
     if (regra.base == null || regra.limiar == null || regra.taxa == null) {
       return {
         valor: 0,
-        alertas: ['Regra de preço "base + excedente" incompleta (falta base, limiar ou taxa) — valor zerado, corrigir cadastro.'],
+        alertas: ['Regra de preço "base + excedente" incompleta (falta base, limiar ou taxa): valor zerado, corrigir cadastro.'],
         subtotalFaixa: '',
       };
     }
@@ -63,7 +63,7 @@ export function aplicarRegraPreco(regra: RegraPreco | null, quantidade: number):
       return {
         valor: 0,
         alertas: [
-          'Regra de preço "faixa de faturamento" incompleta (falta limiar, valor abaixo ou valor acima) — valor zerado, corrigir cadastro.',
+          'Regra de preço "faixa de faturamento" incompleta (falta limiar, valor abaixo ou valor acima): valor zerado, corrigir cadastro.',
         ],
         subtotalFaixa: '',
       };
@@ -82,7 +82,7 @@ export function aplicarRegraPreco(regra: RegraPreco | null, quantidade: number):
   if (regra.valorFixo == null) {
     return {
       valor: 0,
-      alertas: ['Regra de preço "fixo" sem valor configurado — valor zerado, corrigir cadastro do médico.'],
+      alertas: ['Regra de preço "fixo" sem valor configurado: valor zerado, corrigir cadastro do médico.'],
       subtotalFaixa: '',
     };
   }

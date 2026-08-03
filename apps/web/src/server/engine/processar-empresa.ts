@@ -52,7 +52,7 @@ export function processarEmpresa(entrada: EntradaProcessamentoEmpresa): Resultad
       totalValor: 0,
       status: 'alerta',
       alertas: [
-        `Forma de regra "${regraPreco.forma}" não suportada para agregação por empresa — só "por guia" é suportada nesta versão. Corrigir cadastro da empresa.`,
+        `Forma de regra "${regraPreco.forma}" não suportada para agregação por empresa. Só "por guia" é suportada nesta versão. Corrigir cadastro da empresa.`,
       ],
       subtotalFaixa: '',
       contribuicoes: [],

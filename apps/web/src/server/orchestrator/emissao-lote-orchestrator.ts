@@ -75,7 +75,7 @@ export async function montarPreviewLote(params: MontarPreviewLoteParams): Promis
   if (candidatos.length > EMISSAO_LOTE_MAX_ITENS) {
     throw new ApiError(
       422,
-      `Esta execução tem ${candidatos.length} resultados 'ok' — acima do limite de ${EMISSAO_LOTE_MAX_ITENS} por lote.`,
+      `Esta execução tem ${candidatos.length} resultados 'ok', acima do limite de ${EMISSAO_LOTE_MAX_ITENS} por lote.`,
       'LOTE_MUITO_GRANDE',
     );
   }
@@ -169,7 +169,7 @@ async function processarItemLote(item: LoteEmissaoItem, lote: LoteEmissao): Prom
     await atualizarItemLote(item.id, {
       status: 'falha',
       codigoErro: 'FALHA_GATEWAY',
-      mensagemErro: 'O gateway recusou a emissão — ver auditoria do boleto para detalhes.',
+      mensagemErro: 'O gateway recusou a emissão. Ver auditoria do boleto para detalhes.',
       boletoId: resultado.boleto.id,
     });
     return { desfecho: 'falha_gateway' };

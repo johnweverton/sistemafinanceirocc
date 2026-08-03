@@ -610,7 +610,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
         open={!!inicial?.condicoes && temAlgumaCondicao(inicial.condicoes)}
       >
         <summary className="cursor-pointer text-sm font-semibold text-cc-ink">
-          Condições do boleto <span className="font-normal text-cc-muted">(override — vazio herda o padrão global)</span>
+          Condições do boleto <span className="font-normal text-cc-muted">(override: vazio herda o padrão global)</span>
         </summary>
 
         <div className="mt-4 space-y-4">
@@ -680,7 +680,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           </div>
           <p className="text-2xs text-cc-muted">
             Deixe em branco para herdar o padrão de Configurações. Preencha apenas o que este
-            médico tem de diferente — ex.: vencimento em 45 dias em vez do padrão.
+            médico tem de diferente. Ex.: vencimento em 45 dias em vez do padrão.
           </p>
         </div>
       </details>

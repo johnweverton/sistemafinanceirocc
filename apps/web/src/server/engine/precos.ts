@@ -79,7 +79,7 @@ export function valorDaFaixa(
 
   const ultima = tabela.faixas[tabela.faixas.length - 1];
   if (!ultima) {
-    return { valor: null, faixa: 'FORA DA TABELA — verificar' };
+    return { valor: null, faixa: 'FORA DA TABELA (verificar)' };
   }
 
   const ex = tabela.excedente;
@@ -94,7 +94,7 @@ export function valorDaFaixa(
     return { valor: ex.valorFixo, faixa: `acima de ${ultima.teto} (valor fixo)` };
   }
 
-  return { valor: null, faixa: 'FORA DA TABELA — verificar' };
+  return { valor: null, faixa: 'FORA DA TABELA (verificar)' };
 }
 
 /**

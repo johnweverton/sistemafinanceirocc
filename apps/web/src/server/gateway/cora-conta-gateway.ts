@@ -127,8 +127,8 @@ export class CoraContaGateway implements ContaBancariaPort {
       return {
         sucesso: false,
         erro:
-          `Cora extrato: período com mais de ${MAX_PAGINAS * PER_PAGE} entradas — ` +
-          'sincronize uma janela menor de datas',
+          `Cora extrato: período com mais de ${MAX_PAGINAS * PER_PAGE} entradas. ` +
+          'Sincronize uma janela menor de datas',
       };
     } catch (error) {
       return { sucesso: false, erro: error instanceof Error ? error.message : String(error) };

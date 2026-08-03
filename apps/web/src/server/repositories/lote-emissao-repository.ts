@@ -64,7 +64,7 @@ export async function criarLoteComItens(params: {
       // QA-style (mesmo espírito de criarExecucao): sem os itens o lote nunca processa nada —
       // marca erro em vez de deixar um registro zumbi em 'aguardando_confirmacao'.
       await db.from('lotes_emissao').update({ status: 'cancelado', finalizado_em: new Date().toISOString() }).eq('id', loteId);
-      throw new ApiError(500, 'Falha ao inserir itens do lote — lote cancelado', 'DB_ERROR', {
+      throw new ApiError(500, 'Falha ao inserir itens do lote. Lote cancelado', 'DB_ERROR', {
         error: errItens.message,
       });
     }

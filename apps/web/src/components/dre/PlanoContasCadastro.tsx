@@ -26,13 +26,13 @@ const CAMPO_LABEL: Record<CampoRegraCategorizacao, string> = {
 function mensagemErroCategoria(e: unknown, fallback: string): string {
   if (e instanceof ApiClientError) {
     if (e.code === 'CATEGORIA_SISTEMA_PROTEGIDA') {
-      return 'Esta é uma categoria de sistema (usada pela categorização automática) — não pode ser alterada nem excluída.';
+      return 'Esta é uma categoria de sistema (usada pela categorização automática). Não pode ser alterada nem excluída.';
     }
     if (e.code === 'CATEGORIA_EM_USO') {
-      return 'Categoria em uso por transações ou lançamentos — desative em vez de excluir.';
+      return 'Categoria em uso por transações ou lançamentos. Desative em vez de excluir.';
     }
     if (e.code === 'CATEGORIA_INATIVA') {
-      return 'Categoria já está desativada — exclusão física exige categoria ativa e sem uso.';
+      return 'Categoria já está desativada. A exclusão física exige categoria ativa e sem uso.';
     }
     return e.message;
   }

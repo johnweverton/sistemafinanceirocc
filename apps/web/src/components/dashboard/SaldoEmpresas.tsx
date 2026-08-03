@@ -42,7 +42,7 @@ export function SaldoEmpresas() {
           </p>
           {!s.configurada ? (
             <p className="mt-1 text-sm text-cc-muted">
-              Conta não configurada — o saldo aparece aqui quando a integração bancária for
+              Conta não configurada. O saldo aparece aqui quando a integração bancária for
               ativada.
             </p>
           ) : s.saldo ? (
@@ -56,7 +56,7 @@ export function SaldoEmpresas() {
               </p>
               {s.saldo.disponivel < 0 && (
                 <p className="mt-1 text-xs font-medium text-cc-danger" role="alert">
-                  Saldo negativo — verificar lançamentos
+                  Saldo negativo: verificar lançamentos
                 </p>
               )}
               <p className="text-2xs text-cc-muted">
@@ -68,7 +68,7 @@ export function SaldoEmpresas() {
             </>
           ) : (
             <p className="mt-1 text-sm text-cc-warning" role="alert">
-              Saldo indisponível no momento — tente novamente em instantes.
+              Saldo indisponível no momento. Tente novamente em instantes.
             </p>
           )}
         </div>

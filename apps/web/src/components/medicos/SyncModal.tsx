@@ -140,7 +140,7 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
                           <div>
                             <p className="font-medium text-cc-ink">{cand.nome}</p>
                             {cand.viaCpf ? (
-                              <p className="text-xs font-semibold text-cc-success">CPF idêntico — mesma pessoa</p>
+                              <p className="text-xs font-semibold text-cc-success">CPF idêntico: mesma pessoa</p>
                             ) : (
                               <p className="text-xs text-cc-muted">Score de similaridade: {(cand.score * 100).toFixed(0)}%</p>
                             )}

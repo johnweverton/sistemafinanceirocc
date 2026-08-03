@@ -21,7 +21,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
     throw new ApiError(404, 'Transação do extrato não encontrada', 'TRANSACAO_NAO_ENCONTRADA');
   }
   if (transacao.statusConciliacao === 'sem_match') {
-    throw new ApiError(409, 'Nada a desfazer — transação sem vínculo.', 'NADA_A_DESFAZER');
+    throw new ApiError(409, 'Nada a desfazer: transação sem vínculo.', 'NADA_A_DESFAZER');
   }
 
   const atualizada = await atualizarStatusConciliacao(transacao.id, { status: 'sem_match' });

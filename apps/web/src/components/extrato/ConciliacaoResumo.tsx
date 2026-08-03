@@ -91,7 +91,7 @@ export function ConciliacaoResumo({
           </div>
           <p className="text-2xs text-cc-muted">
             &ldquo;Saldo atual&rdquo; é o saldo de agora na Cora (a API não expõe histórico por
-            data) — equivalente ao saldo do extrato quando o período termina hoje.
+            data), equivalente ao saldo do extrato quando o período termina hoje.
           </p>
         </dl>
 
@@ -101,7 +101,7 @@ export function ConciliacaoResumo({
             <span className="tabular font-medium text-cc-ink">{brl(totalConciliado)}</span>
           </div>
           <p className="text-2xs text-cc-muted">
-            Equivalente ao &ldquo;razão contábil&rdquo; do período — soma líquida do que já foi
+            Equivalente ao &ldquo;razão contábil&rdquo; do período: soma líquida do que já foi
             vinculado a boletos ou confirmado manualmente. Não é diretamente comparável ao saldo
             da conta acima (que reflete o histórico completo da conta, não só o período filtrado).
           </p>

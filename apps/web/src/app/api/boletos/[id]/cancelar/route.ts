@@ -53,7 +53,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
 
   // 4. Validações de estado local.
   if (boleto.status === 'pago') {
-    throw new ApiError(409, 'Boleto já foi pago — não pode ser cancelado.', 'BOLETO_PAGO');
+    throw new ApiError(409, 'Boleto já foi pago e não pode ser cancelado.', 'BOLETO_PAGO');
   }
   if (boleto.status === 'cancelado') {
     // Idempotente: cancelar duas vezes não é erro de dado, mas sinaliza que nada foi feito.
@@ -62,13 +62,13 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
   if (boleto.status === 'falha') {
     throw new ApiError(
       422,
-      'Boleto com falha de emissão não existe no gateway — nada a cancelar. Emita novamente.',
+      'Boleto com falha de emissão não existe no gateway, nada a cancelar. Emita novamente.',
       'BOLETO_FALHA_NAO_CANCELAVEL',
     );
   }
   if (!boleto.idExterno) {
     // Defensivo: 'emitido' sem id externo é estado inconsistente — não dá para cancelar na Cora.
-    throw new ApiError(422, 'Boleto sem id externo do gateway — verificar auditoria.', 'SEM_ID_EXTERNO');
+    throw new ApiError(422, 'Boleto sem id externo do gateway. Verificar auditoria.', 'SEM_ID_EXTERNO');
   }
 
   // Conta do BOLETO, nunca a atual do médico (Story 7.2, arquitetura §2-D3): se o médico
@@ -86,7 +86,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
     });
     throw new ApiError(
       409,
-      'Boleto foi pago na Cora — baixa sincronizada; não é possível cancelar.',
+      'Boleto foi pago na Cora. A baixa foi sincronizada, não é possível cancelar.',
       'BOLETO_PAGO',
     );
   }
@@ -124,7 +124,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
     });
     throw new ApiError(
       502,
-      'A Cora recusou o cancelamento — verificar o status do boleto no gateway.',
+      'A Cora recusou o cancelamento. Verificar o status do boleto no gateway.',
       'CANCELAMENTO_FALHOU',
       { gateway: resultado.payloadResposta },
     );

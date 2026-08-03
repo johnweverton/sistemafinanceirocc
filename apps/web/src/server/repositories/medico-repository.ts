@@ -220,7 +220,7 @@ export async function atualizarMedico(
   const { error: histErr } = await db.from('medicos_historico').insert(alteracoes);
   if (histErr) {
     // Histórico é requisito não-opcional: se falhar, é erro de sistema, não silenciar.
-    throw new ApiError(500, 'Médico atualizado mas histórico falhou — verificar', 'HISTORICO_ERROR', {
+    throw new ApiError(500, 'Médico atualizado mas histórico falhou. Verificar', 'HISTORICO_ERROR', {
       error: histErr.message,
     });
   }
@@ -289,7 +289,7 @@ export async function vincularExternalId(
     motivo,
   });
   if (histErr) {
-    throw new ApiError(500, 'Médico vinculado mas histórico falhou — verificar', 'HISTORICO_ERROR', {
+    throw new ApiError(500, 'Médico vinculado mas histórico falhou. Verificar', 'HISTORICO_ERROR', {
       error: histErr.message,
     });
   }
@@ -347,7 +347,7 @@ export async function criarMedicoExterno(
     motivo: 'Criado via sincronização com o sistema web',
   });
   if (histErr) {
-    throw new ApiError(500, 'Médico criado mas histórico falhou — verificar', 'HISTORICO_ERROR', {
+    throw new ApiError(500, 'Médico criado mas histórico falhou. Verificar', 'HISTORICO_ERROR', {
       error: histErr.message,
     });
   }
@@ -379,7 +379,7 @@ export async function excluirMedico(id: string): Promise<void> {
   if ((count ?? 0) > 0) {
     throw new ApiError(
       409,
-      'Médico possui execuções/resultados financeiros — não pode ser excluído. Inative-o em vez disso.',
+      'Médico possui execuções/resultados financeiros e não pode ser excluído. Inative-o em vez disso.',
       'POSSUI_EXECUCOES',
     );
   }

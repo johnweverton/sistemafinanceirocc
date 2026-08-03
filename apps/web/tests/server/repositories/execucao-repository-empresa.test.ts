@@ -97,7 +97,7 @@ describe('gravarResultadoEmpresa', () => {
       guias: 0,
       totalValor: 0,
       status: 'alerta',
-      alertas: ['Modo preço próprio sem regra configurada — valor zerado, corrigir cadastro do médico.'],
+      alertas: ['Modo preço próprio sem regra configurada: valor zerado, corrigir cadastro do médico.'],
       subtotalFaixa: '',
     });
     const payload = capturado.inserts[0] as Record<string, unknown>;

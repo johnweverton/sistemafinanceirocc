@@ -87,7 +87,7 @@ describe('PlanoContasCadastro', () => {
 
   it('excluir categoria em uso mostra o toast do CATEGORIA_EM_USO (não genérico)', async () => {
     mockExcluirCategoria.mockRejectedValue(
-      new ApiClientError(409, 'Categoria em uso — desative em vez de excluir.', 'CATEGORIA_EM_USO'),
+      new ApiClientError(409, 'Categoria em uso. Desative em vez de excluir.', 'CATEGORIA_EM_USO'),
     );
     renderComProviders();
     const tabela = await tabelaCategorias();
@@ -97,7 +97,7 @@ describe('PlanoContasCadastro', () => {
     fireEvent.click(botoesExcluir[botoesExcluir.length - 1]!);
 
     await waitFor(() =>
-      expect(screen.getByText(/Categoria em uso por transações ou lançamentos — desative/)).toBeInTheDocument(),
+      expect(screen.getByText(/Categoria em uso por transações ou lançamentos\. Desative/)).toBeInTheDocument(),
     );
   });
 

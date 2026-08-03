@@ -133,7 +133,7 @@ export async function excluirCategoria(id: string): Promise<void> {
   if (!categoria.ativo) {
     throw new ApiError(
       400,
-      'Categoria já está desativada — exclusão física exige categoria ativa e sem uso.',
+      'Categoria já está desativada. A exclusão física exige categoria ativa e sem uso.',
       'CATEGORIA_INATIVA',
       { id },
     );
@@ -152,7 +152,7 @@ export async function excluirCategoria(id: string): Promise<void> {
   }
   const totalVinculos = contagens.reduce((soma, r) => soma + (r.count ?? 0), 0);
   if (totalVinculos > 0) {
-    throw new ApiError(409, 'Categoria em uso — desative em vez de excluir.', 'CATEGORIA_EM_USO', {
+    throw new ApiError(409, 'Categoria em uso. Desative em vez de excluir.', 'CATEGORIA_EM_USO', {
       id,
       vinculos: totalVinculos,
     });
@@ -183,7 +183,7 @@ export async function buscarCategoriasSistema(): Promise<CategoriasSistemaIds> {
   if (!receita || !tarifa) {
     throw new ApiError(
       500,
-      'Categorias de sistema do plano de contas não encontradas — seed da migration 0023 ausente?',
+      'Categorias de sistema do plano de contas não encontradas. Seed da migration 0023 ausente?',
       'CATEGORIAS_SISTEMA_AUSENTES',
     );
   }

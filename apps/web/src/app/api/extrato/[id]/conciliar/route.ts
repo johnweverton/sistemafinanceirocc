@@ -54,7 +54,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
   if (transacao.statusConciliacao === 'ignorado') {
     throw new ApiError(
       409,
-      'Transação está marcada como ignorada — desfaça antes de conciliar.',
+      'Transação está marcada como ignorada. Desfaça antes de conciliar.',
       'TRANSACAO_IGNORADA',
     );
   }

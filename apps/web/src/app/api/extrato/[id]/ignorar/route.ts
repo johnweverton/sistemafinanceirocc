@@ -39,7 +39,7 @@ export const POST = withErrorHandler<{ id: string }>(async (req, { params }) => 
   if (transacao.statusConciliacao.startsWith('conciliado')) {
     throw new ApiError(
       409,
-      'Transação conciliada não pode ser ignorada — desfaça a conciliação antes.',
+      'Transação conciliada não pode ser ignorada. Desfaça a conciliação antes.',
       'TRANSACAO_JA_CONCILIADA',
     );
   }

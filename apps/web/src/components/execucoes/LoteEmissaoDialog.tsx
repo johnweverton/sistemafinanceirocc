@@ -67,7 +67,7 @@ export function LoteEmissaoDialog({
       }),
     onSuccess: () => {
       setConfirmado(true);
-      toast('Lote confirmado — emitindo em segundo plano…', 'success');
+      toast('Lote confirmado. Emitindo em segundo plano…', 'success');
     },
     onError: (e) => {
       if (e instanceof ApiClientError && (e.code === 'SNAPSHOT_DIVERGENTE' || e.code === 'LOTE_EXPIRADO')) {
@@ -186,7 +186,7 @@ function PreviewConteudo({ preview }: { preview: PreviewLoteEmissao }) {
           <ul className="max-h-32 space-y-1 overflow-y-auto rounded border border-cc-hairline bg-cc-surface-2 p-3 text-xs text-cc-ink-2">
             {pulados.map((i) => (
               <li key={i.id}>
-                <strong>{i.nome}</strong> — {i.codigoErro ? (CODIGO_ERRO_LABEL[i.codigoErro] ?? i.codigoErro) : 'motivo desconhecido'}
+                <strong>{i.nome}</strong>: {i.codigoErro ? (CODIGO_ERRO_LABEL[i.codigoErro] ?? i.codigoErro) : 'motivo desconhecido'}
               </li>
             ))}
           </ul>
@@ -194,7 +194,7 @@ function PreviewConteudo({ preview }: { preview: PreviewLoteEmissao }) {
       )}
 
       {aceitos.length === 0 && (
-        <p className="text-sm text-cc-warning">Nenhum item elegível — não é possível confirmar este lote.</p>
+        <p className="text-sm text-cc-warning">Nenhum item elegível. Não é possível confirmar este lote.</p>
       )}
     </>
   );
@@ -233,7 +233,7 @@ function AcompanhamentoConteudo({
         <div className="rounded-lg border border-cc-warning/40 bg-cc-warning-soft px-4 py-3 text-sm text-cc-ink">
           <p className="font-medium">Motivo: {lote.motivoPausa}</p>
           <p className="mt-1 text-xs text-cc-muted">
-            Corrija o problema (ex.: credenciais da conta) e retome — só os itens ainda pendentes serão reprocessados.
+            Corrija o problema (ex.: credenciais da conta) e retome. Só os itens ainda pendentes serão reprocessados.
           </p>
           <button onClick={onRetomar} disabled={retomando} className="btn-primary btn btn-sm mt-3">
             {retomando ? 'Retomando…' : 'Retomar lote'}

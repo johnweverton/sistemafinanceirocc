@@ -74,7 +74,7 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
           {travada ? (
             <div className="flex items-center justify-between gap-3">
               <p className="text-2xs text-cc-warning">
-                Isso está demorando mais que o esperado — a execução pode ter travado.
+                Isso está demorando mais que o esperado. A execução pode ter travado.
               </p>
               <button
                 type="button"

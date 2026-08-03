@@ -27,7 +27,7 @@ export function checar(
   if (isPediatra(especialidade) && modoDetectado) {
     if (modoCadastro !== modoDetectado) {
       alertas.push(
-        `MODO INCONSISTENTE — cadastro: ${modoCadastro.toUpperCase()}, ` +
+        `MODO INCONSISTENTE. Cadastro: ${modoCadastro.toUpperCase()}, ` +
           `dado observado: ${modoDetectado.toUpperCase()}. Houve alteração recente?`,
       );
     }

@@ -45,7 +45,7 @@ function DisparoBadge({ disparo }: { disparo: DisparoBoleto }) {
   const ok = disparo.status === 'sucesso';
   const texto = ok
     ? `${CANAL_LABEL[disparo.canal]} · enviado em ${dataHoraCompleta(disparo.enviadoEm)}`
-    : `${CANAL_LABEL[disparo.canal]} · falha em ${dataHoraCompleta(disparo.enviadoEm)}${disparo.mensagemErro ? ` — ${disparo.mensagemErro}` : ''}`;
+    : `${CANAL_LABEL[disparo.canal]} · falha em ${dataHoraCompleta(disparo.enviadoEm)}${disparo.mensagemErro ? `. ${disparo.mensagemErro}` : ''}`;
 
   return (
     <span className="group relative inline-flex" tabIndex={0} aria-label={texto}>

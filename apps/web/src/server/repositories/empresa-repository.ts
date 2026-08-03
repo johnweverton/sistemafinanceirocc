@@ -93,7 +93,7 @@ export async function atualizarEmpresa(
 
   const { error: histErr } = await db.from('empresas_historico').insert(alteracoes);
   if (histErr) {
-    throw new ApiError(500, 'Empresa atualizada mas histórico falhou — verificar', 'HISTORICO_ERROR', {
+    throw new ApiError(500, 'Empresa atualizada mas histórico falhou. Verificar', 'HISTORICO_ERROR', {
       error: histErr.message,
     });
   }
@@ -121,7 +121,7 @@ export async function excluirEmpresa(id: string): Promise<void> {
   if ((count ?? 0) > 0) {
     throw new ApiError(
       409,
-      'Empresa possui médicos vinculados — desvincule-os antes de excluir, ou inative a empresa.',
+      'Empresa possui médicos vinculados. Desvincule-os antes de excluir, ou inative a empresa.',
       'POSSUI_MEDICOS_VINCULADOS',
     );
   }

@@ -88,7 +88,7 @@ export async function criarExecucao(
       .from('execucoes')
       .update({ status: 'erro', finalizado_em: new Date().toISOString() })
       .eq('id', execucaoId);
-    throw new ApiError(500, 'Falha ao inserir seleções — execução marcada como erro', 'DB_ERROR', {
+    throw new ApiError(500, 'Falha ao inserir seleções. Execução marcada como erro', 'DB_ERROR', {
       error: selecoesError.message,
     });
   }
@@ -295,7 +295,7 @@ export async function gravarContribuicoes(
     })),
   );
   if (error) {
-    throw new ApiError(500, 'Resultado da empresa gravado mas contribuições falharam — verificar', 'CONTRIBUICOES_ERROR', {
+    throw new ApiError(500, 'Resultado da empresa gravado mas contribuições falharam. Verificar', 'CONTRIBUICOES_ERROR', {
       error: error.message,
     });
   }

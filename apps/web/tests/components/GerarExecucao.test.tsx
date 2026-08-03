@@ -135,7 +135,7 @@ describe('GerarExecucao', () => {
         subtotais: [],
         totalValor: 0,
         status: 'alerta',
-        alertas: ['Faturamento não lançado para a competência 2026-07 — lance antes de gerar o boleto.'],
+        alertas: ['Faturamento não lançado para a competência 2026-07. Lance antes de gerar o boleto.'],
         clienteContabilidadeId: 'cc-1',
       },
     ]);

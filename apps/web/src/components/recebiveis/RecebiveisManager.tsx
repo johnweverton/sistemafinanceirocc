@@ -86,7 +86,7 @@ function CancelarBoletoDialog({
             id="motivo-cancelamento"
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
-            placeholder="Ex.: valor incorreto — será reemitido com o valor certo"
+            placeholder="Ex.: valor incorreto, será reemitido com o valor certo"
             className="input min-h-20 w-full"
             maxLength={500}
             disabled={confirmando}
@@ -154,7 +154,7 @@ export function RecebiveisManager() {
     mutationFn: ({ boletoId, motivo }: { boletoId: string; motivo: string }) =>
       boletosService.cancelar(boletoId, motivo),
     onSuccess: () => {
-      toast('Boleto cancelado — um novo pode ser emitido para o resultado', 'success');
+      toast('Boleto cancelado. Um novo pode ser emitido para o resultado', 'success');
       setCancelando(null);
       void qc.invalidateQueries({ queryKey: ['recebiveis'] });
     },
@@ -162,7 +162,7 @@ export function RecebiveisManager() {
       if (e instanceof ApiClientError) {
         if (e.code === 'BOLETO_PAGO') {
           // Pagamento chegou entre a tela e o clique — a rota já sincronizou a baixa.
-          toast('Este boleto foi pago na Cora — baixa sincronizada, não é possível cancelar.', 'info');
+          toast('Este boleto foi pago na Cora. A baixa foi sincronizada, não é possível cancelar.', 'info');
           setCancelando(null);
           void qc.invalidateQueries({ queryKey: ['recebiveis'] });
           return;

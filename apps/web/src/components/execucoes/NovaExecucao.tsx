@@ -526,7 +526,7 @@ export function NovaExecucao() {
                       ))}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
-                    Este médico faz Outros Hospitais — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                    Este médico faz Outros Hospitais: produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
                   </p>
                 </div>
               )}
@@ -552,7 +552,7 @@ export function NovaExecucao() {
                       ))}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
-                    Este médico faz Imobilizações — produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                    Este médico faz Imobilizações: produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
                   </p>
                 </div>
               )}

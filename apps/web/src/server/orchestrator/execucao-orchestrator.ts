@@ -429,7 +429,7 @@ async function processarUmMedico(
       subtotais: [],
       totalValor: 0,
       status: 'alerta',
-      alertas: [`Falha ao buscar dados — tentar novamente. (${String(e)})`],
+      alertas: [`Falha ao buscar dados. Tentar novamente. (${String(e)})`],
     });
   }
 }
@@ -514,7 +514,7 @@ async function processarExecucaoClienteContabilidade(
         // precisa lançar o faturamento (Story 11.2) antes de gerar o boleto desta competência.
         return {
           valor: 0,
-          alertas: [`Faturamento não lançado para a competência ${competencia} — lance antes de gerar o boleto.`],
+          alertas: [`Faturamento não lançado para a competência ${competencia}. Lance antes de gerar o boleto.`],
           subtotalFaixa: '',
         };
       }
@@ -528,7 +528,7 @@ async function processarExecucaoClienteContabilidade(
   const status: ExecucaoResultado['status'] = resultado.alertas.length > 0 ? 'alerta' : 'ok';
 
   await deps.gravarResultadoClienteContabilidade(execucaoId, cliente.id, {
-    nome: ehAdicional ? `${cliente.nome} — Adicional semestral` : cliente.nome,
+    nome: ehAdicional ? `${cliente.nome} (Adicional semestral)` : cliente.nome,
     totalValor: resultado.valor,
     status,
     alertas: resultado.alertas,

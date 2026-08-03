@@ -143,7 +143,7 @@ export async function sincronizar(
       if (!status) {
         relatorio.naoSincronizaveis.push({
           cliente,
-          motivo: `production_type desconhecido ("${cliente.productionType}") — statusHapvida atual mantido`,
+          motivo: `production_type desconhecido ("${cliente.productionType}"), statusHapvida atual mantido`,
         });
         continue;
       }
@@ -175,7 +175,7 @@ export async function sincronizar(
     if (!status) {
       relatorio.naoSincronizaveis.push({
         cliente,
-        motivo: `production_type desconhecido ("${cliente.productionType}") — não é possível criar/vincular`,
+        motivo: `production_type desconhecido ("${cliente.productionType}"), não é possível criar/vincular`,
       });
       continue;
     }

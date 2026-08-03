@@ -391,7 +391,7 @@ function Grupo({
                   {r.statusOriginal === 'alerta' && (
                     <span
                       className="badge-amber"
-                      title={`${r.revisadoEm ? `Revisado em ${new Date(r.revisadoEm).toLocaleString('pt-BR')}` : 'Revisado manualmente'}${r.motivoRevisao ? ` — ${r.motivoRevisao}` : ''}`}
+                      title={`${r.revisadoEm ? `Revisado em ${new Date(r.revisadoEm).toLocaleString('pt-BR')}` : 'Revisado manualmente'}${r.motivoRevisao ? `. Motivo: ${r.motivoRevisao}` : ''}`}
                     >
                       Revisado manualmente
                     </span>
@@ -513,7 +513,7 @@ function AcaoRevisar({
       <textarea
         value={motivo}
         onChange={(e) => setMotivo(e.target.value)}
-        placeholder="Motivo da liberação (obrigatório) — ex.: confirmado com o médico, aumento real de produção."
+        placeholder="Motivo da liberação (obrigatório). Ex.: confirmado com o médico, aumento real de produção."
         aria-label="Motivo da liberação"
         rows={2}
         disabled={pending}

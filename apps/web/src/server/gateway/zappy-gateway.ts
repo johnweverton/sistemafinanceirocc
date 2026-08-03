@@ -32,7 +32,7 @@ export class ZappyGateway {
     }
     if (!env.ZAPPY_CONNECTION_ID) {
       throw new Error(
-        'Variável ZAPPY_CONNECTION_ID não configurada — obrigatória para o envio achar a ' +
+        'Variável ZAPPY_CONNECTION_ID não configurada. É obrigatória para o envio achar a ' +
           'conexão certa (ver GET /api/connections e o cabeçalho deste arquivo).',
       );
     }

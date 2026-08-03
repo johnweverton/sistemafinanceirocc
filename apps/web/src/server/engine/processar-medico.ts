@@ -110,16 +110,16 @@ export function processarMedico(
 
     if (percentual <= 0) {
       alertas.push(
-        'Modo percentual sem percentual configurado — valor zerado, corrigir cadastro do médico.',
+        'Modo percentual sem percentual configurado: valor zerado, corrigir cadastro do médico.',
       );
     }
     if (itensSemValor > 0) {
       alertas.push(
-        `${itensSemValor} item(ns) sem valor cobrado na origem — base do percentual SUBCONTADA, verificar.`,
+        `${itensSemValor} item(ns) sem valor cobrado na origem: base do percentual SUBCONTADA, verificar.`,
       );
     }
     if (base <= 0) {
-      alertas.push('Base de produção zerada — nenhum valor cobrado na origem, verificar.');
+      alertas.push('Base de produção zerada: nenhum valor cobrado na origem, verificar.');
     }
 
     // Arredonda para centavos: base × (percentual/100) com 2 casas.
@@ -174,7 +174,7 @@ export function processarMedico(
         }
       } else {
         alertas.push(
-          'Médico faz Outros Hospitais mas o lote separado de produção não foi selecionado nesta execução — guias de Outros Hospitais NÃO cobradas, selecionar a produção correspondente.',
+          'Médico faz Outros Hospitais mas o lote separado de produção não foi selecionado nesta execução. Guias de Outros Hospitais NÃO cobradas, selecionar a produção correspondente.',
         );
       }
     }
@@ -186,7 +186,7 @@ export function processarMedico(
         ).guias;
       } else {
         alertas.push(
-          'Médico faz Imobilizações mas o lote separado de produção não foi selecionado nesta execução — guias de Imobilizações NÃO cobradas, selecionar a produção correspondente.',
+          'Médico faz Imobilizações mas o lote separado de produção não foi selecionado nesta execução. Guias de Imobilizações NÃO cobradas, selecionar a produção correspondente.',
         );
       }
     }
@@ -209,7 +209,7 @@ export function processarMedico(
       // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.
       if (valor == null) {
         alertas.push(
-          `Classe ${classe} com ${guiasClasse} guias está FORA DA TABELA — faixa não definida, verificar.`,
+          `Classe ${classe} com ${guiasClasse} guias está FORA DA TABELA: faixa não definida, verificar.`,
         );
       }
     }

@@ -121,7 +121,7 @@ export async function atualizarClienteContabilidade(
   if (histErr) {
     throw new ApiError(
       500,
-      'Cliente contábil atualizado mas histórico falhou — verificar',
+      'Cliente contábil atualizado mas histórico falhou. Verificar',
       'HISTORICO_ERROR',
       { error: histErr.message },
     );

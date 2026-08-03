@@ -166,14 +166,14 @@ export async function validarResultadoParaEmissao(resultado: ResultadoParaEmissa
     condicoesPagador = medico.condicoes ?? null;
     contaEmissora = medico.contaEmissora;
   } else {
-    throw new ApiError(422, 'Resultado sem médico, empresa nem cliente contábil vinculado — não é possível cobrar', 'SEM_MEDICO');
+    throw new ApiError(422, 'Resultado sem médico, empresa nem cliente contábil vinculado. Não é possível cobrar', 'SEM_MEDICO');
   }
 
   // Guard: falhar cedo (aqui, não no Cora) se faltar o mínimo pra emitir (documento+nome).
   if (!cobrancaMinimaEmissao({ cobranca: cobrancaPagador })) {
     throw new ApiError(
       422,
-      `Dados de cobrança d${pagadorNomenclatura === 'empresa' ? 'a' : 'o'} ${pagadorNomenclatura} incompletos — complete antes de emitir o boleto.`,
+      `Dados de cobrança d${pagadorNomenclatura === 'empresa' ? 'a' : 'o'} ${pagadorNomenclatura} incompletos. Complete antes de emitir o boleto.`,
       'COBRANCA_INCOMPLETA',
       { faltantes: camposFaltantesCobranca(cobrancaPagador) },
     );

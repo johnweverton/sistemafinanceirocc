@@ -70,7 +70,7 @@ describe('SaldoEmpresas', () => {
     renderComProviders();
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
-    expect(screen.getByText('Saldo negativo — verificar lançamentos')).toBeInTheDocument();
+    expect(screen.getByText('Saldo negativo: verificar lançamentos')).toBeInTheDocument();
     expect(
       screen.getByText((t) => t.replace(/ /g, ' ') === '-R$ 150,32'),
     ).toBeInTheDocument();

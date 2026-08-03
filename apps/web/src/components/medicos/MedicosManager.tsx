@@ -110,7 +110,7 @@ export function MedicosManager() {
           'success',
         );
       } else {
-        toast(`Importação com ${resultado.erros.length} erro(s) — veja os detalhes`, 'info');
+        toast(`Importação com ${resultado.erros.length} erro(s). Veja os detalhes`, 'info');
       }
     },
     onError: (e) => {

@@ -122,7 +122,7 @@ function VincularBoletoDialog({
           <h2 className="text-lg font-bold text-cc-ink">Vincular boleto pago</h2>
           <p className="mt-1 text-sm text-cc-ink-2">
             Crédito de <strong>{brl(transacao.valor)}</strong> em {dataHora(transacao.dataTransacao)}
-            {transacao.contraparteNome ? <> — {transacao.contraparteNome}</> : null}. Selecione o
+            {transacao.contraparteNome ? <>, {transacao.contraparteNome}</> : null}. Selecione o
             boleto pago de {CONTA_EMISSORA_LABEL[conta]} correspondente.
           </p>
         </div>
@@ -233,7 +233,7 @@ function CategorizarDialog({
           <h2 className="text-lg font-bold text-cc-ink">Categorizar transação</h2>
           <p className="mt-1 text-sm text-cc-ink-2">
             <strong>{brl(transacao.valor)}</strong> em {dataHora(transacao.dataTransacao)}
-            {transacao.contraparteNome ? <> — {transacao.contraparteNome}</> : null}. Escolha a
+            {transacao.contraparteNome ? <>, {transacao.contraparteNome}</> : null}. Escolha a
             categoria do plano de contas.
           </p>
         </div>
@@ -242,7 +242,7 @@ function CategorizarDialog({
             <p className="text-sm text-cc-muted">Carregando plano de contas…</p>
           ) : porGrupo.length === 0 ? (
             <p className="text-sm text-cc-muted">
-              Nenhuma categoria ativa cadastrada — vá em Plano de contas para criar uma.
+              Nenhuma categoria ativa cadastrada. Vá em Plano de contas para criar uma.
             </p>
           ) : (
             porGrupo.map((g) => (
@@ -326,7 +326,7 @@ function SugestaoCard({
           </>
         ) : (
           <p className="text-sm text-cc-ink-2">
-            Mais de um boleto candidato — vincule manualmente o correto.
+            Mais de um boleto candidato. Vincule manualmente o correto.
           </p>
         )}
       </div>
@@ -395,7 +395,7 @@ export function ExtratoManager() {
     onError: (e) => {
       if (e instanceof ApiClientError && e.code === 'CONTA_NAO_CONFIGURADA') {
         toast(
-          `A conta ${CONTA_EMISSORA_LABEL[conta]} ainda não tem credenciais configuradas — o extrato dela fica disponível quando a integração for ativada.`,
+          `A conta ${CONTA_EMISSORA_LABEL[conta]} ainda não tem credenciais configuradas. O extrato dela fica disponível quando a integração for ativada.`,
           'info',
         );
         return;
@@ -414,7 +414,7 @@ export function ExtratoManager() {
     },
     onError: (e) => {
       if (e instanceof ApiClientError && e.code === 'BOLETO_JA_CONCILIADO') {
-        toast('Este boleto acabou de ser conciliado com outra transação — escolha outro.', 'info');
+        toast('Este boleto acabou de ser conciliado com outra transação. Escolha outro.', 'info');
         invalidar();
         return;
       }
@@ -447,7 +447,7 @@ export function ExtratoManager() {
     onSuccess: () => {
       // OBS-821 (gate 8.2): sem reclassificar, o próximo sync pode reconciliar o mesmo par.
       toast(
-        'Vínculo desfeito. Vincule o boleto correto ou ignore a transação — senão a próxima sincronização pode sugerir o mesmo par.',
+        'Vínculo desfeito. Vincule o boleto correto ou ignore a transação, senão a próxima sincronização pode sugerir o mesmo par.',
         'info',
       );
       invalidar();
