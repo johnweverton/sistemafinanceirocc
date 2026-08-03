@@ -52,6 +52,14 @@ export interface EntradaProcessamentoMedico {
   itensOutrosHospitais?: ItemProducao[];
   /** Mesmo mecanismo acima, para o lote de IMOBILIZACOES (Story 10.5). */
   itensImobilizacoes?: ItemProducao[];
+  /**
+   * Competência da execução (AAAA-MM) — Story 10.6. Usada SÓ para filtrar `itensOutrosHospitais`
+   * pelo mês real do item (`item.data`): na origem, "Outros Hospitais" não abre uma produção por
+   * mês como o lote principal, um único lote acumula vários meses. Opcional (comportamento
+   * pré-10.6 preservado quando ausente) — o orquestrador real sempre a informa; testes de
+   * unidade do Engine que não exercitam este filtro podem omitir.
+   */
+  competencia?: string;
 }
 
 /** Resultado puro do Engine — sem ids de banco (preenchidos pelo orquestrador ao persistir). */

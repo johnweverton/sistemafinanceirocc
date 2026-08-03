@@ -412,7 +412,7 @@ async function processarUmMedico(
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
     const resultado = processarMedico(
-      { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes },
+      { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes, competencia },
       undefined,
       valorConsultaPediatria,
     );

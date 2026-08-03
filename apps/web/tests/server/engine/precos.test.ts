@@ -140,6 +140,51 @@ describe('processarMedico — OUTROS_HOSPITAIS acima de 80, somado a Hapvida (St
       r.alertas.some((a) => a.includes('Outros Hospitais') && a.includes('não foi selecionado')),
     ).toBe(true);
   });
+
+  // Story 10.6 — na origem, "Outros Hospitais" não abre uma produção por mês como o lote
+  // principal: um único lote acumula vários meses. Sem filtrar por competência, um médico com
+  // 19 guias de abr/2026 + 5 de mar/2026 no MESMO lote seria cobrado por 24, não 19.
+  function itemComData(id: number, data: string): ItemProducao {
+    return { ...item(id), data };
+  }
+
+  it('lote de Outros Hospitais com itens de outra competência → ignora os de fora do mês e alerta, sem afetar Imobilizações (GATE do dono)', () => {
+    const itensPrincipal = Array.from({ length: 42 }, (_, i) => item(i));
+    const itensOutrosHospitais = [
+      ...Array.from({ length: 19 }, (_, i) => itemComData(1000 + i, '2026-04-15')), // competência certa
+      ...Array.from({ length: 5 }, (_, i) => itemComData(2000 + i, '2026-03-10')), // mês anterior, mesmo lote
+    ];
+    const itensImobilizacoes = [
+      ...Array.from({ length: 3 }, (_, i) => itemComData(3000 + i, '2026-04-20')),
+      ...Array.from({ length: 2 }, (_, i) => itemComData(4000 + i, '2026-02-01')), // GATE: Imobilizações NÃO filtra
+    ];
+
+    const r = processarMedico({
+      medico: {
+        id: 'marcel', cpf: '00000000005', nome: 'Dr. Marcel Rolim Queiroz',
+        statusHapvida: 'credenciado', fazOutrosHospitais: true,
+        fazImobilizacoes: true, modoMudancaData: 'nao', especialidade: 'Ortopedia',
+      } as any,
+      itens: itensPrincipal,
+      itensOutrosHospitais,
+      itensImobilizacoes,
+      competencia: '2026-04',
+    });
+
+    // OUTROS_HOSPITAIS conta só os 19 da competência certa (mesmo valor de ouro do caso Marcel
+    // acima), NÃO os 24 do lote inteiro.
+    expect(r.subtotais).toEqual([
+      expect.objectContaining({ classe: 'HAPVIDA_CRED', guias: 42, valor: 394.12 }),
+      expect.objectContaining({ classe: 'OUTROS_HOSPITAIS', guias: 19, valor: 172.2 }),
+      // Imobilizações NÃO filtra por competência (GATE do dono): conta os 5 itens do lote
+      // inteiro, incluindo o de fevereiro.
+      expect.objectContaining({ classe: 'IMOBILIZACOES', guias: 5 }),
+    ]);
+    expect(r.status).toBe('alerta');
+    expect(
+      r.alertas.some((a) => a.includes('5 item(ns)') && a.includes('Outros Hospitais') && a.includes('outra') && a.includes('competência')),
+    ).toBe(true);
+  });
 });
 
 describe('classesDoMedico (porte 1:1 do Python — ver TODO §11)', () => {

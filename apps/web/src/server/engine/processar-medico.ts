@@ -15,6 +15,7 @@ import {
   detectarModoProducao,
   contarConsultasProducao,
   isPediatra,
+  filtrarPorCompetencia,
 } from './contagem-producao';
 import { checar } from './conferencia';
 import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO, VALOR_CONSULTA_PEDIATRIA_PADRAO } from './precos';
@@ -35,7 +36,7 @@ export function processarMedico(
   tabela: TabelaPreco = TABELA_PRECO_PADRAO,
   valorConsultaPediatria: number = VALOR_CONSULTA_PEDIATRIA_PADRAO,
 ): ResultadoMedico {
-  const { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes } = entrada;
+  const { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes, competencia } = entrada;
   const { validos } = itensValidos(itens);
   const consultasValidas = itensConsultas ? itensValidos(itensConsultas).validos : [];
 
@@ -147,10 +148,24 @@ export function processarMedico(
     const guiasPorLoteSecundario: Partial<Record<Classe, number>> = {};
     if (medico.fazOutrosHospitais) {
       if (itensOutrosHospitais !== undefined) {
+        // Story 10.6: na origem, o lote de Outros Hospitais não abre uma produção por mês como
+        // o lote principal — um único lote acumula vários meses. Filtra pela competência da
+        // execução antes de contar (nunca chuta: itens de outro mês NÃO entram na contagem, e
+        // vira alerta informativo em vez de descarte silencioso). Sem `competencia` informada
+        // (testes de unidade do Engine), preserva o comportamento anterior à Story 10.6.
+        const { itensDaCompetencia, ignoradosPorCompetencia } = competencia
+          ? filtrarPorCompetencia(itensOutrosHospitais, competencia)
+          : { itensDaCompetencia: itensOutrosHospitais, ignoradosPorCompetencia: 0 };
         guiasPorLoteSecundario.OUTROS_HOSPITAIS = contarGuiasProducao(
-          itensOutrosHospitais,
+          itensDaCompetencia,
           medico.especialidade,
         ).guias;
+        if (ignoradosPorCompetencia > 0) {
+          alertas.push(
+            `${ignoradosPorCompetencia} item(ns) do lote de Outros Hospitais são de outra ` +
+              'competência (mês diferente do desta execução) e foram ignorados na contagem.',
+          );
+        }
       } else {
         alertas.push(
           'Médico faz Outros Hospitais mas o lote separado de produção não foi selecionado nesta execução — guias de Outros Hospitais NÃO cobradas, selecionar a produção correspondente.',

@@ -101,6 +101,28 @@ export function contarConsultasProducao(itens: ItemProducao[]): number {
   return itensValidos(itens).validos.length;
 }
 
+/**
+ * Filtra os itens de um lote que agregue várias competências dentro do mesmo id de produção
+ * (Story 10.6 — "Outros Hospitais" na origem não abre uma produção por mês, como o lote
+ * principal; um único lote acumula meses diferentes). Compara `item.data` (AAAA-MM-DD) com a
+ * competência da execução (AAAA-MM) — item sem `data` passa direto (é tratado à parte por
+ * `itensValidos`, não é um descarte por competência). Devolve também quantos itens foram
+ * descartados por serem de outro mês, para o alerta "nunca chuta" informar o operador.
+ */
+export function filtrarPorCompetencia(
+  itens: ItemProducao[],
+  competencia: string,
+): { itensDaCompetencia: ItemProducao[]; ignoradosPorCompetencia: number } {
+  let ignoradosPorCompetencia = 0;
+  const itensDaCompetencia = itens.filter((item) => {
+    if (!item.data || item.data.trim() === '') return true;
+    if (item.data.slice(0, 7) === competencia) return true;
+    ignoradosPorCompetencia++;
+    return false;
+  });
+  return { itensDaCompetencia, ignoradosPorCompetencia };
+}
+
 export function isPediatra(especialidade?: string | null): boolean {
   if (!especialidade) return false;
   const esp = especialidade.toLowerCase();
