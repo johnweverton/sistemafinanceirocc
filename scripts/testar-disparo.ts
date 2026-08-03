@@ -7,7 +7,7 @@
 //   npx tsx scripts/testar-disparo.ts --pdf "https://...boleto.pdf" --whatsapp "5585999999999" --email "voce@exemplo.com" --nome "John Weverton"
 //
 // Requer um .env.production na raiz (mesmo padrão de scripts/check-boleto.ts) com:
-//   ZAPPY_API_URL, ZAPPY_API_TOKEN, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+//   ZAPPY_API_URL, ZAPPY_API_TOKEN, ZAPPY_CONNECTION_ID, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
 import * as fs from 'fs';
 import nodemailer from 'nodemailer';
 
@@ -51,8 +51,8 @@ async function testarWhatsapp() {
   if (!whatsapp) return;
   console.log(`\n[WhatsApp] Testando envio para ${whatsapp}...`);
 
-  if (!env.ZAPPY_API_URL || !env.ZAPPY_API_TOKEN) {
-    console.error('[WhatsApp] ZAPPY_API_URL ou ZAPPY_API_TOKEN ausentes no .env.production.');
+  if (!env.ZAPPY_API_URL || !env.ZAPPY_API_TOKEN || !env.ZAPPY_CONNECTION_ID) {
+    console.error('[WhatsApp] ZAPPY_API_URL, ZAPPY_API_TOKEN ou ZAPPY_CONNECTION_ID ausentes no .env.production.');
     return;
   }
 
@@ -64,12 +64,12 @@ async function testarWhatsapp() {
   const conteudo = await download.blob();
 
   const form = new FormData();
-  form.set('number', normalizarNumero(whatsapp));
-  form.set('body', 'Teste de disparo — segue o boleto para conferência.');
-  form.set('medias', conteudo, 'boleto.pdf');
+  form.set('media', conteudo, 'boleto.pdf');
+  form.set('caption', 'Teste de disparo — segue o boleto para conferência.');
+  form.set('connectionFrom', env.ZAPPY_CONNECTION_ID);
 
   const apiUrl = env.ZAPPY_API_URL.replace(/\/$/, '');
-  const response = await fetch(`${apiUrl}/api/messages/send`, {
+  const response = await fetch(`${apiUrl}/api/send/document/${normalizarNumero(whatsapp)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.ZAPPY_API_TOKEN}` },
     body: form,

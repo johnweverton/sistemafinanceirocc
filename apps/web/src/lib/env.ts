@@ -82,6 +82,11 @@ const serverSchema = z.object({
   // ---------------------------------------------------------------------------
   ZAPPY_API_URL: z.string().url().optional(),
   ZAPPY_API_TOKEN: z.string().optional(),
+  // Id da conexão (Whaticket) a usar no envio — o suporte da Zappy confirmou (2026-08-03) que o
+  // endpoint de envio deve SEMPRE informar `connectionFrom` explicitamente; deixar a API resolver
+  // sozinha a conexão padrão foi o que causava ERR_NO_CONNECTED_CONNECTION_WAS_FOUND. Ver
+  // `GET /api/connections` para obter o id (ex.: "CARMEM CAVALCANTE" = 6 em produção).
+  ZAPPY_CONNECTION_ID: z.string().regex(/^\d+$/).transform(Number).optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.string().regex(/^\d+$/).transform(Number).optional(),
   SMTP_USER: z.string().optional(),
@@ -127,6 +132,7 @@ export function getServerEnv() {
     CORA_CV_WEBHOOK_SECRET: process.env.CORA_CV_WEBHOOK_SECRET,
     ZAPPY_API_URL: process.env.ZAPPY_API_URL,
     ZAPPY_API_TOKEN: process.env.ZAPPY_API_TOKEN,
+    ZAPPY_CONNECTION_ID: process.env.ZAPPY_CONNECTION_ID,
     SMTP_HOST: process.env.SMTP_HOST,
     SMTP_PORT: process.env.SMTP_PORT,
     SMTP_USER: process.env.SMTP_USER,
