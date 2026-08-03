@@ -38,6 +38,7 @@ function medicoPrecoProprio(
     modoCobranca: 'preco_proprio',
     percentualProducao: null,
     regraPreco,
+    semExcedentePorGuia: false,
   };
 }
 
@@ -173,6 +174,7 @@ describe('processarMedico — regressão: médico sem override (Story 10.1)', ()
       modoCobranca: 'faixa_guias',
       percentualProducao: null,
       regraPreco: null,
+      semExcedentePorGuia: false,
     };
     const comRegraOrfa: EntradaProcessamentoMedico['medico'] = {
       ...medicoBase,

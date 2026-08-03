@@ -18,7 +18,13 @@ import {
   filtrarPorCompetencia,
 } from './contagem-producao';
 import { checar } from './conferencia';
-import { classesDoMedico, valorDaFaixa, TABELA_PRECO_PADRAO, VALOR_CONSULTA_PEDIATRIA_PADRAO } from './precos';
+import {
+  classesDoMedico,
+  valorDaFaixa,
+  tabelaSemExcedentePorGuia,
+  TABELA_PRECO_PADRAO,
+  VALOR_CONSULTA_PEDIATRIA_PADRAO,
+} from './precos';
 import { aplicarRegraPreco } from './regra-preco';
 
 /**
@@ -192,7 +198,12 @@ export function processarMedico(
         // Lote separado não informado (alerta já registrado acima) — nunca chuta valor.
         continue;
       }
-      const { valor, faixa } = valorDaFaixa(tabela[classe], guiasClasse);
+      // Story 10.7: contrato antigo sem excedente por guia (Dr. Adilson) — mesma tabela/faixas
+      // de todo mundo, só capa no teto da última faixa em vez de somar por guia acima dele.
+      const tabelaClasse = medico.semExcedentePorGuia
+        ? tabelaSemExcedentePorGuia(tabela[classe])
+        : tabela[classe];
+      const { valor, faixa } = valorDaFaixa(tabelaClasse, guiasClasse);
       subtotais.push({ classe, guias: guiasClasse, valor: valor ?? 0, faixa });
       totalValor += valor ?? 0;
       // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.

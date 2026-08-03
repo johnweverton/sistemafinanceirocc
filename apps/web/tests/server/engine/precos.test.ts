@@ -1,7 +1,7 @@
 // Testes da tabela de preço (PRD §5.1) — faixas, excedente e o caso FORA DA TABELA (§11).
 import { describe, it, expect } from 'vitest';
 import type { ItemProducao } from '@cobranca/shared';
-import { valorDaFaixa, classesDoMedico, TABELA_PRECO_PADRAO } from '../../../src/server/engine';
+import { valorDaFaixa, classesDoMedico, tabelaSemExcedentePorGuia, TABELA_PRECO_PADRAO } from '../../../src/server/engine';
 import { processarMedico } from '../../../src/server/engine/processar-medico';
 
 describe('valorDaFaixa — HAPVIDA_CRED', () => {
@@ -184,6 +184,75 @@ describe('processarMedico — OUTROS_HOSPITAIS acima de 80, somado a Hapvida (St
     expect(
       r.alertas.some((a) => a.includes('5 item(ns)') && a.includes('Outros Hospitais') && a.includes('outra') && a.includes('competência')),
     ).toBe(true);
+  });
+});
+
+describe('tabelaSemExcedentePorGuia (Story 10.7 — Dr. Adilson, contrato antigo)', () => {
+  it('HAPVIDA_CRED (excedente por_guia) → vira fixo no valor da última faixa', () => {
+    const t = tabelaSemExcedentePorGuia(TABELA_PRECO_PADRAO.HAPVIDA_CRED);
+    expect(t.excedente).toEqual({ tipo: 'fixo', valorFixo: 950.89 });
+    expect(t.faixas).toBe(TABELA_PRECO_PADRAO.HAPVIDA_CRED.faixas); // faixas inalteradas
+  });
+  it('OUTROS_HOSPITAIS (já fixo) → idempotente, sem mudança', () => {
+    const t = tabelaSemExcedentePorGuia(TABELA_PRECO_PADRAO.OUTROS_HOSPITAIS);
+    expect(t).toBe(TABELA_PRECO_PADRAO.OUTROS_HOSPITAIS);
+  });
+});
+
+describe('processarMedico — contrato sem excedente por guia (Story 10.7, Dr. Adilson)', () => {
+  function itemSimples(id: number): ItemProducao {
+    return {
+      data: '2026-06-01',
+      pacienteNome: `Paciente ${id}`,
+      atendimentoExternoId: null,
+      codigoProcedimento: '31309054',
+      descricaoProcedimento: 'Procedimento teste',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    };
+  }
+
+  const medicoBase = {
+    id: 'adilson', cpf: '00000000006', nome: 'Dr. Adilson Pontes da Rocha Filho',
+    statusHapvida: 'credenciado' as const, fazOutrosHospitais: false,
+    fazImobilizacoes: false, modoMudancaData: 'nao' as const, especialidade: 'Cirurgião Geral',
+    modoCobranca: 'faixa_guias' as const, percentualProducao: null, regraPreco: null,
+  };
+
+  it('200 guias, semExcedentePorGuia=false (padrão) → 950,89 + 20×6 = 1070,89 (comportamento normal)', () => {
+    const r = processarMedico({
+      medico: { ...medicoBase, semExcedentePorGuia: false } as any,
+      itens: Array.from({ length: 200 }, (_, i) => itemSimples(i)),
+    });
+    expect(r.subtotais).toEqual([
+      expect.objectContaining({ classe: 'HAPVIDA_CRED', guias: 200, valor: 950.89 + 20 * 6 }),
+    ]);
+    expect(r.status).toBe('ok');
+  });
+
+  it('200 guias, semExcedentePorGuia=true (Dr. Adilson) → capa em 950,89, sem excedente por guia', () => {
+    const r = processarMedico({
+      medico: { ...medicoBase, semExcedentePorGuia: true } as any,
+      itens: Array.from({ length: 200 }, (_, i) => itemSimples(i)),
+    });
+    expect(r.subtotais).toEqual([
+      expect.objectContaining({ classe: 'HAPVIDA_CRED', guias: 200, valor: 950.89 }),
+    ]);
+    expect(r.totalValor).toBeCloseTo(950.89, 2);
+    expect(r.status).toBe('ok');
+  });
+
+  it('semExcedentePorGuia=true com 150 guias (dentro da faixa) → segue a MESMA tabela padrão normalmente', () => {
+    const r = processarMedico({
+      medico: { ...medicoBase, semExcedentePorGuia: true } as any,
+      itens: Array.from({ length: 150 }, (_, i) => itemSimples(i)),
+    });
+    expect(r.subtotais).toEqual([
+      expect.objectContaining({ classe: 'HAPVIDA_CRED', guias: 150, valor: 775.33 }),
+    ]);
   });
 });
 

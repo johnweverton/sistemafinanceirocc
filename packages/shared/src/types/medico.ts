@@ -111,6 +111,15 @@ export interface Medico {
   percentualProducao: number | null;
   /** Regra de preço própria (Story 10.1). Obrigatória quando modoCobranca = 'preco_proprio'. */
   regraPreco: RegraPreco | null;
+  /**
+   * Contrato sem excedente por guia (Story 10.7 — Dr. Adilson, contrato antigo): quando true, o
+   * motor aplica a MESMA tabela de faixas padrão (`modoCobranca = 'faixa_guias'`), mas capa no
+   * valor da última faixa em vez de somar o excedente por guia acima do teto (mesmo padrão já
+   * usado por OUTROS_HOSPITAIS/IMOBILIZACOES na Story 10.3, agora por médico). Default false —
+   * não afeta nenhum médico existente. Diferente de `regraPreco`/`preco_proprio` (Story 10.1),
+   * que substitui a tabela inteira; aqui a tabela/faixas continuam as mesmas, só o excedente muda.
+   */
+  semExcedentePorGuia: boolean;
   /** Conta Cora que emite os boletos deste médico (Épico 7). Backfill: 'mc'. */
   contaEmissora: ContaEmissora;
   colaboradorResponsavel: string | null;

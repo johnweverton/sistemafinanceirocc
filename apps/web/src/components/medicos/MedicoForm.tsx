@@ -46,6 +46,7 @@ const VAZIO: FormState = {
   modoCobranca: 'faixa_guias',
   percentualProducao: null,
   regraPreco: null,
+  semExcedentePorGuia: false,
   contaEmissora: '', // escolha explícita obrigatória em médicos novos
   colaboradorResponsavel: null,
   ativo: true,
@@ -105,6 +106,7 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           modoCobranca: inicial.modoCobranca,
           percentualProducao: inicial.percentualProducao,
           regraPreco: inicial.regraPreco,
+          semExcedentePorGuia: inicial.semExcedentePorGuia,
           contaEmissora: inicial.contaEmissora, // existentes exibem o backfill ('mc')
           colaboradorResponsavel: inicial.colaboradorResponsavel,
           ativo: inicial.ativo,
@@ -481,6 +483,14 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           onChange={(v) => set('ativo', v)}
           label="Médico ativo"
         />
+        {form.modoCobranca === 'faixa_guias' && (
+          <CheckField
+            name="semExcedentePorGuia"
+            checked={form.semExcedentePorGuia}
+            onChange={(v) => set('semExcedentePorGuia', v)}
+            label="Tabela padrão | sem excedente por guia"
+          />
+        )}
       </div>
 
       {/* Tipo calculado */}

@@ -92,6 +92,8 @@ export interface MedicoRow {
   conta_emissora?: Medico['contaEmissora'] | null;
   /** Vínculo com empresa de agrupamento (migration 0028, Story 10.4a) — opcional pré-migration. */
   empresa_grupo_id?: string | null;
+  /** Contrato sem excedente por guia (migration 0039, Story 10.7) — opcional pré-migration. */
+  sem_excedente_por_guia?: boolean | null;
   colaborador_responsavel: string | null;
   ativo: boolean;
   necessita_configuracao: boolean;
@@ -192,6 +194,7 @@ export function toMedico(row: MedicoRow): Medico {
     cobranca: toDadosCobranca(row),
     condicoes: toCondicoes(row),
     empresaGrupoId: row.empresa_grupo_id ?? null,
+    semExcedentePorGuia: row.sem_excedente_por_guia ?? false, // default seguro pré-migration 0039
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -238,6 +241,7 @@ export function medicoUpdateToRow(dados: Partial<Medico>): Partial<MedicoRow> {
     ativo: 'ativo',
     necessitaConfiguracao: 'necessita_configuracao',
     empresaGrupoId: 'empresa_grupo_id',
+    semExcedentePorGuia: 'sem_excedente_por_guia',
   };
   const row: Partial<MedicoRow> = {};
   for (const [campo, valor] of Object.entries(dados)) {

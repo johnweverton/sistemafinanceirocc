@@ -98,6 +98,20 @@ export function valorDaFaixa(
 }
 
 /**
+ * Aplica o contrato "sem excedente por guia" (Story 10.7 — Dr. Adilson, contrato antigo) a
+ * uma tabela de classe: troca o excedente 'por_guia' por 'fixo' no valor da última faixa,
+ * capando no teto em vez de somar por guia acima dele (mesmo padrão já usado por
+ * OUTROS_HOSPITAIS/IMOBILIZACOES na Story 10.3, agora por médico). Tabelas já 'fixo' ficam
+ * inalteradas — idempotente, seguro chamar mesmo em classes que não usam excedente por guia.
+ */
+export function tabelaSemExcedentePorGuia(tabela: TabelaPrecoClasse): TabelaPrecoClasse {
+  if (tabela.excedente?.tipo !== 'por_guia') return tabela;
+  const ultima = tabela.faixas[tabela.faixas.length - 1];
+  if (!ultima) return tabela;
+  return { ...tabela, excedente: { tipo: 'fixo', valorFixo: ultima.valor } };
+}
+
+/**
  * Determina as classes de um médico (PRD §5.1, §5.5).
  *
  * PORTE 1:1 de classes_do_medico() do Python (spec executável validada):

@@ -57,6 +57,8 @@ export interface NovoMedicoPayload {
   condicoes?: CondicoesCobranca | null;
   /** Empresa de agrupamento — opcional, null = produção 100% individual. */
   empresaGrupoId?: string | null;
+  /** Contrato sem excedente por guia (Story 10.7) — capa no teto da faixa, sem cobrar por guia acima dele. */
+  semExcedentePorGuia: boolean;
 }
 
 export type AtualizarMedicoPayload = Partial<NovoMedicoPayload> & {

@@ -36,6 +36,7 @@ function medicoPercentual(
     modoCobranca: 'percentual_producao',
     percentualProducao: percentual,
     regraPreco: null,
+    semExcedentePorGuia: false,
   };
 }
 

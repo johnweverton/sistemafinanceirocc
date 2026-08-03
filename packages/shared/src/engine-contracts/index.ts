@@ -33,6 +33,7 @@ export interface EntradaProcessamentoMedico {
     | 'modoCobranca'
     | 'percentualProducao'
     | 'regraPreco'
+    | 'semExcedentePorGuia'
   >;
   itens: ItemProducao[];
   /** Guias da execução anterior do mesmo médico, p/ detecção de variação anômala (PRD §8.5). */

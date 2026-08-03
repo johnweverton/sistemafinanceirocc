@@ -141,6 +141,7 @@ export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; no
     modoCobranca: 'faixa_guias',
     percentualProducao: null,
     regraPreco: null,
+    semExcedentePorGuia: false,
     contaEmissora: 'mc',
     colaboradorResponsavel: null,
     ativo: true,

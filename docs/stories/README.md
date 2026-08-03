@@ -372,6 +372,7 @@ confirmada pelo dono); estas stories cobrem só o que sobrou.
 | 10.4c | Emissão de boleto por empresa | D2 | **Done** — @qa PASS 2026-07-20 (achado QA-104C-1 corrigido) | branch na rota de emissão, UI de nova execução por empresa |
 | 10.5 | Lote separado para Outros Hospitais/Imobilizações (corrige dupla contagem) | Nova (reportada 2026-07-29) | **Done** — revisão própria PASS, sem achados | motor reaproveitava a MESMA contagem de guias do lote principal para OUTROS_HOSPITAIS/IMOBILIZACOES (bug real: Dr. Marcel R$652,42 → correto R$566,32); agora cada classe conta seu próprio lote (mesmo padrão da 10.2) |
 | 10.6 | Filtro por competência no lote de Outros Hospitais | Nova (reportada 2026-07-31) | **Done** — revisão própria PASS, sem achados | lote de Outros Hospitais acumula vários meses na origem (não abre produção por mês como o principal); motor contava o lote inteiro em vez de só a competência da execução — agora filtra por `data` do item, excluindo e alertando os de outro mês (Imobilizações não filtra, GATE do dono) |
+| 10.7 | Contrato sem excedente por guia (Dr. Adilson) | Nova (reportada 2026-08-03) | **Done** — revisão própria PASS, sem achados | contrato antigo do Dr. Adilson não previa excedente de R$6/guia acima do teto; campo novo no cadastro (`semExcedentePorGuia`) faz o motor capar na última faixa em vez de somar por guia, sem tocar na tabela padrão nem em outros médicos |
 
 10.1–10.4c estão `Done` (gates em `docs/qa/gates/`). A 10.4 nasceu durante a GATE da 10.1:
 Nefrologia/guias cardíacas não são override de médico, são produção de vários médicos agrupada e
@@ -395,7 +396,13 @@ execução — para Outros Hospitais isso é bug real porque a origem acumula v�
 lote (diferente do principal, que já vem por mês). Ver
 `docs/stories/10.6.filtro-competencia-outros-hospitais.story.md`.
 
-**Próximo passo:** épico 10 concluído (novamente) — @devops publica (commit + push) a 10.6.
+A 10.7 (2026-08-03) é uma feature nova, não bug: o Dr. Adilson tem contrato antigo sem a
+cobrança de excedente por guia acima do teto — campo novo no cadastro do médico
+(`semExcedentePorGuia`) faz o motor capar na última faixa da tabela padrão em vez de somar por
+guia, sem duplicar a tabela nem usar o mecanismo de `regraPreco` (Story 10.1, que substituiria a
+tabela inteira). Ver `docs/stories/10.7.contrato-sem-excedente-por-guia.story.md`.
+
+**Próximo passo:** épico 10 concluído (novamente) — @devops publica (commit + push) a 10.7.
 
 ## Fora de escopo
 - D1 (>180 guias) e D5 (reajuste dez/2025): resolvidos, sem trabalho.

@@ -154,6 +154,10 @@ export const novoMedicoSchema = z
     condicoes: condicoesCobrancaSchema.nullable().optional(),
     // Vínculo com empresa de agrupamento (Story 10.4a) — opcional, null = sem vínculo.
     empresaGrupoId: z.string().uuid().nullable().optional().default(null),
+    // Contrato sem excedente por guia (Story 10.7) — capa na última faixa em vez de somar
+    // excedente por guia acima do teto; tabela/faixas continuam as mesmas (não confundir com
+    // regraPreco/preco_proprio, que substitui a tabela inteira).
+    semExcedentePorGuia: z.boolean().default(false),
   })
   .refine(percentualCoerente, { message: MSG_PERCENTUAL, path: ['percentualProducao'] })
   .refine(regraPrecoCoerente, { message: MSG_REGRA_PRECO, path: ['regraPreco'] });
@@ -177,6 +181,7 @@ export const atualizarMedicoSchema = z
     cobranca: dadosCobrancaSchema.nullable().optional(),
     condicoes: condicoesCobrancaSchema.nullable().optional(),
     empresaGrupoId: z.string().uuid().nullable().optional(),
+    semExcedentePorGuia: z.boolean().optional(),
     motivo: z.string().min(1, 'Motivo é obrigatório para alterar um médico'),
   })
   .strict()

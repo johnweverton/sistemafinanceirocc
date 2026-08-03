@@ -61,6 +61,7 @@ function pediatra(overrides: Partial<EntradaProcessamentoMedico['medico']> = {})
     modoCobranca: 'faixa_guias',
     percentualProducao: null,
     regraPreco: null,
+    semExcedentePorGuia: false,
     ...overrides,
   };
 }
