@@ -94,9 +94,10 @@ export class ZappyGateway {
    * cabeçalho do arquivo) — a API não busca URLs remotas por conta própria neste endpoint.
    * @param to Número de destino (ex: 5585999999999) ou ID do grupo
    * @param url URL pública do documento PDF
-   * @param legenda Texto que acompanha o documento (caption)
+   * @param legenda Texto que acompanha o documento (caption) — ver `montarLegendaWhatsapp` em
+   *   mensagem-boleto.ts para o texto padrão de disparo de boleto.
    */
-  async enviarDocumentoPorUrl(to: string, url: string, legenda = 'Segue o boleto para pagamento.') {
+  async enviarDocumentoPorUrl(to: string, url: string, legenda: string) {
     const download = await fetch(url);
     if (!download.ok) {
       throw new Error(`Falha ao baixar o documento para envio (${download.status}): ${url}`);

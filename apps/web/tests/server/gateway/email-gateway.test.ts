@@ -1,5 +1,7 @@
-// Teste do remetente por conta emissora (Story 7.2, AC 6): o e-mail que entrega o boleto
-// deve sair assinado pela EMPRESA que emitiu (MC / Cavalcante Viana) — nunca um nome fixo.
+// Teste do texto da mensagem de boleto (GATE do dono, 2026-08-04): a mensagem sempre assina
+// como "Carmem Cavalcante Contabilidade", saudação usa "Dr(a). {nome}" e inclui a data de
+// vencimento formatada em DD/MM/AAAA. Substitui a regra anterior da Story 7.2 (assinar pela
+// conta emissora MC/Cavalcante Viana) — decisão consciente do dono, não regressão.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/env', () => ({
@@ -17,6 +19,7 @@ vi.mock('nodemailer', () => ({
 }));
 
 import { EmailGateway } from '@/server/gateway/email-gateway';
+import { saudacaoPagador, montarLegendaWhatsapp, formatarDataBR } from '@/server/gateway/mensagem-boleto';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -30,21 +33,40 @@ beforeEach(() => {
   );
 });
 
-describe('EmailGateway.enviarBoleto — remetente por conta emissora', () => {
-  it('conta mc → from/subject/corpo assinados como "MC"', async () => {
-    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr. Teste', 'https://pdf/x', 'mc');
+describe('EmailGateway.enviarBoleto — sempre assina Carmem Cavalcante Contabilidade', () => {
+  it('inclui saudação, vencimento formatado e assinatura fixa, independente de qual conta emitiu', async () => {
+    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x');
     const mail = mockSendMail.mock.calls[0]![0] as { from: string; subject: string; html: string };
-    expect(mail.from).toContain('"MC"');
-    expect(mail.subject).toContain('MC');
-    expect(mail.html).toContain('MC');
+    expect(mail.from).toContain('"Carmem Cavalcante Contabilidade"');
+    expect(mail.subject).toContain('Carmem Cavalcante Contabilidade');
+    expect(mail.html).toContain('Carmem Cavalcante Contabilidade');
+    expect(mail.html).toContain('Dr(a). Fulano de Tal');
+    expect(mail.html).toContain('15/08/2026');
   });
+});
 
-  it('conta cavalcante_viana → assinada como "Cavalcante Viana" (nunca nome fixo)', async () => {
-    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr. Teste', 'https://pdf/x', 'cavalcante_viana');
-    const mail = mockSendMail.mock.calls[0]![0] as { from: string; subject: string; html: string };
-    expect(mail.from).toContain('"Cavalcante Viana"');
-    expect(mail.subject).toContain('Cavalcante Viana');
-    expect(mail.html).toContain('Cavalcante Viana');
-    expect(mail.from).not.toContain('Carmem Contabilidade');
+describe('saudacaoPagador (mensagem-boleto.ts)', () => {
+  it('médico (PF) → "Dr(a). {nome}"', () => {
+    expect(saudacaoPagador({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' })).toBe('Dr(a). John Weverton');
+  });
+  it('empresa/cliente contábil (PJ) → só o nome/razão social, sem "Dr."', () => {
+    expect(saudacaoPagador({ pagadorTipo: 'PJ', pagadorNome: 'Clínica XYZ Ltda' })).toBe('Clínica XYZ Ltda');
+  });
+});
+
+describe('formatarDataBR (mensagem-boleto.ts)', () => {
+  it('AAAA-MM-DD → DD/MM/AAAA', () => {
+    expect(formatarDataBR('2026-08-15')).toBe('15/08/2026');
+  });
+});
+
+describe('montarLegendaWhatsapp (mensagem-boleto.ts)', () => {
+  it('monta a legenda com saudação, vencimento e assinatura, no formato pedido pelo dono', () => {
+    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' }, '2026-08-15');
+    expect(legenda).toBe(
+      'Olá, Dr(a). John Weverton!\n' +
+        'Segue abaixo o boleto da cobrança médica com o vencimento para 15/08/2026.\n\n' +
+        'At.te\nCarmem Cavalcante Contabilidade',
+    );
   });
 });

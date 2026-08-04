@@ -42,6 +42,7 @@ import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
 import { ZappyGateway } from '@/server/gateway/zappy-gateway';
 import { EmailGateway } from '@/server/gateway/email-gateway';
 import { calcularVencimento } from '@/server/gateway/vencimento';
+import { saudacaoPagador, montarLegendaWhatsapp } from '@/server/gateway/mensagem-boleto';
 import { reservarBoleto, finalizarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { registrarDisparo } from '@/server/repositories/boleto-disparo-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
@@ -319,7 +320,7 @@ export async function emitirBoletoParaResultado(
         if (cobranca.whatsapp) {
           try {
             const zappy = new ZappyGateway();
-            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl);
+            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!));
             await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
           } catch (err: any) {
             await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
@@ -331,7 +332,7 @@ export async function emitirBoletoParaResultado(
         if (cobranca.email) {
           try {
             const emailGtw = new EmailGateway();
-            await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl, contaEmissora);
+            await emailGtw.enviarBoleto(cobranca.email, saudacaoPagador(cobranca), boleto.vencimento!, pdfUrl);
             await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
           } catch (err: any) {
             await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

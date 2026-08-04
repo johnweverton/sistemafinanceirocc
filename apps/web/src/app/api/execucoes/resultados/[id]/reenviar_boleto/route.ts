@@ -6,6 +6,7 @@ import { registrarDisparo } from '@/server/repositories/boleto-disparo-repositor
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ZappyGateway } from '@/server/gateway/zappy-gateway';
 import { EmailGateway } from '@/server/gateway/email-gateway';
+import { saudacaoPagador, montarLegendaWhatsapp } from '@/server/gateway/mensagem-boleto';
 import { buscarMedico } from '@/server/repositories/medico-repository';
 
 export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) => {
@@ -54,7 +55,7 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
       if (cobranca.whatsapp) {
         try {
           const zappy = new ZappyGateway();
-          await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl);
+          await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!));
           await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
         } catch (err: any) {
           await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
@@ -66,9 +67,7 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
       if (cobranca.email) {
         try {
           const emailGtw = new EmailGateway();
-          // Conta do BOLETO (Story 7.2): reenvio de boleto existente é assinado pela
-          // empresa que o emitiu, mesmo se o médico trocou de conta depois.
-          await emailGtw.enviarBoleto(cobranca.email, cobranca.pagadorNome, pdfUrl, boleto.contaEmissora);
+          await emailGtw.enviarBoleto(cobranca.email, saudacaoPagador(cobranca), boleto.vencimento!, pdfUrl);
           await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
         } catch (err: any) {
           await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
