@@ -1,9 +1,9 @@
 // POST /api/webhooks/cora/[secret] — recebe o webhook de pagamento do Cora e dá baixa no boleto.
 // Rota PÚBLICA (sem sessão; excluída do middleware). Segurança em profundidade (Épico 4, §3/§5.2/§7):
 //   1. secret no path comparado em tempo constante contra o secret de CADA conta emissora
-//      (Story 7.2): MC (CORA_MC_WEBHOOK_SECRET ?? CORA_WEBHOOK_SECRET legado) e CV
-//      (CORA_CV_WEBHOOK_SECRET). Qualquer match autentica; a conta da RECONSULTA não vem
-//      do secret — vem do boleto (ver 3).
+//      configurada (Story 7.2, ampliado 2026-08-03 para N contas via CONTAS_EMISSORAS —
+//      contas sem credenciais são ignoradas). Qualquer match autentica; a conta da RECONSULTA
+//      não vem do secret — vem do boleto (ver 3).
 //   2. idempotência via boleto_eventos.evento_id (reentrega do Cora não reprocessa).
 //   3. RECONSULTA na API Cora (consultarInvoice) — fonte da verdade; NUNCA confia no corpo.
 //      A conta usada é a GRAVADA NO BOLETO (boletos.conta_emissora, arquitetura §2-D3);
@@ -11,7 +11,8 @@
 //      saber a conta) — fica logado em boleto_eventos para investigação, como antes.
 //   4. sempre responde 200 (exceto 401 de secret inválido) para não gerar tempestade de retries.
 import { timingSafeEqual } from 'node:crypto';
-import { getServerEnv } from '@/lib/env';
+import { getCredenciaisConta } from '@/lib/env';
+import { CONTAS_EMISSORAS } from '@/server/gateway/contas-emissoras';
 import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
 import {
   registrarEvento,
@@ -20,6 +21,22 @@ import {
 } from '@/server/repositories/boleto-repository';
 import { logAuthFailure, logSecurityError, logWebhookReceived } from '@/lib/security-logger';
 import type { StatusBoleto } from '@cobranca/shared';
+
+/** Webhook secrets de todas as contas CONFIGURADAS (contas sem credenciais são ignoradas —
+ *  mesma degradação por conta do resto do gateway). Lido a cada request: env não muda em
+ *  runtime, o custo é resolver poucas vars, e evita cache furado por hot-reload em dev. */
+function secretsConfigurados(): string[] {
+  const secrets: string[] = [];
+  for (const conta of Object.keys(CONTAS_EMISSORAS) as (keyof typeof CONTAS_EMISSORAS)[]) {
+    try {
+      const { webhookSecret } = getCredenciaisConta(conta);
+      if (webhookSecret) secrets.push(webhookSecret);
+    } catch {
+      // Conta sem credenciais configuradas — não participa da autenticação do webhook.
+    }
+  }
+  return secrets;
+}
 
 /** Comparação em tempo constante de dois segredos (evita timing attack). */
 function segredosBatem(recebido: string | undefined, esperado: string): boolean {
@@ -83,15 +100,12 @@ function extrairEvento(body: unknown): { idExterno: string | null; eventoId: str
 let avisouSecretsIguais = false;
 
 export async function POST(req: Request, { params }: { params: { secret: string } }) {
-  const env = getServerEnv();
-  // 1. Secret do path (constant-time) contra o secret de cada conta emissora (Story 7.2).
-  const secretMc = env.CORA_MC_WEBHOOK_SECRET ?? env.CORA_WEBHOOK_SECRET ?? null;
-  const secretCv = env.CORA_CV_WEBHOOK_SECRET ?? null;
-  if (secretMc && secretCv && secretMc === secretCv && !avisouSecretsIguais) {
+  // 1. Secret do path (constant-time) contra o secret de cada conta emissora configurada.
+  const secrets = secretsConfigurados();
+  if (new Set(secrets).size !== secrets.length && !avisouSecretsIguais) {
     avisouSecretsIguais = true;
-    console.warn('[Webhook Cora] Secrets de MC e CV são IGUAIS — configure um secret distinto por conta.');
+    console.warn('[Webhook Cora] Duas ou mais contas emissoras têm o MESMO secret — configure um secret distinto por conta.');
   }
-  const secrets = [secretMc, secretCv].filter((s): s is string => s != null);
   if (secrets.length === 0 || !secrets.some((s) => segredosBatem(params.secret, s))) {
     logAuthFailure(req, 'Secret do webhook Cora inválido ou ausente');
     return new Response('Unauthorized', { status: 401 });

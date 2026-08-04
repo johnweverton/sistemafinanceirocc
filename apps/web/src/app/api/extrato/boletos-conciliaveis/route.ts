@@ -17,7 +17,7 @@ export const GET = withErrorHandler(async (req) => {
   const url = new URL(req.url);
   const query = querySchema.safeParse({ conta: url.searchParams.get('conta') ?? undefined });
   if (!query.success) {
-    throw new ApiError(400, 'Informe a conta emissora (conta=mc|cavalcante_viana).', 'VALIDATION', {
+    throw new ApiError(400, `Informe a conta emissora (conta=${CONTAS_EMISSORAS_VALIDAS.join('|')}).`, 'VALIDATION', {
       issues: query.error.issues,
     });
   }

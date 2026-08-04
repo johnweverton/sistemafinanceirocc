@@ -4,6 +4,7 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarRecebiveis } from '@/server/repositories/recebiveis-repository';
 import { listarDisparosPorBoletos } from '@/server/repositories/boleto-disparo-repository';
+import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 import type { FiltroRecebiveis } from '@cobranca/shared';
 
 // Achado B-3: validar query params com Zod (whitelist de status válidos).
@@ -12,7 +13,7 @@ const recebiveisQuerySchema = z.object({
   medico: z.string().uuid('medico deve ser UUID').optional(),
   status: z.enum(['pago', 'cancelado', 'vencido', 'em_aberto']).optional(),
   // Filtro por empresa emissora (Story 7.3) — espelha a CHECK do banco.
-  conta: z.enum(['mc', 'cavalcante_viana']).optional(),
+  conta: z.enum(CONTAS_EMISSORAS_VALIDAS).optional(),
 });
 
 export const GET = withErrorHandler(async (req) => {

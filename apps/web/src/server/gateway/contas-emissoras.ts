@@ -25,4 +25,14 @@ export const CONTAS_EMISSORAS: Record<ContaEmissora, ContaEmissoraInfo> = {
     nomeExibicao: CONTA_EMISSORA_LABEL.cavalcante_viana,
     envPrefix: 'CORA_CV',
   },
+  carmem_cavalcante: {
+    slug: 'carmem_cavalcante',
+    nomeExibicao: CONTA_EMISSORA_LABEL.carmem_cavalcante,
+    envPrefix: 'CORA_CARMEM',
+  },
+  cc_solucoes: {
+    slug: 'cc_solucoes',
+    nomeExibicao: CONTA_EMISSORA_LABEL.cc_solucoes,
+    envPrefix: 'CORA_CCSOL',
+  },
 };
