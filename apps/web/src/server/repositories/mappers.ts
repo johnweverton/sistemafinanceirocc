@@ -741,6 +741,9 @@ export interface ExecucaoResultadoRow {
   empresa_id?: string | null;
   /** Resultado de cliente contábil (migration 0032, Story 11.3) — opcional em bancos sem a migration. */
   cliente_contabilidade_id?: string | null;
+  /** Auditoria do último recálculo manual (migration 0041) — opcional em bancos sem a migration. */
+  recalculado_por?: string | null;
+  recalculado_em?: string | null;
 }
 
 export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultado {
@@ -764,6 +767,8 @@ export function toExecucaoResultado(row: ExecucaoResultadoRow): ExecucaoResultad
     motivoRevisao: row.motivo_revisao ?? null,
     empresaId: row.empresa_id ?? null,
     clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
+    recalculadoPor: row.recalculado_por ?? null,
+    recalculadoEm: row.recalculado_em ?? null,
   };
 }
 

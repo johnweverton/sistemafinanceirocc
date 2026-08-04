@@ -77,6 +77,10 @@ export interface ExecucaoResultado {
   revisadoPor?: string | null;
   revisadoEm?: string | null;
   motivoRevisao?: string | null;
+  /** Quem/quando disparou o último recálculo (migration 0041, achado 2026-08-04) — reprocessa os
+   * itens de produção atuais da origem em cima da mesma linha, sem criar uma execução nova. */
+  recalculadoPor?: string | null;
+  recalculadoEm?: string | null;
   /** Status do envio do boleto via WhatsApp/Email (auditoria) */
   disparos?: {
     canal: 'whatsapp' | 'email';

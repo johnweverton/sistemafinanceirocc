@@ -165,6 +165,19 @@ export async function listarResultados(execucaoId: string): Promise<ExecucaoResu
   return (data as ExecucaoResultadoRow[]).map(toExecucaoResultado);
 }
 
+/** Um resultado específico por id — usado pelo recálculo (migration 0041) para checar o médico/
+ * execução de origem antes de reprocessar. */
+export async function buscarResultadoPorId(resultadoId: string): Promise<ExecucaoResultado | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .select('*')
+    .eq('id', resultadoId)
+    .maybeSingle();
+  if (error) throw new ApiError(500, 'Falha ao buscar resultado', 'DB_ERROR', { error: error.message });
+  return data ? toExecucaoResultado(data as ExecucaoResultadoRow) : null;
+}
+
 /** Quantos resultados já foram gravados para esta execução (cursor de lote). */
 export async function contarResultados(execucaoId: string): Promise<number> {
   const db = getSupabaseAdmin();
@@ -355,6 +368,47 @@ export async function revisarResultado(
     .select('*')
     .single();
   if (error) throw new ApiError(500, 'Falha ao revisar resultado', 'DB_ERROR', { error: error.message });
+  return toExecucaoResultado(data as ExecucaoResultadoRow);
+}
+
+/**
+ * Sobrescreve um resultado já gravado com um novo cálculo do Engine (migration 0041, achado
+ * real 2026-08-04, Dr. José Neias) — reprocessa a MESMA linha em vez de criar uma execução nova,
+ * para quando o dado de origem foi corrigido DEPOIS que a execução já rodou. Limpa
+ * status_original/revisado_* (refletiam o cálculo ANTIGO, agora obsoleto) e grava
+ * recalculado_por/recalculado_em como o novo rastro de auditoria. Quem chama (orchestrator) já
+ * garantiu que não existe boleto ativo para este resultado antes de chegar aqui.
+ */
+export async function atualizarResultado(
+  resultadoId: string,
+  r: ResultadoMedico,
+  recalculadoPor: string,
+): Promise<ExecucaoResultado> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .update({
+      cpf: r.cpf,
+      nome: r.nome,
+      procedimentos: r.procedimentos,
+      cirurgias: r.cirurgias,
+      guias: r.guias,
+      guias_consolidado: r.guiasConsolidado,
+      subtotais: r.subtotais,
+      total_valor: r.totalValor,
+      status: r.status,
+      alertas: r.alertas,
+      status_original: null,
+      revisado_por: null,
+      revisado_em: null,
+      motivo_revisao: null,
+      recalculado_por: recalculadoPor,
+      recalculado_em: new Date().toISOString(),
+    })
+    .eq('id', resultadoId)
+    .select('*')
+    .single();
+  if (error) throw new ApiError(500, 'Falha ao atualizar resultado recalculado', 'DB_ERROR', { error: error.message });
   return toExecucaoResultado(data as ExecucaoResultadoRow);
 }
 

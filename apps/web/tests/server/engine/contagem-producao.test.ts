@@ -6,6 +6,7 @@ import {
   detectarModoProducao,
   consolidarProducao,
   contarConsultasProducao,
+  isPediatra,
 } from '../../../src/server/engine/contagem-producao';
 
 describe('Engine: Contagem de Produção', () => {
@@ -113,6 +114,52 @@ describe('Engine: Contagem de Produção', () => {
       ];
       const resSemId = contarGuiasProducao(itensSemId, 'Cirurgia');
       expect(resSemId.guias).toBe(1); // subcontagem documentada
+    });
+
+    it('i. pediatra: via de acesso com senha própria por procedimento → 3x1 por paciente, não por senha (achado real 2026-08-04, Dr. José Neias, especialidade "Pediatr" truncada)', () => {
+      // Réplica do caso real: 17 pacientes, cada procedimento com senha (atendimentoExternoId)
+      // PRÓPRIA — 15 pacientes com ≤3 itens (1 guia cada) e 2 pacientes com 4 itens (teto(4/3)=2
+      // guias cada). Total esperado: 15×1 + 2×2 = 19. Sem os dois fixes (isPediatra reconhecer
+      // "Pediatr" truncado + agrupar via de acesso por paciente, não por senha), o sistema
+      // cobrava 38 guias (quase o dobro do correto).
+      const itens: ItemProducao[] = [];
+      let senhaSeq = 0;
+      const proximaSenha = () => `AJ${++senhaSeq}`;
+      // 2 pacientes com 4 itens (4 senhas distintas cada) — devem virar 2 guias cada.
+      for (const paciente of ['Edriana Pascoal', 'Francisco Benevaldo']) {
+        for (let i = 0; i < 4; i++) {
+          itens.push({ ...baseItem(), pacienteNome: paciente, viaAcesso: true, atendimentoExternoId: proximaSenha() });
+        }
+      }
+      // 15 pacientes com 1 item cada (senha própria) — cada um deve virar 1 guia.
+      for (let idx = 0; idx < 15; idx++) {
+        itens.push({ ...baseItem(), pacienteNome: `Paciente ${idx}`, viaAcesso: true, atendimentoExternoId: proximaSenha() });
+      }
+
+      const resultado = contarGuiasProducao(itens, 'Pediatr');
+      expect(resultado.guias).toBe(19);
+    });
+
+    it('j. pediatra: via de acesso, mesmo paciente com 4 senhas distintas → teto(4/3) = 2 guias (não 4)', () => {
+      const itens: ItemProducao[] = Array.from({ length: 4 }, (_, i) => ({
+        ...baseItem(),
+        pacienteNome: 'Bebê Via Acesso',
+        viaAcesso: true,
+        atendimentoExternoId: `senha-${i}`,
+      }));
+      const resultado = contarGuiasProducao(itens, 'Pediatria');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('k. NÃO pediatra: via de acesso com senhas distintas → continua 1 guia por senha (comportamento original preservado)', () => {
+      const itens: ItemProducao[] = Array.from({ length: 4 }, (_, i) => ({
+        ...baseItem(),
+        pacienteNome: 'Paciente Adulto',
+        viaAcesso: true,
+        atendimentoExternoId: `senha-${i}`,
+      }));
+      const resultado = contarGuiasProducao(itens, 'Cirurgia Geral');
+      expect(resultado.guias).toBe(4);
     });
 
     it('h. linha sem paciente ou sem data → excluída + reportada como inválida', () => {
@@ -225,6 +272,27 @@ describe('Engine: Contagem de Produção', () => {
       ];
       // 4 procedimentos do Bebê = teto(4/3) = 2 guias consolidadas
       expect(consolidarProducao(itens, 'Pediatria')).toBe(2);
+    });
+  });
+
+  describe('isPediatra', () => {
+    it('reconhece "Pediatra" e "Pediatria" (grafias completas)', () => {
+      expect(isPediatra('Pediatra')).toBe(true);
+      expect(isPediatra('Pediatria')).toBe(true);
+      expect(isPediatra('pediatra')).toBe(true);
+    });
+
+    it('reconhece "Pediatr" truncado (achado real 2026-08-04, Dr. José Neias) e outras variações com o prefixo', () => {
+      expect(isPediatra('Pediatr')).toBe(true);
+      expect(isPediatra('Pediatra Neonatal')).toBe(true);
+      expect(isPediatra('Cirurgia Pediátrica')).toBe(false); // "pediátrica" com acento não bate no prefixo ascii "pediatr"
+    });
+
+    it('não reconhece especialidades sem relação, null ou vazio', () => {
+      expect(isPediatra('Cirurgia Geral')).toBe(false);
+      expect(isPediatra(null)).toBe(false);
+      expect(isPediatra(undefined)).toBe(false);
+      expect(isPediatra('')).toBe(false);
     });
   });
 });

@@ -34,7 +34,13 @@ export function chaveAtendimento(item: ItemProducao): string {
 
 /**
  * Conta as guias e cirurgias a partir de itens da produção (via API), adaptado à semântica real:
- * - itens viaAcesso: 1 guia por chaveAtendimento, independente da especialidade.
+ * - itens viaAcesso (pediatra): agrupados por (pacienteNome, data), cada balde = teto(qtd/3)
+ *   guias — mesma regra 3x1 dos itens normais (achado real 2026-08-04, Dr. José Neias: cada
+ *   procedimento de uma via de acesso ganha uma senha PRÓPRIA na origem — ex.: 3 cirurgias do
+ *   mesmo paciente no mesmo dia, 3 senhas diferentes — então agrupar por chaveAtendimento
+ *   (senha) fragmenta o mesmo atendimento em várias guias, ignorando o 3x1 por completo).
+ * - itens viaAcesso (não pediatra): 1 guia por chaveAtendimento (comportamento original —
+ *   sem evidência de que a mesma fragmentação por senha ocorra fora de pediatria).
  * - itens normais (pediatra): agrupados por (chaveAtendimento, data), cada balde = teto(qtd/3) guias.
  * - itens normais (não pediatra): 1 guia por item.
  */
@@ -43,29 +49,49 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
 
   const viaAcessoItems = validos.filter((i) => i.viaAcesso);
   const outrosItems = validos.filter((i) => !i.viaAcesso);
+  const pediatra = isPediatra(especialidade);
 
   let guias = 0;
-  
-  // Cirurgias: quantidade de chaves de atendimento únicas (PRD §12).
-  // Só aplicável para Pediatria ou viaAcesso.
+
+  // Cirurgias: quantidade de chaves de atendimento únicas (PRD §12) — métrica informativa,
+  // independente da regra de guias acima; não muda com o achado 2026-08-04.
   const gruposAtendimento = new Set<string>();
   for (const item of validos) {
     gruposAtendimento.add(chaveAtendimento(item));
   }
   let cirurgias = 0;
-  if (isPediatra(especialidade) || viaAcessoItems.length > 0) {
+  if (pediatra || viaAcessoItems.length > 0) {
     cirurgias = gruposAtendimento.size;
   }
 
-  // viaAcesso agrupa por chaveAtendimento
-  const viaAcessoGroups = new Set<string>();
-  for (const item of viaAcessoItems) {
-    viaAcessoGroups.add(chaveAtendimento(item));
+  if (pediatra) {
+    // Pediatra + via de acesso: teto(qtd/3) por (paciente, data) — NUNCA por chaveAtendimento
+    // (senha), que é por procedimento, não por atendimento, nesses itens.
+    const porPacienteViaAcesso = new Map<string, Map<string, number>>();
+    for (const item of viaAcessoItems) {
+      let datas = porPacienteViaAcesso.get(item.pacienteNome);
+      if (!datas) {
+        datas = new Map<string, number>();
+        porPacienteViaAcesso.set(item.pacienteNome, datas);
+      }
+      datas.set(item.data, (datas.get(item.data) ?? 0) + 1);
+    }
+    for (const datas of porPacienteViaAcesso.values()) {
+      for (const count of datas.values()) {
+        guias += Math.ceil(count / 3);
+      }
+    }
+  } else {
+    // Não-pediatra: via de acesso continua 1 guia por chaveAtendimento (comportamento original).
+    const viaAcessoGroups = new Set<string>();
+    for (const item of viaAcessoItems) {
+      viaAcessoGroups.add(chaveAtendimento(item));
+    }
+    guias += viaAcessoGroups.size;
   }
-  guias += viaAcessoGroups.size;
 
   // Remaining
-  if (isPediatra(especialidade)) {
+  if (pediatra) {
     // Pediatra
     const porAtend = new Map<string, Map<string, number>>();
     for (const item of outrosItems) {
@@ -123,10 +149,16 @@ export function filtrarPorCompetencia(
   return { itensDaCompetencia, ignoradosPorCompetencia };
 }
 
+/**
+ * Detecta pediatra pelo prefixo "pediatr" (não exige a palavra completa) — achado real
+ * 2026-08-04, Dr. José Neias: especialidade cadastrada como "Pediatr" (truncada na origem/
+ * importação), e a checagem exata por "pediatra"/"pediatria" não reconhecia o médico como
+ * pediatra, pulando a regra 3x1 por completo (cobrança de 38 guias em vez de 19). GATE do dono:
+ * variações/truncamentos como esse ainda significam pediatra.
+ */
 export function isPediatra(especialidade?: string | null): boolean {
   if (!especialidade) return false;
-  const esp = especialidade.toLowerCase();
-  return esp.includes('pediatra') || esp.includes('pediatria');
+  return especialidade.toLowerCase().includes('pediatr');
 }
 
 /**
@@ -169,16 +201,30 @@ export function consolidarProducao(itens: ItemProducao[], especialidade?: string
   const viaAcessoItems = validos.filter((i) => i.viaAcesso);
   const outrosItems = validos.filter((i) => !i.viaAcesso);
 
+  const pediatra = isPediatra(especialidade);
   let guias = 0;
 
-  // viaAcesso agrupa por paciente
-  const viaAcessoPacientes = new Set<string>();
-  for (const item of viaAcessoItems) {
-    viaAcessoPacientes.add(item.pacienteNome);
+  // viaAcesso agrupa por paciente (ignorando data, por isso "consolidado"). Pediatra aplica o
+  // teto(qtd/3) aqui também (achado 2026-08-04, mesmo motivo de contarGuiasProducao) — sem
+  // isso, este número informativo ficava sistematicamente ABAIXO do valor correto para
+  // pediatras com >3 procedimentos via de acesso no mesmo paciente.
+  if (pediatra) {
+    const porPacienteViaAcesso = new Map<string, number>();
+    for (const item of viaAcessoItems) {
+      porPacienteViaAcesso.set(item.pacienteNome, (porPacienteViaAcesso.get(item.pacienteNome) ?? 0) + 1);
+    }
+    for (const count of porPacienteViaAcesso.values()) {
+      guias += Math.ceil(count / 3);
+    }
+  } else {
+    const viaAcessoPacientes = new Set<string>();
+    for (const item of viaAcessoItems) {
+      viaAcessoPacientes.add(item.pacienteNome);
+    }
+    guias += viaAcessoPacientes.size;
   }
-  guias += viaAcessoPacientes.size;
 
-  if (isPediatra(especialidade)) {
+  if (pediatra) {
     const porPaciente = new Map<string, number>();
     for (const item of outrosItems) {
       porPaciente.set(item.pacienteNome, (porPaciente.get(item.pacienteNome) ?? 0) + 1);

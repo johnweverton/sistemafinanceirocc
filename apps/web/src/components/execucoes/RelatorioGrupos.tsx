@@ -181,6 +181,24 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     },
   });
 
+  // Recalcula um resultado já gravado com os itens de produção ATUAIS da origem (achado real
+  // 2026-08-04: dado corrigido no sistema de origem depois que a execução já tinha rodado, sem
+  // forma de refletir a correção sem criar uma execução nova inteira).
+  const recalcular = useMutation({
+    mutationFn: (resultadoId: string) => execucoesService.recalcularResultado(resultadoId),
+    onSuccess: () => {
+      toast('Resultado recalculado com os dados atuais da origem', 'success');
+      void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) });
+    },
+    onError: (e) => {
+      if (e instanceof ApiClientError && e.code === 'BOLETO_JA_EMITIDO') {
+        toast('Este resultado já tem boleto emitido — cancele o boleto antes de recalcular.', 'error');
+        return;
+      }
+      toast(e instanceof ApiClientError ? e.message : 'Erro ao recalcular resultado', 'error');
+    },
+  });
+
   if (isLoading) return <p className="text-sm text-cc-muted">Carregando relatório…</p>;
   if (error) return <p className="alert-error">Falha ao carregar o relatório.</p>;
 
@@ -227,6 +245,8 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         }}
         reenviarPendingId={reenviar.isPending ? reenviar.variables : null}
         onReenviar={(id) => reenviar.mutate(id)}
+        onRecalcular={(id) => recalcular.mutate(id)}
+        recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
         acaoEmLote={
           ok.length > 0 ? (
             <button onClick={() => setLoteAberto(true)} className="btn-secondary btn btn-sm">
@@ -243,6 +263,8 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         mostrarAlertas
         onRevisar={(id, motivo) => revisar.mutate({ resultadoId: id, motivo })}
         revisarPendingId={revisar.isPending ? revisar.variables?.resultadoId : null}
+        onRecalcular={(id) => recalcular.mutate(id)}
+        recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
       />
       <Grupo titulo="Sem dados no sistema" count={semDados.length} cor="gray" resultados={semDados} resumido />
       <div className="flex items-center justify-between border-t border-cc-hairline pt-4">
@@ -345,6 +367,8 @@ function Grupo({
   revisarPendingId,
   reenviarPendingId,
   onReenviar,
+  onRecalcular,
+  recalcularPendingId,
   acaoEmLote,
 }: {
   titulo: string;
@@ -360,6 +384,10 @@ function Grupo({
   onEmitir?: (resultadoId: string) => void;
   reenviarPendingId?: string | null;
   onReenviar?: (resultadoId: string) => void;
+  /** Reprocessa o resultado com os itens de produção ATUAIS da origem — só oferecido para
+   *  resultados de médico (não empresa/cliente) sem boleto emitido ainda. */
+  onRecalcular?: (resultadoId: string) => void;
+  recalcularPendingId?: string | null;
   /** Ação de lote no cabeçalho do grupo (ex.: "Emitir todos os pendentes") — o grupo não sabe o
    *  que é, só reserva o espaço; mantém a emissão individual intacta ao lado como fallback. */
   acaoEmLote?: React.ReactNode;
@@ -438,6 +466,21 @@ function Grupo({
                   </p>
                 ))}
               {resumido && r.alertas[0] && <p className="mt-1 text-xs text-cc-muted">{r.alertas[0]}</p>}
+              {onRecalcular &&
+                r.medicoId &&
+                !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0)) && (
+                  <div className="mt-3 flex items-center justify-end border-t border-cc-hairline pt-3">
+                    <button
+                      type="button"
+                      className="btn-ghost btn btn-sm"
+                      disabled={recalcularPendingId != null}
+                      title="Reprocessa este resultado com os itens de produção atuais da origem"
+                      onClick={() => onRecalcular(r.id)}
+                    >
+                      {recalcularPendingId === r.id ? 'Recalculando…' : 'Recalcular'}
+                    </button>
+                  </div>
+                )}
               {onRevisar && (
                 <AcaoRevisar
                   pending={revisarPendingId === r.id}

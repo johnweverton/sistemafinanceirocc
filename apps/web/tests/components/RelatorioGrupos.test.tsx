@@ -9,11 +9,13 @@ import { ApiClientError } from '../../src/lib/api-client';
 const mockResultados = vi.fn();
 const mockRevisarResultado = vi.fn();
 const mockContribuicoes = vi.fn();
+const mockRecalcularResultado = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     resultados: (...a: unknown[]) => mockResultados(...a),
     revisarResultado: (...a: unknown[]) => mockRevisarResultado(...a),
     contribuicoes: (...a: unknown[]) => mockContribuicoes(...a),
+    recalcularResultado: (...a: unknown[]) => mockRecalcularResultado(...a),
   },
   execucaoQueryKeys: {
     resultados: (id: string) => ['execucoes', id, 'resultados'],
@@ -228,6 +230,54 @@ describe('RelatorioGrupos — revisão de alerta', () => {
 
     expect(screen.getByRole('button', { name: 'Revisar e liberar' })).toBeInTheDocument();
     expect(mockRevisarResultado).not.toHaveBeenCalled();
+  });
+});
+
+describe('RelatorioGrupos — recálculo de resultado (achado real 2026-08-04, Dr. José Neias)', () => {
+  const resultadoAlertaComMedico = {
+    ...resultadoOk,
+    id: 'r-jose-neias',
+    nome: 'JOSE NEIAS ARAUJO RIBEIRO',
+    guias: 38,
+    guiasConsolidado: 17,
+    status: 'alerta',
+    alertas: ['2 procedimento(s) sem código ou descrição na origem.'],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoAlertaComMedico]);
+    mockListarMedicos.mockResolvedValue([]);
+  });
+
+  it('mostra o botão Recalcular para resultado de médico sem boleto emitido', async () => {
+    renderComProviders();
+    await screen.findByText('JOSE NEIAS ARAUJO RIBEIRO');
+    expect(screen.getByRole('button', { name: 'Recalcular' })).toBeInTheDocument();
+  });
+
+  it('ao clicar, chama o service e invalida o relatório após sucesso', async () => {
+    mockRecalcularResultado.mockResolvedValue({
+      resultado: { ...resultadoAlertaComMedico, guias: 19, guiasConsolidado: 19, status: 'ok', alertas: [] },
+    });
+    renderComProviders();
+    await screen.findByText('JOSE NEIAS ARAUJO RIBEIRO');
+
+    mockResultados.mockResolvedValue([
+      { ...resultadoAlertaComMedico, guias: 19, guiasConsolidado: 19, status: 'ok', alertas: [] },
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Recalcular' }));
+
+    await waitFor(() => expect(mockRecalcularResultado).toHaveBeenCalledWith('r-jose-neias'));
+    await waitFor(() => expect(screen.getByText(/19 guias/)).toBeInTheDocument());
+  });
+
+  it('não mostra o botão Recalcular para resultado agregado de empresa (sem medicoId)', async () => {
+    mockResultados.mockResolvedValue([{ ...resultadoAlertaComMedico, medicoId: null, empresaId: 'empresa-1' }]);
+    renderComProviders();
+    await screen.findByText('JOSE NEIAS ARAUJO RIBEIRO');
+
+    expect(screen.queryByRole('button', { name: 'Recalcular' })).not.toBeInTheDocument();
   });
 });
 

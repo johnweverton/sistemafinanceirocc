@@ -68,6 +68,14 @@ export const execucoesService = {
       `/execucoes/${execucaoId}/resultados/${resultadoId}/revisar`,
       { method: 'POST', body: JSON.stringify({ motivo }) },
     ),
+  /** Reprocessa um resultado já gravado com os itens de produção ATUAIS da origem — para quando
+   *  o dado foi corrigido no sistema de origem depois que a execução já rodou. Bloqueado se o
+   *  resultado já tiver boleto emitido. */
+  recalcularResultado: (resultadoId: string) =>
+    apiFetch<{ resultado: ExecucaoResultado }>(
+      `/execucoes/resultados/${resultadoId}/recalcular`,
+      { method: 'POST' },
+    ),
   resumoPorMedico: () => apiFetch<ExecucaoResumoMedico[]>('/execucoes/por-medico'),
   /** Médicos com boleto ativo (emitido/pago) já na competência informada, em qualquer execução
    *  — usado pra não deixar reemitir boleto duplicado do mesmo médico no mesmo mês. Sem cache
