@@ -3,6 +3,7 @@
 // ser importado por Client Components que precisem das chaves secretas.
 import { z } from 'zod';
 import type { ContaEmissora } from '@cobranca/shared';
+import { CONTAS_EMISSORAS } from '@/server/gateway/contas-emissoras';
 
 const publicSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
@@ -76,7 +77,19 @@ const serverSchema = z.object({
   CORA_CV_API_URL: z.string().url().optional(),
   CORA_CV_CLIENT_ID: z.string().optional(),
   CORA_CV_WEBHOOK_SECRET: z.string().min(16, 'CORA_CV_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
-  
+  // Contas do serviço de contabilidade (ampliação 2026-08-03) — mesmo padrão prefixado, sem
+  // fallback legado (contas novas, nunca existiram nas CORA_* sem prefixo).
+  CORA_CARMEM_CERT_BASE64: z.string().optional(),
+  CORA_CARMEM_KEY_BASE64: z.string().optional(),
+  CORA_CARMEM_API_URL: z.string().url().optional(),
+  CORA_CARMEM_CLIENT_ID: z.string().optional(),
+  CORA_CARMEM_WEBHOOK_SECRET: z.string().min(16, 'CORA_CARMEM_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
+  CORA_CCSOL_CERT_BASE64: z.string().optional(),
+  CORA_CCSOL_KEY_BASE64: z.string().optional(),
+  CORA_CCSOL_API_URL: z.string().url().optional(),
+  CORA_CCSOL_CLIENT_ID: z.string().optional(),
+  CORA_CCSOL_WEBHOOK_SECRET: z.string().min(16, 'CORA_CCSOL_WEBHOOK_SECRET deve ter pelo menos 16 caracteres').optional(),
+
   // ---------------------------------------------------------------------------
   // DISPARO DE MENSAGENS — WhatsApp (Zappy) e E-mail (SMTP UOL)
   // ---------------------------------------------------------------------------
@@ -130,6 +143,16 @@ export function getServerEnv() {
     CORA_CV_API_URL: process.env.CORA_CV_API_URL,
     CORA_CV_CLIENT_ID: process.env.CORA_CV_CLIENT_ID,
     CORA_CV_WEBHOOK_SECRET: process.env.CORA_CV_WEBHOOK_SECRET,
+    CORA_CARMEM_CERT_BASE64: process.env.CORA_CARMEM_CERT_BASE64,
+    CORA_CARMEM_KEY_BASE64: process.env.CORA_CARMEM_KEY_BASE64,
+    CORA_CARMEM_API_URL: process.env.CORA_CARMEM_API_URL,
+    CORA_CARMEM_CLIENT_ID: process.env.CORA_CARMEM_CLIENT_ID,
+    CORA_CARMEM_WEBHOOK_SECRET: process.env.CORA_CARMEM_WEBHOOK_SECRET,
+    CORA_CCSOL_CERT_BASE64: process.env.CORA_CCSOL_CERT_BASE64,
+    CORA_CCSOL_KEY_BASE64: process.env.CORA_CCSOL_KEY_BASE64,
+    CORA_CCSOL_API_URL: process.env.CORA_CCSOL_API_URL,
+    CORA_CCSOL_CLIENT_ID: process.env.CORA_CCSOL_CLIENT_ID,
+    CORA_CCSOL_WEBHOOK_SECRET: process.env.CORA_CCSOL_WEBHOOK_SECRET,
     ZAPPY_API_URL: process.env.ZAPPY_API_URL,
     ZAPPY_API_TOKEN: process.env.ZAPPY_API_TOKEN,
     ZAPPY_CONNECTION_ID: process.env.ZAPPY_CONNECTION_ID,
@@ -155,30 +178,53 @@ export interface CredenciaisConta {
 }
 
 /**
- * Resolve as credenciais da conta emissora a partir das env vars prefixadas
- * (CORA_MC_* / CORA_CV_*). Para 'mc', as CORA_* legadas valem como fallback —
- * deploy sem env nova mantém a MC funcionando exatamente como hoje.
- * Lança erro nomeando a conta e as vars faltantes; a outra conta não é afetada.
+ * Resolve as credenciais da conta emissora a partir das env vars prefixadas (CORA_<PREFIXO>_*,
+ * um bloco por conta em CONTAS_EMISSORAS). Só 'mc' tem fallback: as CORA_* legadas (sem prefixo,
+ * de antes do Épico 7) valem para ela — deploy sem env nova mantém a MC funcionando como hoje.
+ * As demais contas (incluindo as novas do serviço de contabilidade) não têm fallback: nunca
+ * existiram sem prefixo. Lança erro nomeando a conta e as vars faltantes; as demais contas não
+ * são afetadas (degradação por conta, arquitetura §5).
  */
 export function getCredenciaisConta(conta: ContaEmissora): CredenciaisConta {
   const env = getServerEnv();
+  const prefixo = CONTAS_EMISSORAS[conta].envPrefix as
+    | 'CORA_MC'
+    | 'CORA_CV'
+    | 'CORA_CARMEM'
+    | 'CORA_CCSOL';
 
-  const fontes =
-    conta === 'mc'
-      ? {
-          certBase64: { valor: env.CORA_MC_CERT_BASE64 ?? env.CORA_CERT_BASE64, var: 'CORA_MC_CERT_BASE64 (ou CORA_CERT_BASE64)' },
-          keyBase64: { valor: env.CORA_MC_KEY_BASE64 ?? env.CORA_KEY_BASE64, var: 'CORA_MC_KEY_BASE64 (ou CORA_KEY_BASE64)' },
-          apiUrl: { valor: env.CORA_MC_API_URL ?? env.CORA_API_URL, var: 'CORA_MC_API_URL (ou CORA_API_URL)' },
-          clientId: { valor: env.CORA_MC_CLIENT_ID ?? env.CORA_CLIENT_ID, var: 'CORA_MC_CLIENT_ID (ou CORA_CLIENT_ID)' },
-          webhookSecret: env.CORA_MC_WEBHOOK_SECRET ?? env.CORA_WEBHOOK_SECRET ?? null,
-        }
-      : {
-          certBase64: { valor: env.CORA_CV_CERT_BASE64, var: 'CORA_CV_CERT_BASE64' },
-          keyBase64: { valor: env.CORA_CV_KEY_BASE64, var: 'CORA_CV_KEY_BASE64' },
-          apiUrl: { valor: env.CORA_CV_API_URL, var: 'CORA_CV_API_URL' },
-          clientId: { valor: env.CORA_CV_CLIENT_ID, var: 'CORA_CV_CLIENT_ID' },
-          webhookSecret: env.CORA_CV_WEBHOOK_SECRET ?? null,
-        };
+  const porPrefixo = {
+    CORA_MC: {
+      certBase64: { valor: env.CORA_MC_CERT_BASE64 ?? env.CORA_CERT_BASE64, var: 'CORA_MC_CERT_BASE64 (ou CORA_CERT_BASE64)' },
+      keyBase64: { valor: env.CORA_MC_KEY_BASE64 ?? env.CORA_KEY_BASE64, var: 'CORA_MC_KEY_BASE64 (ou CORA_KEY_BASE64)' },
+      apiUrl: { valor: env.CORA_MC_API_URL ?? env.CORA_API_URL, var: 'CORA_MC_API_URL (ou CORA_API_URL)' },
+      clientId: { valor: env.CORA_MC_CLIENT_ID ?? env.CORA_CLIENT_ID, var: 'CORA_MC_CLIENT_ID (ou CORA_CLIENT_ID)' },
+      webhookSecret: env.CORA_MC_WEBHOOK_SECRET ?? env.CORA_WEBHOOK_SECRET ?? null,
+    },
+    CORA_CV: {
+      certBase64: { valor: env.CORA_CV_CERT_BASE64, var: 'CORA_CV_CERT_BASE64' },
+      keyBase64: { valor: env.CORA_CV_KEY_BASE64, var: 'CORA_CV_KEY_BASE64' },
+      apiUrl: { valor: env.CORA_CV_API_URL, var: 'CORA_CV_API_URL' },
+      clientId: { valor: env.CORA_CV_CLIENT_ID, var: 'CORA_CV_CLIENT_ID' },
+      webhookSecret: env.CORA_CV_WEBHOOK_SECRET ?? null,
+    },
+    CORA_CARMEM: {
+      certBase64: { valor: env.CORA_CARMEM_CERT_BASE64, var: 'CORA_CARMEM_CERT_BASE64' },
+      keyBase64: { valor: env.CORA_CARMEM_KEY_BASE64, var: 'CORA_CARMEM_KEY_BASE64' },
+      apiUrl: { valor: env.CORA_CARMEM_API_URL, var: 'CORA_CARMEM_API_URL' },
+      clientId: { valor: env.CORA_CARMEM_CLIENT_ID, var: 'CORA_CARMEM_CLIENT_ID' },
+      webhookSecret: env.CORA_CARMEM_WEBHOOK_SECRET ?? null,
+    },
+    CORA_CCSOL: {
+      certBase64: { valor: env.CORA_CCSOL_CERT_BASE64, var: 'CORA_CCSOL_CERT_BASE64' },
+      keyBase64: { valor: env.CORA_CCSOL_KEY_BASE64, var: 'CORA_CCSOL_KEY_BASE64' },
+      apiUrl: { valor: env.CORA_CCSOL_API_URL, var: 'CORA_CCSOL_API_URL' },
+      clientId: { valor: env.CORA_CCSOL_CLIENT_ID, var: 'CORA_CCSOL_CLIENT_ID' },
+      webhookSecret: env.CORA_CCSOL_WEBHOOK_SECRET ?? null,
+    },
+  } as const;
+
+  const fontes = porPrefixo[prefixo];
 
   const faltantes = (['certBase64', 'keyBase64', 'apiUrl', 'clientId'] as const)
     .filter((campo) => !fontes[campo].valor)

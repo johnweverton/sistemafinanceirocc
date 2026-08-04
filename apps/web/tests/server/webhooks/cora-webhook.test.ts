@@ -1,11 +1,20 @@
 // Testes da rota de webhook do Cora (Story 4.3) — sem rede/DB (mocks). Emissão desligada.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Story 7.2: env mutável por teste — permite exercitar os secrets por conta
-// (CORA_MC_WEBHOOK_SECRET / CORA_CV_WEBHOOK_SECRET) além do legado.
-let mockEnv: Record<string, string | undefined> = { CORA_WEBHOOK_SECRET: 'sekret' };
+// Story 7.2 (ampliado 2026-08-03 para N contas): credenciais mutáveis por teste — a rota só
+// enxerga secrets via getCredenciaisConta (uma entrada por conta configurada; contas ausentes
+// do mapa simulam "sem credenciais", como getCredenciaisConta real faria ao lançar).
+type CredenciaisFake = { certBase64: string; keyBase64: string; apiUrl: string; clientId: string; webhookSecret: string | null };
+function credenciais(webhookSecret: string): CredenciaisFake {
+  return { certBase64: 'cert', keyBase64: 'key', apiUrl: 'https://cora.test', clientId: 'client', webhookSecret };
+}
+let mockCredenciais: Partial<Record<string, CredenciaisFake>> = { mc: credenciais('sekret') };
 vi.mock('@/lib/env', () => ({
-  getServerEnv: vi.fn(() => ({ ...mockEnv })),
+  getCredenciaisConta: vi.fn((conta: string) => {
+    const c = mockCredenciais[conta];
+    if (!c) throw new Error(`Credenciais da conta emissora '${conta}' não configuradas.`);
+    return c;
+  }),
 }));
 
 const mockConsultar = vi.fn();
@@ -38,7 +47,7 @@ function req(body: unknown): Request {
 describe('Webhook Cora', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockEnv = { CORA_WEBHOOK_SECRET: 'sekret' };
+    mockCredenciais = { mc: credenciais('sekret') };
     mockBuscarPorIdExterno.mockResolvedValue({ id: 'b1', contaEmissora: 'mc' });
     mockRegistrarEvento.mockResolvedValue({ evento: { id: 'ev1' }, novo: true });
     mockConsultar.mockResolvedValue({ status: 'paid', valorPago: 1500, pagoEm: '2026-06-15T00:00:00Z' });
@@ -117,7 +126,7 @@ describe('Webhook Cora', () => {
   // -------------------------------------------------------------------------
 
   it('secret da CV autentica; reconsulta usa a conta do BOLETO (não a do secret)', async () => {
-    mockEnv = { CORA_MC_WEBHOOK_SECRET: 'segredo-mc-123', CORA_CV_WEBHOOK_SECRET: 'segredo-cv-456' };
+    mockCredenciais = { mc: credenciais('segredo-mc-123'), cavalcante_viana: credenciais('segredo-cv-456') };
     // Boleto foi emitido pela MC — mesmo o webhook chegando pelo endpoint da CV,
     // a reconsulta tem que ir na conta do boleto.
     mockBuscarPorIdExterno.mockResolvedValue({ id: 'b1', contaEmissora: 'mc' });
@@ -132,7 +141,7 @@ describe('Webhook Cora', () => {
   });
 
   it('secret legado continua autenticando a MC (fallback — regressão zero)', async () => {
-    mockEnv = { CORA_WEBHOOK_SECRET: 'sekret' };
+    mockCredenciais = { mc: credenciais('sekret') };
     const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');
     const resp = await POST(
       req({ resource: { id: 'inv_1' }, event: 'invoice.paid', event_id: 'evt_leg' }),
@@ -142,7 +151,7 @@ describe('Webhook Cora', () => {
   });
 
   it('nenhum secret bate → 401 mesmo com os dois configurados', async () => {
-    mockEnv = { CORA_MC_WEBHOOK_SECRET: 'segredo-mc-123', CORA_CV_WEBHOOK_SECRET: 'segredo-cv-456' };
+    mockCredenciais = { mc: credenciais('segredo-mc-123'), cavalcante_viana: credenciais('segredo-cv-456') };
     const { POST } = await import('@/app/api/webhooks/cora/[secret]/route');
     const resp = await POST(req({ resource: { id: 'inv_1' } }), { params: { secret: 'errado' } });
     expect(resp.status).toBe(401);
