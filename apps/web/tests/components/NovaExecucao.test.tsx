@@ -8,14 +8,17 @@ import { ToastProvider } from '../../src/components/ui/Toast';
 
 const mockApoio = vi.fn();
 const mockDisparar = vi.fn();
+const mockMedicosComBoleto = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     apoio: (...a: unknown[]) => mockApoio(...a),
     disparar: (...a: unknown[]) => mockDisparar(...a),
+    medicosComBoleto: (...a: unknown[]) => mockMedicosComBoleto(...a),
   },
   execucaoQueryKeys: {
     apoio: () => ['execucoes', 'apoio'],
     execucoes: () => ['execucoes'],
+    medicosComBoleto: (c: string) => ['execucoes', 'medicos-com-boleto', c],
   },
 }));
 
@@ -75,6 +78,7 @@ describe('NovaExecucao — modo "Por empresa" (Story 10.4c)', () => {
     vi.clearAllMocks();
     mockApoio.mockResolvedValue(apoioFixture);
     mockListarEmpresas.mockResolvedValue([empresaFixture]);
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: [] });
   });
 
   it('lista só os médicos vinculados à empresa selecionada', async () => {
@@ -147,5 +151,44 @@ describe('NovaExecucao — modo "Por empresa" (Story 10.4c)', () => {
     fireEvent.change(screen.getByLabelText('Empresa'), { target: { value: 'empresa-1' } });
 
     await screen.findByText(/Nenhum médico vinculado a esta empresa/);
+  });
+});
+
+// Achado real (2026-08-04, coordenadora financeira): emitir boleto individualmente pra alguns
+// médicos e depois rodar o mesmo mês em lote não detectava que esses médicos já tinham boleto,
+// arriscando duplicar. /api/execucoes/medicos-com-boleto fecha essa lacuna.
+describe('NovaExecucao — médico já tem boleto na competência (achado 2026-08-04)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApoio.mockResolvedValue(apoioFixture);
+    mockListarEmpresas.mockResolvedValue([empresaFixture]);
+  });
+
+  it('modo "Por competência": exclui o médico já emitido de "Prontos para processar" e lista em "Já emitido"', async () => {
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: ['m1'] }); // Dr. Alfa já emitido
+    renderComProviders();
+
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-06' } });
+
+    await screen.findByText('Já emitido nesta competência (1)');
+    // Dr. Alfa some da lista de seleção (pronto pra processar)...
+    const prontos = screen.getByText(/Prontos para processar/).closest('div')!;
+    expect(prontos).not.toHaveTextContent('Dr. Alfa');
+    // ...e aparece só no grupo de já emitidos.
+    expect(screen.getByText('Já emitido nesta competência (1)').closest('div')!).toHaveTextContent('Dr. Alfa');
+    // Dr. Beta (sem boleto) continua elegível normalmente.
+    expect(screen.getByText('Dr. Beta')).toBeInTheDocument();
+  });
+
+  it('modo "Por médico": avisa e desabilita o botão quando o médico selecionado já tem boleto na competência', async () => {
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: ['m1'] }); // Dr. Alfa já emitido
+    renderComProviders();
+    fireEvent.click(await screen.findByRole('button', { name: 'Por médico' }));
+
+    fireEvent.change(screen.getByLabelText('Médico'), { target: { value: 'm1' } });
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-06' } });
+
+    await screen.findByText(/já tem boleto emitido para a competência 2026-06/);
+    expect(screen.getByRole('button', { name: 'Processar médico' })).toBeDisabled();
   });
 });

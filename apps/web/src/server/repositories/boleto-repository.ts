@@ -216,6 +216,37 @@ export async function buscarBoletoEmitido(execucaoResultadoId: string): Promise<
   return data ? toBoleto(data as BoletoRow) : null;
 }
 
+/**
+ * Médicos que já têm boleto ativo (emitido/pago — mesmo critério de `buscarBoletoEmitido`,
+ * Story 6.1 AC 3) para a competência informada, em QUALQUER execução — não só a atual.
+ *
+ * `buscarBoletoEmitido` só protege contra reemitir sobre a MESMA linha de resultado; não
+ * impede uma execução NOVA (individual ou em lote) de gerar uma linha de resultado inédita
+ * pro mesmo médico/competência e emitir um segundo boleto duplicado. Achado real (2026-08-04,
+ * coordenadora financeira): emitiu alguns médicos individualmente e ia rodar o mesmo mês em
+ * lote em seguida — nada detectava que esses médicos já tinham boleto. Esta função fecha essa
+ * lacuna: a UI de nova execução usa o resultado pra excluir/avisar sobre médicos já cobertos.
+ */
+export async function listarMedicosComBoletoAtivo(competencia: string): Promise<Set<string>> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos')
+    .select('execucao_resultados!inner(medico_id, execucoes!inner(competencia))')
+    .in('status', ['emitido', 'pago'])
+    .eq('execucao_resultados.execucoes.competencia', competencia);
+  if (error) {
+    throw new ApiError(500, 'Falha ao checar médicos com boleto já emitido na competência', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  const ids = new Set<string>();
+  for (const row of (data ?? []) as unknown as { execucao_resultados: { medico_id: string | null } }[]) {
+    const medicoId = row.execucao_resultados?.medico_id;
+    if (medicoId) ids.add(medicoId);
+  }
+  return ids;
+}
+
 export interface CancelarBoletoParams {
   canceladoPor: string; // profiles.id de quem confirmou
   motivo: string;

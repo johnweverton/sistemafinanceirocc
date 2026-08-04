@@ -121,6 +121,20 @@ export function NovaExecucao() {
   });
   const empresasAtivas = (empresas ?? []).filter((e) => e.ativo);
 
+  // Médicos com boleto ATIVO (emitido/pago) já nesta competência, em qualquer execução —
+  // achado real (2026-08-04, coordenadora financeira): emitir individual e depois rodar o
+  // mesmo mês em lote não detectava que alguns médicos já tinham boleto, arriscando duplicar.
+  // Sem `staleTime`/cache longo de propósito — precisa refletir uma emissão feita há segundos.
+  const { data: medicosComBoletoData } = useQuery({
+    queryKey: execucaoQueryKeys.medicosComBoleto(competencia),
+    queryFn: () => execucoesService.medicosComBoleto(competencia),
+    enabled: /^\d{4}-\d{2}$/.test(competencia),
+  });
+  const medicosComBoletoAtivo = useMemo(
+    () => new Set(medicosComBoletoData?.medicoIds ?? []),
+    [medicosComBoletoData],
+  );
+
   const { medicos, producoes } = useMemo(() => {
     if (!apoio) return { medicos: [], producoes: [] };
     const prods = apoio.clientesOrigem.flatMap(c =>
@@ -163,6 +177,7 @@ export function NovaExecucao() {
   const selecoesInfo = useMemo(() => {
     const matched: Array<{ medico: any; producao: any }> = [];
     const unmatched: Array<{ medico: any; producoesDisponiveis: any[] }> = [];
+    const jaEmitidos: any[] = [];
     const finalPayload: ExecucaoSelecaoPayload[] = [];
 
     const compValida = /^\d{4}-\d{2}$/.test(competencia);
@@ -173,6 +188,13 @@ export function NovaExecucao() {
     const mesNome = mesIndex >= 0 ? (MESES_NFD[mesIndex] || '') : '';
 
     for (const med of medicosParaCompetencia) {
+      // Já tem boleto ativo (emitido/pago) nesta competência, de uma execução ANTERIOR — nunca
+      // entra na lista de seleção (nem manual, nem auto-match), pra não arriscar duplicar.
+      if (medicosComBoletoAtivo.has(med.id)) {
+        jaEmitidos.push(med);
+        continue;
+      }
+
       const producoesDoMedico = producoes.filter(p => p.clienteId === med.externalId);
       const manualProdId = manualSelections[med.id];
 
@@ -236,7 +258,7 @@ export function NovaExecucao() {
       }
     }
 
-    return { matched, unmatched, finalPayload };
+    return { matched, unmatched, jaEmitidos, finalPayload };
   }, [
     medicosParaCompetencia,
     producoes,
@@ -245,6 +267,7 @@ export function NovaExecucao() {
     outrosHospitaisSelections,
     imobilizacoesSelections,
     competencia,
+    medicosComBoletoAtivo,
   ]);
 
   const disparar = useMutation({
@@ -271,7 +294,11 @@ export function NovaExecucao() {
   const canDispararCompetencia = competenciaValida && selecoesInfo.finalPayload.length > 0 && !disparar.isPending;
 
   const producaoSelecionada = producoesDoMedicoSelecionado.find(p => p.id === producaoId);
-  const canDispararMedico = Boolean(medicoId && producaoSelecionada && competenciaValida) && !disparar.isPending;
+  // Médico já tem boleto ativo (emitido/pago) nesta competência, de uma execução ANTERIOR —
+  // mesma checagem do modo "Por competência" (achado real 2026-08-04), bloqueia disparo.
+  const medicoJaTemBoleto = Boolean(medicoId) && medicosComBoletoAtivo.has(medicoId);
+  const canDispararMedico =
+    Boolean(medicoId && producaoSelecionada && competenciaValida) && !medicoJaTemBoleto && !disparar.isPending;
 
   const medicosDaEmpresa = validMedicos.filter((m) => m.empresaGrupoId === empresaId);
   const empresaSelecoesPayload: ExecucaoSelecaoPayload[] = medicosDaEmpresa
@@ -445,6 +472,11 @@ export function NovaExecucao() {
                     </option>
                   ))}
                 </select>
+                {medicoJaTemBoleto && (
+                  <p role="alert" className="mt-1.5 text-xs text-cc-danger">
+                    Este médico já tem boleto emitido para a competência {competencia || 'informada'}. Emitir de novo geraria um boleto duplicado — selecione outra competência ou outro médico.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -800,6 +832,25 @@ export function NovaExecucao() {
                       </div>
                     )}
                   </div>
+
+                  {selecoesInfo.jaEmitidos.length > 0 && (
+                    <div className="pt-4 border-t border-cc-border">
+                      <h3 className="mb-2 flex items-center gap-1.5 font-medium text-cc-ink-2">
+                        <CheckCircleIcon className="shrink-0 text-cc-muted" />
+                        Já emitido nesta competência ({selecoesInfo.jaEmitidos.length})
+                      </h3>
+                      <p className="text-xs text-cc-muted mb-3">
+                        Estes médicos já têm boleto emitido/pago para {competencia} (de uma execução anterior) — excluídos automaticamente desta emissão pra não duplicar.
+                      </p>
+                      <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                        {selecoesInfo.jaEmitidos.map((medico: any) => (
+                          <div key={medico.id} className="rounded bg-cc-surface-2/60 p-1.5 text-xs text-cc-ink-2">
+                            {medico.nome}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {selecoesInfo.unmatched.length > 0 && (
                     <div className="pt-4 border-t border-cc-border">

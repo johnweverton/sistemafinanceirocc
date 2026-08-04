@@ -69,6 +69,11 @@ export const execucoesService = {
       { method: 'POST', body: JSON.stringify({ motivo }) },
     ),
   resumoPorMedico: () => apiFetch<ExecucaoResumoMedico[]>('/execucoes/por-medico'),
+  /** Médicos com boleto ativo (emitido/pago) já na competência informada, em qualquer execução
+   *  — usado pra não deixar reemitir boleto duplicado do mesmo médico no mesmo mês. Sem cache
+   *  (precisa refletir uma emissão feita há poucos segundos). */
+  medicosComBoleto: (competencia: string) =>
+    apiFetch<{ medicoIds: string[] }>(`/execucoes/medicos-com-boleto?competencia=${competencia}`),
   historicoMedico: (chave: { medicoId?: string; cpf?: string }) => {
     const qs = new URLSearchParams();
     if (chave.medicoId) qs.set('medicoId', chave.medicoId);
@@ -83,6 +88,7 @@ export const execucaoQueryKeys = {
   resultados: (id: string) => ['execucoes', id, 'resultados'] as const,
   contribuicoes: (resultadoId: string) => ['execucoes', 'resultados', resultadoId, 'contribuicoes'] as const,
   apoio: () => ['execucoes', 'apoio'] as const,
+  medicosComBoleto: (competencia: string) => ['execucoes', 'medicos-com-boleto', competencia] as const,
   resumoPorMedico: () => ['execucoes', 'por-medico'] as const,
   historicoMedico: (chave: string) => ['execucoes', 'por-medico', 'historico', chave] as const,
 };
