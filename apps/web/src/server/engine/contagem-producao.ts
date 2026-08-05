@@ -33,15 +33,47 @@ export function chaveAtendimento(item: ItemProducao): string {
 }
 
 /**
+ * Chave de agrupamento HÍBRIDA para o 3x1 de pediatra (achado 2026-08-05): a origem ORA usa
+ * `atendimentoExternoId` (senha) pra identificar corretamente UM atendimento com vários
+ * procedimentos (PRD §12 — Dra. A/Dr. E: mesma senha em 3+ linhas, inclusive quando o
+ * `pacienteNome` do dado é genérico/repetido entre atendimentos DIFERENTES do mesmo mês — usar
+ * só o paciente misturaria atendimentos distintos), ORA dá uma senha PRÓPRIA a cada procedimento
+ * (José Neias 2026-08-04, Bruno de Brito Botelho 2026-08-05: toda linha com senha única, nenhuma
+ * repetida — usar a senha nesse caso fragmenta um único atendimento em várias guias).
+ * Resolve os dois: usa a senha quando ela aparece em 2+ linhas (atendimento real, compartilhado);
+ * cai para `pacienteNome` quando a senha é única por linha ou ausente.
+ */
+function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => string {
+  const contagemSenha = new Map<string, number>();
+  for (const item of itens) {
+    if (item.atendimentoExternoId && item.atendimentoExternoId.trim() !== '') {
+      contagemSenha.set(item.atendimentoExternoId, (contagemSenha.get(item.atendimentoExternoId) ?? 0) + 1);
+    }
+  }
+  return (item: ItemProducao) => {
+    const senha = item.atendimentoExternoId;
+    if (senha && senha.trim() !== '' && (contagemSenha.get(senha) ?? 0) > 1) {
+      return senha;
+    }
+    return item.pacienteNome;
+  };
+}
+
+/**
  * Conta as guias e cirurgias a partir de itens da produção (via API), adaptado à semântica real:
- * - itens viaAcesso (pediatra): agrupados por (pacienteNome, data), cada balde = teto(qtd/3)
- *   guias — mesma regra 3x1 dos itens normais (achado real 2026-08-04, Dr. José Neias: cada
- *   procedimento de uma via de acesso ganha uma senha PRÓPRIA na origem — ex.: 3 cirurgias do
- *   mesmo paciente no mesmo dia, 3 senhas diferentes — então agrupar por chaveAtendimento
- *   (senha) fragmenta o mesmo atendimento em várias guias, ignorando o 3x1 por completo).
+ * - itens viaAcesso (pediatra): agrupados por (chaveAgrupamento3x1, data), cada balde =
+ *   teto(qtd/3) guias — mesma regra 3x1 dos itens normais (achado real 2026-08-04, Dr. José
+ *   Neias: cada procedimento de uma via de acesso ganha uma senha PRÓPRIA na origem — ex.: 3
+ *   cirurgias do mesmo paciente no mesmo dia, 3 senhas diferentes — então agrupar por
+ *   chaveAtendimento (senha) fragmenta o mesmo atendimento em várias guias, ignorando o 3x1 por
+ *   completo). Ver `chaveAgrupamento3x1` para o caso em que a senha SE REPETE (atendimento real).
  * - itens viaAcesso (não pediatra): 1 guia por chaveAtendimento (comportamento original —
  *   sem evidência de que a mesma fragmentação por senha ocorra fora de pediatria).
- * - itens normais (pediatra): agrupados por (chaveAtendimento, data), cada balde = teto(qtd/3) guias.
+ * - itens normais (pediatra): agrupados por (chaveAgrupamento3x1, data), cada balde =
+ *   teto(qtd/3) guias — mesma correção do bloco acima, agora nos itens normais também (achado
+ *   real 2026-08-05, Dr. Bruno de Brito Botelho: 213 procedimentos NORMAIS, 213 senhas
+ *   distintas — cobrava 213 guias em vez de ~80). PRD §12 (Dra. A/Dr. E) preservado: senhas
+ *   compartilhadas por 2+ procedimentos continuam identificando o atendimento real.
  * - itens normais (não pediatra): 1 guia por item.
  */
 export function contarGuiasProducao(itens: ItemProducao[], especialidade?: string | null): ResultadoContagem {
@@ -65,14 +97,15 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
   }
 
   if (pediatra) {
-    // Pediatra + via de acesso: teto(qtd/3) por (paciente, data) — NUNCA por chaveAtendimento
-    // (senha), que é por procedimento, não por atendimento, nesses itens.
+    // Pediatra + via de acesso: teto(qtd/3) por (chaveAgrupamento3x1, data).
+    const chaveViaAcesso = chaveAgrupamento3x1(viaAcessoItems);
     const porPacienteViaAcesso = new Map<string, Map<string, number>>();
     for (const item of viaAcessoItems) {
-      let datas = porPacienteViaAcesso.get(item.pacienteNome);
+      const chave = chaveViaAcesso(item);
+      let datas = porPacienteViaAcesso.get(chave);
       if (!datas) {
         datas = new Map<string, number>();
-        porPacienteViaAcesso.set(item.pacienteNome, datas);
+        porPacienteViaAcesso.set(chave, datas);
       }
       datas.set(item.data, (datas.get(item.data) ?? 0) + 1);
     }
@@ -92,10 +125,11 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
 
   // Remaining
   if (pediatra) {
-    // Pediatra
+    // Pediatra: teto(qtd/3) por (chaveAgrupamento3x1, data).
+    const chaveOutros = chaveAgrupamento3x1(outrosItems);
     const porAtend = new Map<string, Map<string, number>>();
     for (const item of outrosItems) {
-      const chave = chaveAtendimento(item);
+      const chave = chaveOutros(item);
       let datas = porAtend.get(chave);
       if (!datas) {
         datas = new Map<string, number>();

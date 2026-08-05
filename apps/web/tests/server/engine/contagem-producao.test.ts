@@ -162,6 +162,56 @@ describe('Engine: Contagem de Produção', () => {
       expect(resultado.guias).toBe(4);
     });
 
+    it('l. pediatra: itens NORMAIS (sem via de acesso) com senha própria por procedimento → 3x1 por paciente, não por senha (achado real 2026-08-05, Dr. Bruno de Brito Botelho)', () => {
+      // Réplica simplificada do caso real: 64 pacientes, cada procedimento com senha própria —
+      // 14 pacientes com 4 itens no mesmo dia (teto(4/3)=2 cada) e 50 pacientes com 1 item cada
+      // (1 guia cada). Total esperado: 50×1 + 14×2 = 78. Sem o fix (agrupar por senha em vez de
+      // paciente+data), cada senha vira 1 guia própria — 50+56=106 guias em vez de 78 (o caso
+      // real tinha 213 itens/senhas → 80 guias corretas, aqui simplificado para números redondos).
+      const itens: ItemProducao[] = [];
+      let senhaSeq = 0;
+      const proximaSenha = () => `AH${++senhaSeq}`;
+      for (let p = 0; p < 14; p++) {
+        for (let i = 0; i < 4; i++) {
+          itens.push({ ...baseItem(), pacienteNome: `Paciente4x-${p}`, atendimentoExternoId: proximaSenha() });
+        }
+      }
+      for (let p = 0; p < 50; p++) {
+        itens.push({ ...baseItem(), pacienteNome: `Paciente1x-${p}`, atendimentoExternoId: proximaSenha() });
+      }
+
+      const resultado = contarGuiasProducao(itens, 'pediatria');
+      expect(resultado.guias).toBe(78); // 50×1 + 14×teto(4/3)=14×2
+    });
+
+    it('m. pediatra: itens normais, mesmo paciente com 4 senhas distintas no mesmo dia → teto(4/3) = 2 guias (não 4)', () => {
+      const itens: ItemProducao[] = Array.from({ length: 4 }, (_, i) => ({
+        ...baseItem(),
+        pacienteNome: 'Criança X',
+        atendimentoExternoId: `senha-${i}`,
+      }));
+      const resultado = contarGuiasProducao(itens, 'Pediatria');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('n. regra híbrida: senha REPETIDA (atendimento real, PRD §12) convive com senha ÚNICA por procedimento (achado 2026-08-05) no mesmo lote', () => {
+      const itens: ItemProducao[] = [
+        // Atendimento real: 1 cirurgia, 3 procedimentos, MESMA senha (padrão PRD §12 Dra. A/Dr. E)
+        // → deve virar 1 guia (teto(3/3)), mesmo com pacienteNome genérico repetido abaixo.
+        { ...baseItem(), pacienteNome: 'Paciente', atendimentoExternoId: 'ATEND-REAL-1' },
+        { ...baseItem(), pacienteNome: 'Paciente', atendimentoExternoId: 'ATEND-REAL-1' },
+        { ...baseItem(), pacienteNome: 'Paciente', atendimentoExternoId: 'ATEND-REAL-1' },
+        // Outro paciente, 4 procedimentos NO MESMO DIA, cada um com senha PRÓPRIA (padrão José
+        // Neias/Bruno Botelho) → deve cair para agrupamento por paciente: teto(4/3) = 2 guias.
+        { ...baseItem(), pacienteNome: 'Outra Criança', atendimentoExternoId: 'SENHA-UNICA-1' },
+        { ...baseItem(), pacienteNome: 'Outra Criança', atendimentoExternoId: 'SENHA-UNICA-2' },
+        { ...baseItem(), pacienteNome: 'Outra Criança', atendimentoExternoId: 'SENHA-UNICA-3' },
+        { ...baseItem(), pacienteNome: 'Outra Criança', atendimentoExternoId: 'SENHA-UNICA-4' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Pediatria');
+      expect(resultado.guias).toBe(3); // 1 (atendimento real) + 2 (teto(4/3) por paciente)
+    });
+
     it('h. linha sem paciente ou sem data → excluída + reportada como inválida', () => {
       const itens: ItemProducao[] = [
         { ...baseItem() },
