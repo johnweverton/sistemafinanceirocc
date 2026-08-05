@@ -277,6 +277,10 @@ export function NovaExecucao() {
       setExecucaoId(execucaoId);
       setErro(null);
       void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucoes() });
+      // Achado 2026-08-05: sem isso, um médico recém-emitido continuava elegível pra seleção
+      // (manual ou em lote) na mesma sessão até um refetch natural — mesma classe de risco de
+      // duplicidade que medicosComBoletoAtivo foi criado pra evitar (2026-08-04).
+      void qc.invalidateQueries({ queryKey: execucaoQueryKeys.medicosComBoleto(competencia) });
       toast('Emissão iniciada. Acompanhe o progresso.', 'success');
     },
     onError: (e) => {

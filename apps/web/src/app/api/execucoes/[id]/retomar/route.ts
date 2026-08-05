@@ -12,6 +12,9 @@ import { buscarExecucao } from '@/server/repositories/execucao-repository';
 
 const retomarLimiter = createRateLimiter('execucoes-retomar', { limit: 5, windowMs: 60_000 });
 
+// Mesmo calibre de processar-lote/route.ts — ver comentário no route.ts de POST /api/execucoes.
+export const maxDuration = 300;
+
 export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) => {
   const sessao = await requireRole(['admin', 'colaborador']);
   assertRateLimit(retomarLimiter, sessao.userId, 'retomada de execução');
@@ -22,8 +25,8 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
     throw new ApiError(422, 'Só é possível retomar uma execução em processamento', 'EXECUCAO_NAO_RETOMAVEL');
   }
 
-  // Fire-and-forget, mesmo padrão do disparo inicial (POST /api/execucoes) — responde já.
-  void dispararPrimeiroLote(execucao.id);
+  // Aguarda terminar antes de responder — mesmo fix do disparo inicial (POST /api/execucoes).
+  await dispararPrimeiroLote(execucao.id);
 
-  return Response.json({ ok: true }, { status: 202 });
+  return Response.json({ ok: true });
 });
