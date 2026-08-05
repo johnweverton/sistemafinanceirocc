@@ -19,6 +19,7 @@ import type {
   ResultadoCancelamento,
 } from '@cobranca/shared';
 import type { CredenciaisConta } from '@/lib/env';
+import { getServerEnv } from '@/lib/env';
 import { calcularVencimento } from './vencimento';
 import { CoraHttpClient } from './cora-http';
 
@@ -114,7 +115,7 @@ export class CoraGateway implements BoletoGatewayPort {
         };
       }
 
-      const invoicePayload = {
+      const invoicePayload: Record<string, unknown> = {
         amount: Math.round(dados.valor * 100), // Cora usa centavos
         code: dados.execucaoResultadoId.slice(0, 20), // referência interna
         customer,
@@ -126,6 +127,13 @@ export class CoraGateway implements BoletoGatewayPort {
           },
         ],
       };
+      // Boleto híbrido (achado 2026-08-05): pago por código de barras custa R$1,70 na Cora,
+      // pago por Pix (QR Code embutido no mesmo boleto) custa só R$0,50. Aditivo — o código de
+      // barras continua funcionando igual, só ganha a opção extra de Pix. Exige chave Pix
+      // cadastrada na conta emissora no painel da Cora.
+      if (getServerEnv().EMISSAO_PIX_HABILITADA === 'true') {
+        invoicePayload.payment_forms = ['BANK_SLIP', 'PIX'];
+      }
 
       const invoiceUrl = `${this.http.baseUrl}/v2/invoices`;
       const resp = await this.http.fetch(invoiceUrl, {

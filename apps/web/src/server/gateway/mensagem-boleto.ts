@@ -23,14 +23,18 @@ export function formatarDataBR(isoDate: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
-/** Legenda que acompanha o PDF no WhatsApp. */
+/** Legenda que acompanha o PDF no WhatsApp. `pixDisponivel` reflete se o boleto foi emitido
+ * como híbrido (código de barras + QR Code Pix, achado 2026-08-05) — sem isso, mencionar Pix
+ * seria informar uma opção que não existe de fato no PDF. */
 export function montarLegendaWhatsapp(
   cobranca: Pick<DadosCobranca, 'pagadorTipo' | 'pagadorNome'>,
   vencimento: string,
+  pixDisponivel = false,
 ): string {
   return (
     `Olá, ${saudacaoPagador(cobranca)}!\n` +
-    `Segue abaixo o boleto da cobrança médica com o vencimento para ${formatarDataBR(vencimento)}.\n\n` +
-    `At.te\n${NOME_REMETENTE_MENSAGEM}`
+    `Segue abaixo o boleto da cobrança médica com o vencimento para ${formatarDataBR(vencimento)}.\n` +
+    (pixDisponivel ? 'Você também pode pagar via Pix escaneando o QR Code no boleto.\n' : '') +
+    `\nAt.te\n${NOME_REMETENTE_MENSAGEM}`
   );
 }

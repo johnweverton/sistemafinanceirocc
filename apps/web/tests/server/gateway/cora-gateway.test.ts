@@ -353,6 +353,84 @@ describe('CoraGateway', () => {
     expect(terms.interest).toEqual({ rate: 1 });
     expect(terms.discount).toEqual({ type: 'PERCENT', value: 5 });
   });
+
+  it('não inclui payment_forms por padrão (EMISSAO_PIX_HABILITADA desligada) — só código de barras', async () => {
+    delete process.env.EMISSAO_PIX_HABILITADA;
+    let invoicePayload: Record<string, unknown> = {};
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(
+        (
+          _o: unknown,
+          callback: (res: { statusCode: number; statusMessage: string; headers: Record<string, string>; on: (event: string, handler: (data?: unknown) => void) => void }) => void,
+        ) => {
+          const res = {
+            statusCode: 201,
+            statusMessage: 'Created',
+            headers: { 'content-type': 'application/json' },
+            on: (event: string, handler: (data?: unknown) => void) => {
+              if (event === 'data') handler(Buffer.from(JSON.stringify({ id: 'inv_sem_pix' })));
+              if (event === 'end') handler();
+            },
+          };
+          callback(res);
+          return {
+            on: vi.fn(),
+            setTimeout: vi.fn(),
+            write: vi.fn((data: string) => { invoicePayload = JSON.parse(data); }),
+            end: vi.fn(),
+            destroy: vi.fn(),
+          };
+        },
+      );
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const gateway = new CoraGateway(CRED_TESTE);
+    await gateway.emitir(dadosPadrao, 'idem-key-teste');
+
+    expect('payment_forms' in invoicePayload).toBe(false);
+  });
+
+  it('inclui payment_forms BANK_SLIP+PIX quando EMISSAO_PIX_HABILITADA=true (boleto híbrido, achado 2026-08-05)', async () => {
+    process.env.EMISSAO_PIX_HABILITADA = 'true';
+    let invoicePayload: Record<string, unknown> = {};
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(
+        (
+          _o: unknown,
+          callback: (res: { statusCode: number; statusMessage: string; headers: Record<string, string>; on: (event: string, handler: (data?: unknown) => void) => void }) => void,
+        ) => {
+          const res = {
+            statusCode: 201,
+            statusMessage: 'Created',
+            headers: { 'content-type': 'application/json' },
+            on: (event: string, handler: (data?: unknown) => void) => {
+              if (event === 'data') handler(Buffer.from(JSON.stringify({ id: 'inv_com_pix' })));
+              if (event === 'end') handler();
+            },
+          };
+          callback(res);
+          return {
+            on: vi.fn(),
+            setTimeout: vi.fn(),
+            write: vi.fn((data: string) => { invoicePayload = JSON.parse(data); }),
+            end: vi.fn(),
+            destroy: vi.fn(),
+          };
+        },
+      );
+
+    try {
+      const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+      const gateway = new CoraGateway(CRED_TESTE);
+      await gateway.emitir(dadosPadrao, 'idem-key-teste');
+
+      expect(invoicePayload.payment_forms).toEqual(['BANK_SLIP', 'PIX']);
+    } finally {
+      delete process.env.EMISSAO_PIX_HABILITADA;
+    }
+  });
 });
 
 describe('CoraGateway.cancelar (Story 6.1)', () => {

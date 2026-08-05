@@ -8,6 +8,7 @@ import { ZappyGateway } from '@/server/gateway/zappy-gateway';
 import { EmailGateway } from '@/server/gateway/email-gateway';
 import { saudacaoPagador, montarLegendaWhatsapp } from '@/server/gateway/mensagem-boleto';
 import { buscarMedico } from '@/server/repositories/medico-repository';
+import { getServerEnv } from '@/lib/env';
 
 export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) => {
   await requireRole(['admin', 'financeiro']);
@@ -55,7 +56,8 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
       if (cobranca.whatsapp) {
         try {
           const zappy = new ZappyGateway();
-          await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!));
+          const pixDisponivel = getServerEnv().EMISSAO_PIX_HABILITADA === 'true';
+          await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!, pixDisponivel));
           await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
         } catch (err: any) {
           await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

@@ -4,13 +4,15 @@
 // conta emissora MC/Cavalcante Viana) — decisão consciente do dono, não regressão.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockEnv = {
+  SMTP_HOST: 'smtp.test',
+  SMTP_PORT: 587,
+  SMTP_USER: 'cobranca@test.com',
+  SMTP_PASS: 'x',
+  EMISSAO_PIX_HABILITADA: 'false',
+};
 vi.mock('@/lib/env', () => ({
-  getServerEnv: vi.fn(() => ({
-    SMTP_HOST: 'smtp.test',
-    SMTP_PORT: 587,
-    SMTP_USER: 'cobranca@test.com',
-    SMTP_PASS: 'x',
-  })),
+  getServerEnv: vi.fn(() => ({ ...mockEnv })),
 }));
 
 const mockSendMail = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
@@ -23,6 +25,7 @@ import { saudacaoPagador, montarLegendaWhatsapp, formatarDataBR } from '@/server
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockEnv.EMISSAO_PIX_HABILITADA = 'false';
   // downloadPdf usa fetch global — devolve um PDF fake.
   vi.stubGlobal(
     'fetch',
@@ -42,6 +45,20 @@ describe('EmailGateway.enviarBoleto — sempre assina Carmem Cavalcante Contabil
     expect(mail.html).toContain('Carmem Cavalcante Contabilidade');
     expect(mail.html).toContain('Dr(a). Fulano de Tal');
     expect(mail.html).toContain('15/08/2026');
+  });
+
+  it('não menciona Pix quando EMISSAO_PIX_HABILITADA está desligada (default)', async () => {
+    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x');
+    const mail = mockSendMail.mock.calls[0]![0] as { html: string };
+    expect(mail.html).not.toContain('Pix');
+  });
+
+  it('menciona Pix quando EMISSAO_PIX_HABILITADA=true (boleto híbrido, achado 2026-08-05)', async () => {
+    mockEnv.EMISSAO_PIX_HABILITADA = 'true';
+    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x');
+    const mail = mockSendMail.mock.calls[0]![0] as { html: string };
+    expect(mail.html).toContain('Pix');
+    expect(mail.html).toContain('QR Code');
   });
 });
 
@@ -66,6 +83,16 @@ describe('montarLegendaWhatsapp (mensagem-boleto.ts)', () => {
     expect(legenda).toBe(
       'Olá, Dr(a). John Weverton!\n' +
         'Segue abaixo o boleto da cobrança médica com o vencimento para 15/08/2026.\n\n' +
+        'At.te\nCarmem Cavalcante Contabilidade',
+    );
+  });
+
+  it('menciona Pix quando pixDisponivel=true (boleto híbrido, achado 2026-08-05)', () => {
+    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' }, '2026-08-15', true);
+    expect(legenda).toBe(
+      'Olá, Dr(a). John Weverton!\n' +
+        'Segue abaixo o boleto da cobrança médica com o vencimento para 15/08/2026.\n' +
+        'Você também pode pagar via Pix escaneando o QR Code no boleto.\n\n' +
         'At.te\nCarmem Cavalcante Contabilidade',
     );
   });

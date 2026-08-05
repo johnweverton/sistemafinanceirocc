@@ -38,6 +38,7 @@ import {
   type BoletoGatewayPort,
 } from '@cobranca/shared';
 import { ApiError } from '@/lib/api-error';
+import { getServerEnv } from '@/lib/env';
 import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
 import { ZappyGateway } from '@/server/gateway/zappy-gateway';
 import { EmailGateway } from '@/server/gateway/email-gateway';
@@ -320,7 +321,8 @@ export async function emitirBoletoParaResultado(
         if (cobranca.whatsapp) {
           try {
             const zappy = new ZappyGateway();
-            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!));
+            const pixDisponivel = getServerEnv().EMISSAO_PIX_HABILITADA === 'true';
+            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!, pixDisponivel));
             await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
           } catch (err: any) {
             await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

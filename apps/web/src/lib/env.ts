@@ -56,6 +56,14 @@ const serverSchema = z.object({
   // desliga o botão "Sincronizar" da tela /extrato (extrato bancário completo + matching), sem
   // afetar emissão nem baixa de boletos.
   EXTRATO_SYNC_HABILITADO: z.enum(['true', 'false']).default('false'),
+  // ---------------------------------------------------------------------------
+  // PIX NO BOLETO — boleto híbrido (achado 2026-08-05)
+  // ---------------------------------------------------------------------------
+  // Boleto pago via código de barras custa R$1,70 na Cora; pago via Pix (QR Code embutido no
+  // mesmo boleto) custa só R$0,50. Exige a conta emissora ter uma chave Pix cadastrada no Cora
+  // — sem isso a emissão pode falhar. Default 'false': ligar só depois de confirmar a chave Pix
+  // e testar com 1 emissão real.
+  EMISSAO_PIX_HABILITADA: z.enum(['true', 'false']).default('false'),
   // Status devolvido pela reconsulta (consultarInvoice) do MockGateway em dev (débito M-1):
   // 'paid' (default) testa webhook/baixa; 'open' permite testar o CANCELAMENTO (com 'paid',
   // todo cancelamento em mock cai no ramo de corrida e grava baixa falsa).
@@ -137,6 +145,7 @@ export function getServerEnv() {
     EMISSAO_LOTE_HABILITADA: process.env.EMISSAO_LOTE_HABILITADA,
     BOLETO_GATEWAY: process.env.BOLETO_GATEWAY,
     EXTRATO_SYNC_HABILITADO: process.env.EXTRATO_SYNC_HABILITADO,
+    EMISSAO_PIX_HABILITADA: process.env.EMISSAO_PIX_HABILITADA,
     MOCK_INVOICE_STATUS: process.env.MOCK_INVOICE_STATUS,
     CORA_CERT_BASE64: process.env.CORA_CERT_BASE64,
     CORA_KEY_BASE64: process.env.CORA_KEY_BASE64,

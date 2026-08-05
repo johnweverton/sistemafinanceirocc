@@ -51,7 +51,11 @@ export class EmailGateway {
 
     try {
       const pdfBuffer = await this.downloadPdf(pdfUrl);
-      const remetente = getServerEnv().SMTP_USER || 'contato@empresa.com.br';
+      const env = getServerEnv();
+      const remetente = env.SMTP_USER || 'contato@empresa.com.br';
+      // Boleto híbrido (achado 2026-08-05): só menciona Pix se o boleto foi de fato emitido com
+      // a opção — mencionar sem a opção existir no PDF confundiria o pagador.
+      const pixDisponivel = env.EMISSAO_PIX_HABILITADA === 'true';
 
       const html = `
         <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5; max-width: 600px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 8px; overflow: hidden;">
@@ -61,6 +65,7 @@ export class EmailGateway {
           <div style="padding: 32px 24px;">
             <p style="font-size: 16px; margin-top: 0;">Olá, <strong>${saudacao}</strong>!</p>
             <p>Segue abaixo o boleto da cobrança médica com o vencimento para <strong>${formatarDataBR(vencimento)}</strong>. O PDF vai em anexo neste e-mail.</p>
+            ${pixDisponivel ? '<p>Você também pode pagar via Pix escaneando o QR Code no boleto.</p>' : ''}
             <p>Se preferir, você também pode visualizar e imprimir o boleto através do link seguro abaixo:</p>
 
             <div style="margin: 32px 0;">
