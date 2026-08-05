@@ -47,6 +47,15 @@ const serverSchema = z.object({
   EMISSAO_LOTE_HABILITADA: z.enum(['true', 'false']).default('false'),
   // Qual gateway usar: 'cora' (real, mTLS) ou 'mock' (testes/dev).
   BOLETO_GATEWAY: z.enum(['cora', 'mock']).default('mock'),
+  // ---------------------------------------------------------------------------
+  // CONCILIAÇÃO BANCÁRIA — sync de extrato (Cora cobra por chamada, achado 2026-08-05)
+  // ---------------------------------------------------------------------------
+  // A Cora cobra por chamada de consulta de extrato (bank-statement/statement). A baixa de
+  // boletos pagos NÃO depende disso — já acontece de graça via webhook
+  // (/api/webhooks/cora/[secret], que reconsulta só a invoice específica). Default 'false':
+  // desliga o botão "Sincronizar" da tela /extrato (extrato bancário completo + matching), sem
+  // afetar emissão nem baixa de boletos.
+  EXTRATO_SYNC_HABILITADO: z.enum(['true', 'false']).default('false'),
   // Status devolvido pela reconsulta (consultarInvoice) do MockGateway em dev (débito M-1):
   // 'paid' (default) testa webhook/baixa; 'open' permite testar o CANCELAMENTO (com 'paid',
   // todo cancelamento em mock cai no ramo de corrida e grava baixa falsa).
@@ -127,6 +136,7 @@ export function getServerEnv() {
     GATEWAY_EMISSAO_HABILITADA: process.env.GATEWAY_EMISSAO_HABILITADA,
     EMISSAO_LOTE_HABILITADA: process.env.EMISSAO_LOTE_HABILITADA,
     BOLETO_GATEWAY: process.env.BOLETO_GATEWAY,
+    EXTRATO_SYNC_HABILITADO: process.env.EXTRATO_SYNC_HABILITADO,
     MOCK_INVOICE_STATUS: process.env.MOCK_INVOICE_STATUS,
     CORA_CERT_BASE64: process.env.CORA_CERT_BASE64,
     CORA_KEY_BASE64: process.env.CORA_KEY_BASE64,

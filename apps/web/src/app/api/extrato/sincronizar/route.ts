@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { createRateLimiter, assertRateLimit } from '@/lib/rate-limit';
+import { getServerEnv } from '@/lib/env';
 import { criarContaGateway } from '@/server/gateway/conta-gateway-factory';
 import {
   upsertTransacoes,
@@ -56,6 +57,17 @@ function diasAtras(base: Date, dias: number): string {
 export const POST = withErrorHandler(async (req) => {
   const sessao = await requireRole(['admin', 'financeiro']);
   assertRateLimit(sincronizarLimiter, sessao.userId, 'sincronização de extrato');
+
+  // Feature flag (achado 2026-08-05): a Cora cobra por chamada de extrato. A baixa de boletos
+  // pagos não depende disso — já acontece de graça via webhook. Desligado por padrão.
+  if (getServerEnv().EXTRATO_SYNC_HABILITADO !== 'true') {
+    throw new ApiError(
+      403,
+      'Sincronização de extrato desabilitada (custo por chamada na Cora). A baixa de boletos ' +
+        'pagos continua automática via webhook, sem custo.',
+      'EXTRATO_SYNC_DESABILITADO',
+    );
+  }
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

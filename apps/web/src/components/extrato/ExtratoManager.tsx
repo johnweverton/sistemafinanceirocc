@@ -400,6 +400,13 @@ export function ExtratoManager() {
         );
         return;
       }
+      if (e instanceof ApiClientError && e.code === 'EXTRATO_SYNC_DESABILITADO') {
+        toast(
+          'Sincronização de extrato desligada (a Cora cobra por chamada). A baixa de boletos pagos continua automática, sem custo.',
+          'info',
+        );
+        return;
+      }
       erroToast(e, 'Erro ao sincronizar o extrato');
     },
   });
@@ -532,6 +539,10 @@ export function ExtratoManager() {
           </button>
         </div>
       </div>
+      <p className="text-xs text-cc-muted">
+        Sincronização de extrato desligada (a Cora cobra por chamada). A baixa de boletos pagos
+        continua automática e sem custo, via webhook.
+      </p>
 
       {/* Totais do período (tarifas ⊂ saídas) */}
       {totais && (

@@ -1,6 +1,11 @@
 // Testes da rota POST /api/extrato/sincronizar (Story 8.2, AC 2/5) — deps mockadas.
 // Cobre: janela (primeira vez 90d / overlap 3d), 503 CONTA_NAO_CONFIGURADA, 502 do gateway,
 // upsert + matching + log encadeados e resumo da resposta. O ENGINE é real (puro).
+// EXTRATO_SYNC_HABILITADO forçada 'true' aqui (achado 2026-08-05: default de produção é
+// 'false', a Cora cobra por chamada) — este arquivo testa a lógica do sync em si assumindo a
+// flag ligada; o bloqueio pela flag desligada tem teste dedicado em
+// extrato-sincronizar-route.test.ts.
+process.env.EXTRATO_SYNC_HABILITADO = 'true';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockRequireRole = vi.fn();

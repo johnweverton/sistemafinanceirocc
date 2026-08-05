@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../src/components/ui/Toast';
+import { ApiClientError } from '../../src/lib/api-client';
 
 const mockListar = vi.fn();
 const mockSincronizar = vi.fn();
@@ -130,6 +131,32 @@ describe('ExtratoManager', () => {
     // Valores em BRL (NBSP entre R$ e o número).
     expect(screen.getByText((t) => t.replace(/ /g, ' ') === 'R$ 12,90')).toBeInTheDocument();
     expect(screen.getByText((t) => t.replace(/ /g, ' ') === 'R$ 2.400,00')).toBeInTheDocument();
+  });
+
+  it('avisa que a sincronização está desligada (custo por chamada na Cora, achado 2026-08-05)', async () => {
+    mockListar.mockResolvedValue({ transacoes: [semMatch], totais });
+    renderComProviders();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Sincronização de extrato desligada \(a Cora cobra por chamada\)/),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('ao clicar Sincronizar com a flag desligada no servidor, mostra aviso informativo (não erro)', async () => {
+    mockListar.mockResolvedValue({ transacoes: [semMatch], totais });
+    mockSincronizar.mockRejectedValue(
+      new ApiClientError(403, 'Sincronização de extrato desabilitada.', 'EXTRATO_SYNC_DESABILITADO'),
+    );
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Sincronizar/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/A baixa de boletos pagos continua automática, sem custo/)).toBeInTheDocument(),
+    );
   });
 
   it('empty state orienta a sincronizar quando não há transações', async () => {
