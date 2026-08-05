@@ -68,7 +68,11 @@ export function HistoricoExecucoes() {
 
   const termoBusca = normalizarBusca(busca.trim());
   const execucoesFiltradas = execucoes.filter((e) => {
-    if (termoBusca && !normalizarBusca(e.competencia).includes(termoBusca)) return false;
+    if (termoBusca) {
+      const bateCompetencia = normalizarBusca(e.competencia).includes(termoBusca);
+      const bateMedico = e.medicoNome ? normalizarBusca(e.medicoNome).includes(termoBusca) : false;
+      if (!bateCompetencia && !bateMedico) return false;
+    }
     if (filtroStatus !== 'todos' && e.status !== filtroStatus) return false;
     if (filtroTipo !== 'todos' && tipoDaExecucao(e) !== filtroTipo) return false;
     if (filtroCompetencia && e.competencia !== filtroCompetencia) return false;
@@ -129,8 +133,8 @@ export function HistoricoExecucoes() {
               type="search"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar por competência..."
-              aria-label="Buscar por competência"
+              placeholder="Buscar por competência ou médico..."
+              aria-label="Buscar por competência ou médico"
               className="input max-w-xs"
             />
             <select
@@ -266,6 +270,9 @@ function GrupoCompetencia({
               <tr key={e.id} onClick={() => onAbrir(e.id)} className="cursor-pointer">
                 <td>
                   <span className="badge-slate">{tipoDaExecucao(e) === 'massa' ? 'Em massa' : 'Pontual'}</span>
+                  {tipoDaExecucao(e) === 'pontual' && e.medicoNome && (
+                    <span className="block text-2xs text-cc-muted">{e.medicoNome}</span>
+                  )}
                 </td>
                 <td>
                   <StatusBadge status={e.status} />

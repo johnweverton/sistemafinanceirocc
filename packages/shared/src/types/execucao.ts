@@ -55,6 +55,13 @@ export interface Execucao {
    * junto com `clienteContabilidadeId`. Default `false` = execução mensal normal.
    */
   ehAdicional?: boolean;
+  /**
+   * Nome do médico, só presente quando `totalMedicos === 1` (execução "pontual", disparada pelo
+   * modo "Por médico" da tela Nova Emissão) — resolvido via join em `execucao_resultados` (busca
+   * em lote no repositório, não N+1). null/undefined em execuções em massa ou ainda sem resultado
+   * gravado. Usado só para busca por nome na tela de Emissões (histórico).
+   */
+  medicoNome?: string | null;
 }
 
 export interface ExecucaoResultado {

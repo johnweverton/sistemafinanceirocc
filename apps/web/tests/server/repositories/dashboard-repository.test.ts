@@ -49,6 +49,20 @@ describe('resumoPorCompetencia', () => {
     await resumoPorCompetencia('2026-06');
     expect(builder.eq).toHaveBeenCalledWith('competencia', '2026-06');
   });
+
+  it('aplica .eq de conta_emissora quando contaEmissora é passada', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorCompetencia(undefined, 'cavalcante_viana');
+    expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'cavalcante_viana');
+  });
+
+  it('sem contaEmissora aplica .is(null) em conta_emissora', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorCompetencia();
+    expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
+  });
 });
 
 describe('resumoPorMedico', () => {
@@ -75,7 +89,21 @@ describe('resumoPorMedico', () => {
     mockFrom.mockReturnValue(builder);
     await resumoPorMedico('2026-06');
     expect(builder.eq).toHaveBeenCalledWith('competencia', '2026-06');
-    expect(builder.is).not.toHaveBeenCalled();
+    expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
+  });
+
+  it('aplica .eq de conta_emissora quando contaEmissora é passada', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorMedico(undefined, 'cc_solucoes');
+    expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'cc_solucoes');
+  });
+
+  it('sem contaEmissora aplica .is(null) em conta_emissora', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorMedico();
+    expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
   });
 });
 
@@ -102,5 +130,19 @@ describe('aging', () => {
     mockFrom.mockReturnValue(builder);
     await aging('2026-06');
     expect(builder.eq).toHaveBeenCalledWith('competencia', '2026-06');
+  });
+
+  it('aplica .eq de conta_emissora quando contaEmissora é passada', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await aging(undefined, 'carmem_cavalcante');
+    expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'carmem_cavalcante');
+  });
+
+  it('sem contaEmissora aplica .is(null) em conta_emissora', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await aging();
+    expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
   });
 });

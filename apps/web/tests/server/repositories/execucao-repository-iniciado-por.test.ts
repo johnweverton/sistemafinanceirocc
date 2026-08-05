@@ -20,6 +20,7 @@ function makeBuilder(result: { data: unknown; error: unknown }) {
     select: vi.fn(() => builder),
     order: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    in: vi.fn(() => builder),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (v: unknown) => void) => resolve(result),
   };

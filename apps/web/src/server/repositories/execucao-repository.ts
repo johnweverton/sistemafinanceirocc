@@ -132,7 +132,29 @@ export async function listarExecucoes(): Promise<Execucao[]> {
   const execucoes = (data as ExecucaoRow[]).map(toExecucao);
   // Uma chamada para todos os autores da lista, não uma por linha (evita N+1 na Admin Auth API).
   const emails = await resolverEmailsPorIds([...new Set(execucoes.map((e) => e.iniciadoPor))]);
-  return execucoes.map((e) => ({ ...e, iniciadoPorEmail: emails.get(e.iniciadoPor) ?? null }));
+  const execucoesComEmail = execucoes.map((e) => ({ ...e, iniciadoPorEmail: emails.get(e.iniciadoPor) ?? null }));
+
+  // Execuções "pontuais" (totalMedicos === 1, disparadas pelo modo "Por médico" da tela Nova
+  // Emissão) têm exatamente 1 resultado — busca em LOTE (não N+1) o nome do médico pra alimentar
+  // a busca por nome no histórico de emissões.
+  const idsPontuais = execucoesComEmail.filter((e) => e.totalMedicos === 1).map((e) => e.id);
+  if (idsPontuais.length === 0) return execucoesComEmail;
+
+  const { data: resultados, error: errResultados } = await db
+    .from('execucao_resultados')
+    .select('execucao_id, nome')
+    .in('execucao_id', idsPontuais);
+  if (errResultados) {
+    throw new ApiError(500, 'Falha ao buscar nome do médico das execuções pontuais', 'DB_ERROR', {
+      error: errResultados.message,
+    });
+  }
+  const nomesPorExecucao = new Map(
+    (resultados as { execucao_id: string; nome: string }[]).map((r) => [r.execucao_id, r.nome]),
+  );
+  return execucoesComEmail.map((e) =>
+    idsPontuais.includes(e.id) ? { ...e, medicoNome: nomesPorExecucao.get(e.id) ?? null } : e,
+  );
 }
 
 /**

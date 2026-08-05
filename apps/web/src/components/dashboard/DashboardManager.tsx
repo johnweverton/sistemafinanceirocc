@@ -1,6 +1,8 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { ContaEmissora } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 import { dashboardService, dashboardQueryKeys } from '@/services/dashboard';
 import { SaldoEmpresas } from '@/components/dashboard/SaldoEmpresas';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -16,19 +18,21 @@ function pct(v: number): string {
 export function DashboardManager() {
   const [competencia, setCompetencia] = useState<string>('');
   const filtro = competencia || undefined; // undefined = "Todas" (linha de rollup no banco)
+  const [contaEmissora, setContaEmissora] = useState<ContaEmissora | ''>('');
+  const contaFiltro = contaEmissora || undefined; // undefined = "Todas as contas" (linha de rollup no banco)
 
   // A view retorna as linhas por competência + a linha de rollup (competencia = null = total geral).
   const comps = useQuery({
-    queryKey: dashboardQueryKeys.competencias(),
-    queryFn: () => dashboardService.competencias(),
+    queryKey: dashboardQueryKeys.competencias(contaFiltro),
+    queryFn: () => dashboardService.competencias(undefined, contaFiltro),
   });
   const medicos = useQuery({
-    queryKey: dashboardQueryKeys.medicos(filtro),
-    queryFn: () => dashboardService.medicos(filtro),
+    queryKey: dashboardQueryKeys.medicos(filtro, contaFiltro),
+    queryFn: () => dashboardService.medicos(filtro, contaFiltro),
   });
   const agingQ = useQuery({
-    queryKey: dashboardQueryKeys.aging(filtro),
-    queryFn: () => dashboardService.aging(filtro),
+    queryKey: dashboardQueryKeys.aging(filtro, contaFiltro),
+    queryFn: () => dashboardService.aging(filtro, contaFiltro),
   });
 
   const linhas = useMemo(() => comps.data ?? [], [comps.data]);
@@ -71,12 +75,25 @@ export function DashboardManager() {
     <section className="space-y-6">
       <div className="page-header">
         <h1 className="page-title">Dashboard financeiro</h1>
-        <select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="input w-44">
-          <option value="">Todas as competências</option>
-          {competencias.map((c) => (
-            <option key={c.competencia} value={c.competencia ?? ''}>{c.competencia}</option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={competencia} onChange={(e) => setCompetencia(e.target.value)} className="input w-44">
+            <option value="">Todas as competências</option>
+            {competencias.map((c) => (
+              <option key={c.competencia} value={c.competencia ?? ''}>{c.competencia}</option>
+            ))}
+          </select>
+          <select
+            value={contaEmissora}
+            onChange={(e) => setContaEmissora(e.target.value as ContaEmissora | '')}
+            className="input w-44"
+            aria-label="Filtrar por conta emissora"
+          >
+            <option value="">Todas as contas</option>
+            {CONTAS_EMISSORAS_VALIDAS.map((c) => (
+              <option key={c} value={c}>{CONTA_EMISSORA_LABEL[c]}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <SaldoEmpresas />

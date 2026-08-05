@@ -1,7 +1,8 @@
-// Teste do Dashboard financeiro (Story 4.6 + fix 0010) — service mockado + react-query.
-// Após a migration 0010, medicos/aging recebem competencia e os KPIs usam a linha de rollup do banco.
+// Teste do Dashboard financeiro (Story 4.6 + fix 0010 + filtro conta emissora 0042) — service
+// mockado + react-query. Após a migration 0010, medicos/aging recebem competencia e os KPIs usam
+// a linha de rollup do banco. Após a 0042, as 3 chamadas também recebem contaEmissora.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockComp = vi.fn();
@@ -14,9 +15,9 @@ vi.mock('../../src/services/dashboard', () => ({
     aging: (...a: unknown[]) => mockAging(...a),
   },
   dashboardQueryKeys: {
-    competencias: () => ['dashboard', 'competencias'],
-    medicos: (c?: string) => ['dashboard', 'medicos', c ?? null],
-    aging: (c?: string) => ['dashboard', 'aging', c ?? null],
+    competencias: (conta?: string) => ['dashboard', 'competencias', conta ?? null],
+    medicos: (c?: string, conta?: string) => ['dashboard', 'medicos', c ?? null, conta ?? null],
+    aging: (c?: string, conta?: string) => ['dashboard', 'aging', c ?? null, conta ?? null],
   },
 }));
 
@@ -65,5 +66,26 @@ describe('DashboardManager', () => {
     mockAging.mockResolvedValue([]);
     renderComProviders();
     await waitFor(() => expect(screen.getByText(/Sem dados financeiros ainda/i)).toBeInTheDocument());
+  });
+
+  it('troca de conta emissora dispara as 3 chamadas com o filtro selecionado', async () => {
+    mockComp.mockResolvedValue([
+      { competencia: null, qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
+      { competencia: '2026-06', qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
+    ]);
+    mockMed.mockResolvedValue([
+      { medicoId: 'm1', nome: 'Dr. Alfa', qtdBoletos: 4, totalEmitido: 4000, totalRecebido: 2000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.25, ticketMedio: 1000 },
+    ]);
+    mockAging.mockResolvedValue([{ faixa: '0-30', qtd: 2, total: 900 }]);
+
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Dr. Alfa')).toBeInTheDocument());
+
+    const selectConta = screen.getByRole('combobox', { name: 'Filtrar por conta emissora' });
+    fireEvent.change(selectConta, { target: { value: 'cavalcante_viana' } });
+
+    await waitFor(() => expect(mockComp).toHaveBeenCalledWith(undefined, 'cavalcante_viana'));
+    expect(mockMed).toHaveBeenCalledWith(undefined, 'cavalcante_viana');
+    expect(mockAging).toHaveBeenCalledWith(undefined, 'cavalcante_viana');
   });
 });

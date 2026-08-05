@@ -34,6 +34,7 @@ const execucoes = [
     id: 'e2', competencia: '2026-06', iniciadoPor: 'u1', iniciadoEm: '2026-06-15T10:00:00Z',
     finalizadoEm: '2026-06-15T10:01:00Z', status: 'concluido', progresso: 100,
     totalMedicos: 1, totalOk: 1, totalAlerta: 0, totalSemDados: 0, totalGeralValor: 900,
+    medicoNome: 'Dr. Beta',
   },
   {
     id: 'e3', competencia: '2026-05', iniciadoPor: 'u1', iniciadoEm: '2026-05-01T10:00:00Z',
@@ -91,7 +92,7 @@ describe('HistoricoExecucoes', () => {
     renderComProviders();
     await screen.findByRole('button', { name: /2026-05/ });
 
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por competência' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por competência ou médico' }), {
       target: { value: '2026-06' },
     });
 
@@ -99,6 +100,25 @@ describe('HistoricoExecucoes', () => {
       expect(screen.queryByRole('button', { name: /2026-05/ })).not.toBeInTheDocument(),
     );
     expect(screen.getByRole('button', { name: /2026-06/ })).toBeInTheDocument();
+  });
+
+  it('busca por nome de médico filtra corretamente uma execução pontual', async () => {
+    renderComProviders();
+    await screen.findByRole('button', { name: /2026-05/ });
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por competência ou médico' }), {
+      target: { value: 'beta' },
+    });
+
+    // Só o grupo de junho sobrevive (contém a execução pontual "Dr. Beta"); maio some.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /2026-05/ })).not.toBeInTheDocument(),
+    );
+    const grupoJunho = await screen.findByRole('button', { name: /2026-06.*1 execução/ });
+    const cardJunho = grupoJunho.closest('div.card') as HTMLElement;
+    expect(within(cardJunho).getByText('Pontual')).toBeInTheDocument();
+    expect(within(cardJunho).getByText('Dr. Beta')).toBeInTheDocument();
+    expect(within(cardJunho).queryByText('Em massa')).not.toBeInTheDocument();
   });
 
   it('mostra empty state quando não há execuções', async () => {
