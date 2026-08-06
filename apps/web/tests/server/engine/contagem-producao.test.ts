@@ -7,6 +7,7 @@ import {
   consolidarProducao,
   contarConsultasProducao,
   isPediatra,
+  isUrologista,
 } from '../../../src/server/engine/contagem-producao';
 
 describe('Engine: Contagem de Produção', () => {
@@ -322,6 +323,131 @@ describe('Engine: Contagem de Produção', () => {
       ];
       // 4 procedimentos do Bebê = teto(4/3) = 2 guias consolidadas
       expect(consolidarProducao(itens, 'Pediatria')).toBe(2);
+    });
+
+    it('urologista: aplica a MESMA regra completa do valor real (exceção + teto(n/3)), GATE 2026-08-06', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'Paciente Uro', data: '2026-07-01', codigoProcedimento: '3.11.02.03-4' },
+        { ...baseItem(), pacienteNome: 'Paciente Uro', data: '2026-07-02' },
+        { ...baseItem(), pacienteNome: 'Paciente Uro', data: '2026-07-03' },
+        { ...baseItem(), pacienteNome: 'Paciente Uro', data: '2026-07-04' },
+      ];
+      // 1 (exceção, fora do pool) + teto(3/3)=1 (os outros 3 itens) = 2
+      expect(consolidarProducao(itens, 'Urologista')).toBe(2);
+    });
+  });
+
+  describe('Urologista (3x1 + exceção de códigos, GATE 2026-08-06)', () => {
+    // Cateterismo ureteral unilateral — está em CODIGOS_EXCECAO_UROLOGISTA.
+    const CODIGO_EXCECAO_1 = '3.11.02.03-4';
+    // Intra-operatório — está em CODIGOS_EXCECAO_UROLOGISTA.
+    const CODIGO_EXCECAO_2 = '4.09.02.05-6';
+
+    it('sem nenhum código de exceção, 4 itens normais mesmo paciente/data → teto(4/3) = 2 guias (igual pediatra)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Urologista');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('1 item de código de exceção + 2 itens normais no mesmo grupo → 1 (exceção) + teto(2/3)=1 = 2 guias', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Urologia');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('3 ocorrências do MESMO código de exceção, mesmo paciente/data → 3 guias (não colapsa, cada uma é individual)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Urologista');
+      expect(resultado.guias).toBe(3);
+    });
+
+    it('ramo viaAcesso: código de exceção também fica fora do pool 3x1 nesse ramo', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), viaAcesso: true, codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), viaAcesso: true },
+        { ...baseItem(), viaAcesso: true },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Urologista');
+      // 1 (exceção) + teto(2/3)=1 (via de acesso normal) = 2
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('médico não-urologista/não-pediatra com item de código de exceção → não afetado, 1 guia por item', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'P2' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Cirurgia Geral');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('pediatra com item de código de exceção do urologista → continua 3x1 normal, sem exceção (exceção é exclusiva de urologista)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      // teto(4/3) = 2 — o código de exceção do urologista não isola nada para pediatra.
+      const resultado = contarGuiasProducao(itens, 'Pediatria');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('caso misto: via de acesso + itens normais + exceções nos dois ramos + múltiplas datas', () => {
+      const itens: ItemProducao[] = [
+        // Via de acesso: 1 exceção + 3 normais (mesmo paciente/data) → 1 + teto(3/3)=1 = 2
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true, codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+        // Normais: 2 exceções (mesmo código, mesmo paciente/data) + 4 normais → 2 + teto(4/3)=2 = 4
+        { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Urologista');
+      expect(resultado.guias).toBe(6); // 2 (via de acesso) + 4 (normais)
+    });
+
+    it('métrica "cirurgias" passa a aparecer para urologista mesmo sem itens via de acesso (GATE 2026-08-06)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1' },
+        { ...baseItem(), pacienteNome: 'P2' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Urologista');
+      expect(resultado.cirurgias).toBe(2);
+    });
+  });
+
+  describe('isUrologista', () => {
+    it('reconhece "Urologia", "Urologista" e o caso combinado real "Cirurgião Geral / Urologista"', () => {
+      expect(isUrologista('Urologia')).toBe(true);
+      expect(isUrologista('Urologista')).toBe(true);
+      expect(isUrologista('urologista')).toBe(true);
+      expect(isUrologista('Cirurgião Geral / Urologista')).toBe(true);
+    });
+
+    it('não reconhece especialidades sem relação, null ou vazio', () => {
+      expect(isUrologista('Cirurgia Geral')).toBe(false);
+      expect(isUrologista(null)).toBe(false);
+      expect(isUrologista(undefined)).toBe(false);
+      expect(isUrologista('')).toBe(false);
     });
   });
 

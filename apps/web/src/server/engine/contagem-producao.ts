@@ -67,37 +67,51 @@ function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => str
  *   cirurgias do mesmo paciente no mesmo dia, 3 senhas diferentes — então agrupar por
  *   chaveAtendimento (senha) fragmenta o mesmo atendimento em várias guias, ignorando o 3x1 por
  *   completo). Ver `chaveAgrupamento3x1` para o caso em que a senha SE REPETE (atendimento real).
- * - itens viaAcesso (não pediatra): 1 guia por chaveAtendimento (comportamento original —
- *   sem evidência de que a mesma fragmentação por senha ocorra fora de pediatria).
- * - itens normais (pediatra): agrupados por (chaveAgrupamento3x1, data), cada balde =
- *   teto(qtd/3) guias — mesma correção do bloco acima, agora nos itens normais também (achado
- *   real 2026-08-05, Dr. Bruno de Brito Botelho: 213 procedimentos NORMAIS, 213 senhas
+ * - itens viaAcesso (nem pediatra nem urologista): 1 guia por chaveAtendimento (comportamento
+ *   original — sem evidência de que a mesma fragmentação por senha ocorra fora dessas duas
+ *   especialidades).
+ * - itens normais (pediatra ou urologista): agrupados por (chaveAgrupamento3x1, data), cada
+ *   balde = teto(qtd/3) guias — mesma correção do bloco acima, agora nos itens normais também
+ *   (achado real 2026-08-05, Dr. Bruno de Brito Botelho: 213 procedimentos NORMAIS, 213 senhas
  *   distintas — cobrava 213 guias em vez de ~80). PRD §12 (Dra. A/Dr. E) preservado: senhas
  *   compartilhadas por 2+ procedimentos continuam identificando o atendimento real.
- * - itens normais (não pediatra): 1 guia por item.
+ * - itens normais (nem pediatra nem urologista): 1 guia por item.
+ * - urologista, EXCEÇÃO (GATE 2026-08-06): itens cujo `codigoProcedimento` está em
+ *   `CODIGOS_EXCECAO_UROLOGISTA` nunca entram no agrupamento 3x1 acima (nem no ramo viaAcesso,
+ *   nem no normal) — são retirados antes de qualquer agrupamento e cada ocorrência vira 1 guia
+ *   cheia e individual, somada à parte.
  */
 export function contarGuiasProducao(itens: ItemProducao[], especialidade?: string | null): ResultadoContagem {
   const { validos } = itensValidos(itens);
 
-  const viaAcessoItems = validos.filter((i) => i.viaAcesso);
-  const outrosItems = validos.filter((i) => !i.viaAcesso);
   const pediatra = isPediatra(especialidade);
+  const urologista = isUrologista(especialidade);
+  const usaTeto3x1 = pediatra || urologista;
 
-  let guias = 0;
+  // Urologista: separa os 6 códigos de exceção ANTES de dividir por viaAcesso — eles não
+  // entram no pool 3x1 em nenhum ramo, cada ocorrência é 1 guia individual (GATE 2026-08-06).
+  const itensExcecao = urologista ? validos.filter(ehExcecaoUrologista) : [];
+  const itensParaContagem = urologista ? validos.filter((i) => !ehExcecaoUrologista(i)) : validos;
+
+  const viaAcessoItems = itensParaContagem.filter((i) => i.viaAcesso);
+  const outrosItems = itensParaContagem.filter((i) => !i.viaAcesso);
+
+  let guias = itensExcecao.length;
 
   // Cirurgias: quantidade de chaves de atendimento únicas (PRD §12) — métrica informativa,
-  // independente da regra de guias acima; não muda com o achado 2026-08-04.
+  // independente da regra de guias acima; não muda com o achado 2026-08-04. Inclui itens de
+  // exceção do urologista (é contagem de atendimento, não de guia cobrada).
   const gruposAtendimento = new Set<string>();
   for (const item of validos) {
     gruposAtendimento.add(chaveAtendimento(item));
   }
   let cirurgias = 0;
-  if (pediatra || viaAcessoItems.length > 0) {
+  if (usaTeto3x1 || viaAcessoItems.length > 0) {
     cirurgias = gruposAtendimento.size;
   }
 
-  if (pediatra) {
-    // Pediatra + via de acesso: teto(qtd/3) por (chaveAgrupamento3x1, data).
+  if (usaTeto3x1) {
+    // Pediatra/urologista + via de acesso: teto(qtd/3) por (chaveAgrupamento3x1, data).
     const chaveViaAcesso = chaveAgrupamento3x1(viaAcessoItems);
     const porPacienteViaAcesso = new Map<string, Map<string, number>>();
     for (const item of viaAcessoItems) {
@@ -115,7 +129,7 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
       }
     }
   } else {
-    // Não-pediatra: via de acesso continua 1 guia por chaveAtendimento (comportamento original).
+    // Nem pediatra nem urologista: via de acesso continua 1 guia por chaveAtendimento (comportamento original).
     const viaAcessoGroups = new Set<string>();
     for (const item of viaAcessoItems) {
       viaAcessoGroups.add(chaveAtendimento(item));
@@ -124,8 +138,8 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
   }
 
   // Remaining
-  if (pediatra) {
-    // Pediatra: teto(qtd/3) por (chaveAgrupamento3x1, data).
+  if (usaTeto3x1) {
+    // Pediatra/urologista: teto(qtd/3) por (chaveAgrupamento3x1, data).
     const chaveOutros = chaveAgrupamento3x1(outrosItems);
     const porAtend = new Map<string, Map<string, number>>();
     for (const item of outrosItems) {
@@ -144,7 +158,7 @@ export function contarGuiasProducao(itens: ItemProducao[], especialidade?: strin
       }
     }
   } else {
-    // Não-pediatra
+    // Nem pediatra nem urologista
     guias += outrosItems.length;
   }
 
@@ -196,6 +210,38 @@ export function isPediatra(especialidade?: string | null): boolean {
 }
 
 /**
+ * Detecta urologista pelo prefixo "urolog" (Urologia/Urologista, case-insensitive) — mesmo
+ * padrão de isPediatra. Casos combinados como "Cirurgião Geral / Urologista" também batem
+ * (decisão consciente, GATE do usuário 2026-08-06).
+ */
+export function isUrologista(especialidade?: string | null): boolean {
+  if (!especialidade) return false;
+  return especialidade.toLowerCase().includes('urolog');
+}
+
+/**
+ * Códigos TUSS excluídos do pool 3x1 do urologista (regra aprovada pelo usuário, 2026-08-06):
+ * cada ocorrência conta como 1 guia cheia e individual, fora do agrupamento teto(n/3) — não
+ * dilui nem é diluída pelo pool dos demais procedimentos.
+ */
+export const CODIGOS_EXCECAO_UROLOGISTA: ReadonlySet<string> = new Set([
+  '3.11.02.03-4', // Cateterismo ureteral unilateral
+  '3.09.13.01-2', // Dissecção de veia para colocação de cateter central NPP ou QT
+  '4.09.02.05-6', // Intra-operatório
+  '3.12.05.04-6', // Vasectomia unilateral
+  '3.09.06.16-4', // Cateterismo de artéria radial PAM
+  '4.08.11.02-6', // Radioscopia para acompanhamento cirúrgico
+]);
+
+/**
+ * `.trim()` defensivo: o mapper do proc_code (fin-api-client.ts) não trima o valor, diferente
+ * de outros campos do item — evita falso negativo silencioso por espaço acidental na origem.
+ */
+function ehExcecaoUrologista(item: ItemProducao): boolean {
+  return CODIGOS_EXCECAO_UROLOGISTA.has((item.codigoProcedimento ?? '').trim());
+}
+
+/**
  * Detecta se existem grupos de atendimento com itens em mais de uma data (PRD §5.3).
  * QA M-3: a chave do grupo NÃO pode conter a data — usa atendimentoExternoId quando a
  * origem entregar; fallback é o PACIENTE (arquitetura §3.3). Se usasse chaveAtendimento()
@@ -232,17 +278,25 @@ export function detectarModoProducao(itens: ItemProducao[]): ModoObservado {
 export function consolidarProducao(itens: ItemProducao[], especialidade?: string | null): number {
   const { validos } = itensValidos(itens);
 
-  const viaAcessoItems = validos.filter((i) => i.viaAcesso);
-  const outrosItems = validos.filter((i) => !i.viaAcesso);
-
   const pediatra = isPediatra(especialidade);
-  let guias = 0;
+  const urologista = isUrologista(especialidade);
+  const usaTeto3x1 = pediatra || urologista;
 
-  // viaAcesso agrupa por paciente (ignorando data, por isso "consolidado"). Pediatra aplica o
-  // teto(qtd/3) aqui também (achado 2026-08-04, mesmo motivo de contarGuiasProducao) — sem
-  // isso, este número informativo ficava sistematicamente ABAIXO do valor correto para
+  // Mesma exceção de contarGuiasProducao (GATE 2026-08-06): consolidado do urologista segue a
+  // MESMA regra completa do valor real cobrado, pra não ficar um número informativo divergente.
+  const itensExcecao = urologista ? validos.filter(ehExcecaoUrologista) : [];
+  const itensParaContagem = urologista ? validos.filter((i) => !ehExcecaoUrologista(i)) : validos;
+
+  const viaAcessoItems = itensParaContagem.filter((i) => i.viaAcesso);
+  const outrosItems = itensParaContagem.filter((i) => !i.viaAcesso);
+
+  let guias = itensExcecao.length;
+
+  // viaAcesso agrupa por paciente (ignorando data, por isso "consolidado"). Pediatra/urologista
+  // aplicam o teto(qtd/3) aqui também (achado 2026-08-04, mesmo motivo de contarGuiasProducao) —
+  // sem isso, este número informativo ficava sistematicamente ABAIXO do valor correto para
   // pediatras com >3 procedimentos via de acesso no mesmo paciente.
-  if (pediatra) {
+  if (usaTeto3x1) {
     const porPacienteViaAcesso = new Map<string, number>();
     for (const item of viaAcessoItems) {
       porPacienteViaAcesso.set(item.pacienteNome, (porPacienteViaAcesso.get(item.pacienteNome) ?? 0) + 1);
@@ -258,7 +312,7 @@ export function consolidarProducao(itens: ItemProducao[], especialidade?: string
     guias += viaAcessoPacientes.size;
   }
 
-  if (pediatra) {
+  if (usaTeto3x1) {
     const porPaciente = new Map<string, number>();
     for (const item of outrosItems) {
       porPaciente.set(item.pacienteNome, (porPaciente.get(item.pacienteNome) ?? 0) + 1);

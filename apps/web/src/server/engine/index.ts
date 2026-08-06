@@ -11,4 +11,6 @@ export {
   consolidarProducao,
   contarConsultasProducao,
   isPediatra,
+  isUrologista,
+  CODIGOS_EXCECAO_UROLOGISTA,
 } from './contagem-producao';
