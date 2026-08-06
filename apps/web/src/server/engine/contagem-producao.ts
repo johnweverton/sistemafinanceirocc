@@ -41,16 +41,19 @@ export function chaveAtendimento(item: ItemProducao): string {
  * (José Neias 2026-08-04, Bruno de Brito Botelho 2026-08-05: toda linha com senha única, nenhuma
  * repetida — usar a senha nesse caso fragmenta um único atendimento em várias guias).
  * Resolve os dois: usa a senha quando ela aparece em 2+ linhas (atendimento real, compartilhado);
- * cai para `paciente + código de procedimento` quando a senha é única por linha ou ausente.
+ * cai para `pacienteNome` quando a senha é única por linha ou ausente.
  *
- * O código de procedimento entra no fallback por causa do achado real 2026-08-06 (Dr. Jansen
- * Osterno Vasconcelos, pediatra): sem senha confiável, paciente+data sozinho fundiu 3 pares de
- * atendimentos GENUINAMENTE separados que só coincidiram na data (222 cirurgias → 219 guias,
- * -3 errado — confirmado pelo dono: "são dois atendimentos genuinamente separados"). Exigir
- * também o MESMO código resolve os dois casos reais conhecidos: mesmo procedimento repetido no
- * mesmo dia sem senha compartilhada (padrão "via de acesso 3x", achado 2026-08-04 — ainda
- * agrupa, é o cenário que a regra 3x1 foi desenhada pra cobrir) continua colapsando; códigos
- * DIFERENTES no mesmo dia (Jansen) não colapsam mais — cada um vira seu próprio grupo.
+ * LIMITAÇÃO CONHECIDA, decisão consciente do dono (GATE 2026-08-07): sem senha confiável, esse
+ * fallback por paciente+data (SEM o código do procedimento) funde corretamente a MAIORIA dos
+ * casos reais — Dr. Felipe de Brito Rocha (44 de 46 pacientes com múltiplos procedimentos
+ * DIFERENTES no mesmo dia, todos legitimamente UM atendimento; guias tinha que dar 52, não 134)
+ * e o Dr. Márcio Erlon Fontinele Moreira (cirurgias ginecológicas combinadas no mesmo dia).
+ * Só o Dr. Jansen Osterno Vasconcelos é uma exceção CONHECIDA e CONFIRMADA (2026-08-06/07): 3
+ * pares de atendimentos genuinamente separados que só coincidiram no paciente+data acabam
+ * colapsados incorretamente (222 cirurgias reais → 219 guias, deveria ser 222). Chegou a existir
+ * uma versão desta função que exigia também o MESMO código (resolvia o Jansen), mas quebrava os
+ * outros dois casos, que são o padrão mais comum — decisão do dono: reverter pro fallback
+ * simples e tratar o Jansen como correção manual pontual (fora do motor), não como regra geral.
  */
 function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => string {
   const contagemSenha = new Map<string, number>();
@@ -64,7 +67,7 @@ function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => str
     if (senha && senha.trim() !== '' && (contagemSenha.get(senha) ?? 0) > 1) {
       return senha;
     }
-    return `${item.pacienteNome}|${item.codigoProcedimento}`;
+    return item.pacienteNome;
   };
 }
 
@@ -86,25 +89,24 @@ function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => str
  *   distintas — cobrava 213 guias em vez de ~80). PRD §12 (Dra. A/Dr. E) preservado: senhas
  *   compartilhadas por 2+ procedimentos continuam identificando o atendimento real.
  * - itens normais (nenhuma especialidade 3x1): 1 guia por item.
- * - urologista/ginecologista, EXCEÇÃO (GATE 2026-08-06): itens cujo `codigoProcedimento` está
- *   no conjunto de exceção da especialidade (ver `codigosExcecaoPara`) nunca entram no
- *   agrupamento 3x1 acima (nem no ramo viaAcesso, nem no normal) — são retirados antes de
- *   qualquer agrupamento e cada ocorrência vira 1 guia cheia e individual, somada à parte.
- *   Ortopedista usa o MESMO teto(n/3), mas sem lista de exceção — todo procedimento entra no
+ * - urologista/ginecologista, EXCEÇÃO (GATE 2026-08-06/07): itens que a especialidade marca
+ *   como exceção (ver `ehExcecao` — urologista por código, ginecologista por descrição) nunca
+ *   entram no agrupamento 3x1 acima (nem no ramo viaAcesso, nem no normal) — são retirados
+ *   antes de qualquer agrupamento e cada ocorrência vira 1 guia cheia e individual, somada à
+ *   parte. Ortopedista usa o MESMO teto(n/3), mas sem exceção — todo procedimento entra no
  *   pool normalmente (pedido explícito do dono, GATE 2026-08-06).
  */
 export function contarGuiasProducao(itens: ItemProducao[], especialidade?: string | null): ResultadoContagem {
   const { validos } = itensValidos(itens);
 
   const usaTeto3x1 = usaRegra3x1(especialidade);
-  const codigosExcecao = codigosExcecaoPara(especialidade);
 
   // Separa os itens de exceção (se a especialidade tiver alguma) ANTES de dividir por
   // viaAcesso — eles não entram no pool 3x1 em nenhum ramo, cada ocorrência é 1 guia individual
-  // (GATE 2026-08-06). Conjunto vazio (pediatra/ortopedista/nenhuma 3x1) → ambos os filtros
-  // degeneram para [] e `validos`, sem custo extra de lógica condicional.
-  const itensExcecao = validos.filter((i) => ehExcecao(i, codigosExcecao));
-  const itensParaContagem = validos.filter((i) => !ehExcecao(i, codigosExcecao));
+  // (GATE 2026-08-06). Pediatra/ortopedista/nenhuma 3x1 → ehExcecao sempre false, ambos os
+  // filtros degeneram para [] e `validos`, sem custo extra de lógica condicional.
+  const itensExcecao = validos.filter((i) => ehExcecao(i, especialidade));
+  const itensParaContagem = validos.filter((i) => !ehExcecao(i, especialidade));
 
   const viaAcessoItems = itensParaContagem.filter((i) => i.viaAcesso);
   const outrosItems = itensParaContagem.filter((i) => !i.viaAcesso);
@@ -290,26 +292,14 @@ export const CODIGOS_EXCECAO_UROLOGISTA: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Códigos TUSS excluídos do pool 3x1 do ginecologista (regra aprovada pelo usuário, 2026-08-06,
- * mesmo mecanismo do urologista): inserções de DIU e a histeroscopia cirúrgica abaixo nunca
- * entram no agrupamento teto(n/3) — cada ocorrência é 1 guia cheia e individual.
- */
-export const CODIGOS_EXCECAO_GINECOLOGISTA: ReadonlySet<string> = new Set([
-  '3.13.03.29-3', // Implante de DIU hormonal — inserção
-  '3.13.03.26-9', // Implante de DIU não hormonal — inserção
-  '3.13.03.17-0', // Histeroscopia cirúrgica p/ biópsia dirigida, lise de sinéquias, retirada de corpo estranho
-]);
-
-/**
  * Normaliza um código de procedimento pra só dígitos — resolve a divergência de formato entre
- * a notação TUSS documentada ("3.13.03.29-3", usada nas constantes acima, mais legível/
+ * a notação TUSS documentada ("3.11.02.03-4", usada na constante acima, mais legível/
  * auditável) e o que a API real do sistema web efetivamente manda em `proc_code`: dígitos
- * puros, sem pontuação ("31303293"). BUG REAL 2026-08-06 (Dr. Márcio Erlon Fontinele Moreira,
- * ginecologista): comparar os dois formatos direto NUNCA batia — nenhuma exceção era
- * reconhecida, todos os 248 procedimentos caíam no pool 3x1 (169 guias em vez das 189
- * corretas). Mesmo bug provavelmente afeta CODIGOS_EXCECAO_UROLOGISTA desde a implementação
- * original (mesma API, mesmo campo `proc_code`) — nunca confirmado porque não havia caso real
- * de exceção de urologista auditado até agora.
+ * puros, sem pontuação ("31102034"). BUG REAL 2026-08-06 (achado durante a implementação da
+ * exceção do ginecologista): comparar os dois formatos direto NUNCA batia — nenhuma exceção
+ * era reconhecida. Mesmo bug provavelmente afeta CODIGOS_EXCECAO_UROLOGISTA desde a
+ * implementação original (mesma API, mesmo campo `proc_code`) — nunca confirmado porque não
+ * havia caso real de exceção de urologista auditado até agora.
  */
 function normalizarCodigo(codigo: string): string {
   return codigo.replace(/\D/g, '');
@@ -318,41 +308,47 @@ function normalizarCodigo(codigo: string): string {
 const CODIGOS_EXCECAO_UROLOGISTA_NORM: ReadonlySet<string> = new Set(
   [...CODIGOS_EXCECAO_UROLOGISTA].map(normalizarCodigo),
 );
-const CODIGOS_EXCECAO_GINECOLOGISTA_NORM: ReadonlySet<string> = new Set(
-  [...CODIGOS_EXCECAO_GINECOLOGISTA].map(normalizarCodigo),
-);
-
-/** Conjunto vazio compartilhado — especialidade sem lista de exceção própria (pediatra,
- *  ortopedista, ou nenhuma 3x1). Constante única em vez de `new Set()` por chamada: é o caso
- *  mais comum (todo médico fora de urologia/ginecologia cai aqui). */
-const SEM_EXCECAO: ReadonlySet<string> = new Set();
 
 /**
- * Resolve o conjunto de códigos de exceção da especialidade do médico. Ortopedista usa 3x1 mas
- * SEM exceção (GATE 2026-08-06, pedido explícito do dono) — cai direto no `SEM_EXCECAO` abaixo,
- * não tem branch própria.
+ * Ginecologista: exceção por DESCRIÇÃO do procedimento, não por código fixo (GATE 2026-08-07,
+ * correção da coordenadora financeira sobre o pedido original — ela tinha dito "histerectomia"
+ * mas era "histeroscopia"). Motivo de usar descrição em vez de uma lista de códigos (como o
+ * urologista): nos dados reais do Dr. Márcio Erlon Fontinele Moreira existem 5 códigos TUSS
+ * DIFERENTES só pra "IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)" (inserção/remoção/hormonal/
+ * não hormonal, todos com a MESMA descrição genérica na origem) — uma lista fechada de códigos
+ * quebraria a cada variação nova. Contém "diu" OU "histeroscopia" (case-insensitive, qualquer
+ * subtipo — não diferencia inserção/remoção/hormonal nem cirúrgica/diagnóstica, confirmado pelo
+ * usuário). Histerectomia NÃO é exceção — entra no pool 3x1 normal como qualquer outra cirurgia.
+ */
+function ehExcecaoGinecologistaPorDescricao(descricao: string | null | undefined): boolean {
+  if (!descricao) return false;
+  const d = descricao.toLowerCase();
+  return d.includes('diu') || d.includes('histeroscopia');
+}
+
+/**
+ * Decide se um item é exceção (fora do pool 3x1, 1 guia cheia e individual) pra especialidade
+ * do médico. Urologista compara por CÓDIGO (lista fechada, `CODIGOS_EXCECAO_UROLOGISTA`);
+ * ginecologista compara por DESCRIÇÃO (`ehExcecaoGinecologistaPorDescricao`) — mecanismos
+ * DIFERENTES por especialidade, cada um no formato que se provou robusto pro caso real dela.
+ * Pediatra/ortopedista/nenhuma 3x1 nunca têm exceção (ortopedista usa 3x1 mas SEM exceção,
+ * pedido explícito do dono, GATE 2026-08-06).
  *
  * PRECEDÊNCIA (não especificada pelo usuário, decisão de implementação): se a especialidade
  * cadastrada bater com UROLOGISTA e GINECOLOGISTA ao mesmo tempo (texto composto, ex.:
  * hipotético "Ginecologia e Urologia" — sem caso real conhecido na base hoje, mas
  * "Cirurgião Geral / Urologista" já mostrou que textos compostos acontecem), urologista tem
- * prioridade e a lista do ginecologista é ignorada. Nunca faz união das duas listas. Se
- * aparecer um médico real nesse caso, resolver explicitamente (união ou uma regra de
- * prioridade combinada) em vez de depender desta ordem implícita de `if`.
+ * prioridade — a regra do ginecologista nem chega a ser avaliada. Se aparecer um médico real
+ * nesse caso, resolver explicitamente em vez de depender desta ordem implícita de `if`.
  */
-function codigosExcecaoPara(especialidade?: string | null): ReadonlySet<string> {
-  if (isUrologista(especialidade)) return CODIGOS_EXCECAO_UROLOGISTA_NORM;
-  if (isGinecologista(especialidade)) return CODIGOS_EXCECAO_GINECOLOGISTA_NORM;
-  return SEM_EXCECAO;
-}
-
-/**
- * Compara por dígitos normalizados dos dois lados (ver `normalizarCodigo`) — não importa se o
- * código do item chega pontuado ("3.13.03.29-3") ou cru ("31303293", formato real observado),
- * nem se tem espaço em volta (mapper do proc_code em fin-api-client.ts não trima o valor).
- */
-function ehExcecao(item: ItemProducao, codigos: ReadonlySet<string>): boolean {
-  return codigos.has(normalizarCodigo(item.codigoProcedimento ?? ''));
+function ehExcecao(item: ItemProducao, especialidade?: string | null): boolean {
+  if (isUrologista(especialidade)) {
+    return CODIGOS_EXCECAO_UROLOGISTA_NORM.has(normalizarCodigo(item.codigoProcedimento ?? ''));
+  }
+  if (isGinecologista(especialidade)) {
+    return ehExcecaoGinecologistaPorDescricao(item.descricaoProcedimento);
+  }
+  return false;
 }
 
 /**
@@ -393,12 +389,11 @@ export function consolidarProducao(itens: ItemProducao[], especialidade?: string
   const { validos } = itensValidos(itens);
 
   const usaTeto3x1 = usaRegra3x1(especialidade);
-  const codigosExcecao = codigosExcecaoPara(especialidade);
 
   // Mesma exceção de contarGuiasProducao (GATE 2026-08-06): consolidado segue a MESMA regra
   // completa do valor real cobrado, pra não ficar um número informativo divergente.
-  const itensExcecao = validos.filter((i) => ehExcecao(i, codigosExcecao));
-  const itensParaContagem = validos.filter((i) => !ehExcecao(i, codigosExcecao));
+  const itensExcecao = validos.filter((i) => ehExcecao(i, especialidade));
+  const itensParaContagem = validos.filter((i) => !ehExcecao(i, especialidade));
 
   const viaAcessoItems = itensParaContagem.filter((i) => i.viaAcesso);
   const outrosItems = itensParaContagem.filter((i) => !i.viaAcesso);

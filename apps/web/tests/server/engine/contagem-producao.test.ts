@@ -11,7 +11,6 @@ import {
   isGinecologista,
   isOrtopedista,
   CODIGOS_EXCECAO_UROLOGISTA,
-  CODIGOS_EXCECAO_GINECOLOGISTA,
 } from '../../../src/server/engine/contagem-producao';
 
 describe('Engine: Contagem de Produção', () => {
@@ -340,9 +339,9 @@ describe('Engine: Contagem de Produção', () => {
       expect(consolidarProducao(itens, 'Urologista')).toBe(2);
     });
 
-    it('ginecologista: aplica a MESMA regra completa do valor real (exceção + teto(n/3)), GATE 2026-08-06', () => {
+    it('ginecologista: aplica a MESMA regra completa do valor real (exceção por descrição + teto(n/3)), GATE 2026-08-07', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-01', codigoProcedimento: '3.13.03.29-3' },
+        { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-01', descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
         { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-02' },
         { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-03' },
         { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-04' },
@@ -476,13 +475,16 @@ describe('Engine: Contagem de Produção', () => {
     });
   });
 
-  describe('Ginecologista (3x1 + exceção de códigos, GATE 2026-08-06)', () => {
-    // Implante de DIU hormonal — inserção — está em CODIGOS_EXCECAO_GINECOLOGISTA.
-    const CODIGO_EXCECAO_1 = '3.13.03.29-3';
-    // Histeroscopia cirúrgica p/ biópsia dirigida, lise de sinéquias, retirada de corpo estranho — está em CODIGOS_EXCECAO_GINECOLOGISTA.
-    const CODIGO_EXCECAO_2 = '3.13.03.17-0';
+  describe('Ginecologista (3x1 + exceção por DESCRIÇÃO, GATE 2026-08-07)', () => {
+    // Qualquer variante de DIU (a origem tem 5+ códigos TUSS diferentes pra essa MESMA
+    // descrição genérica — inserção/remoção/hormonal/não hormonal, achado real Dr. Márcio
+    // Erlon Fontinele Moreira) — detecta por descrição, não por código.
+    const DESCRICAO_DIU = 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)';
+    // Qualquer histeroscopia (cirúrgica ou diagnóstica, confirmado pelo usuário) — a
+    // coordenadora inicialmente falou "histerectomia" por engano; a regra real é histeroscopia.
+    const DESCRICAO_HISTEROSCOPIA = 'Histeroscopia cirúrgica p/ biópsia dirigida, lise de sinéquias, retirada de corpo estranho';
 
-    it('sem nenhum código de exceção, 4 itens normais mesmo paciente/data → teto(4/3) = 2 guias (igual pediatra/urologista)', () => {
+    it('sem nenhuma descrição de exceção, 4 itens normais mesmo paciente/data → teto(4/3) = 2 guias (igual pediatra/urologista)', () => {
       const itens: ItemProducao[] = [
         { ...baseItem() },
         { ...baseItem() },
@@ -493,9 +495,9 @@ describe('Engine: Contagem de Produção', () => {
       expect(resultado.guias).toBe(2);
     });
 
-    it('1 item de código de exceção + 2 itens normais no mesmo grupo → 1 (exceção) + teto(2/3)=1 = 2 guias', () => {
+    it('1 item de exceção (DIU) + 2 itens normais no mesmo grupo → 1 (exceção) + teto(2/3)=1 = 2 guias', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), descricaoProcedimento: DESCRICAO_DIU },
         { ...baseItem() },
         { ...baseItem() },
       ];
@@ -503,19 +505,19 @@ describe('Engine: Contagem de Produção', () => {
       expect(resultado.guias).toBe(2);
     });
 
-    it('3 ocorrências do MESMO código de exceção, mesmo paciente/data → 3 guias (não colapsa, cada uma é individual)', () => {
+    it('3 ocorrências da MESMA descrição de exceção, mesmo paciente/data → 3 guias (não colapsa, cada uma é individual)', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_2 },
-        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_2 },
-        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), descricaoProcedimento: DESCRICAO_HISTEROSCOPIA },
+        { ...baseItem(), descricaoProcedimento: DESCRICAO_HISTEROSCOPIA },
+        { ...baseItem(), descricaoProcedimento: DESCRICAO_HISTEROSCOPIA },
       ];
       const resultado = contarGuiasProducao(itens, 'Ginecologista');
       expect(resultado.guias).toBe(3);
     });
 
-    it('ramo viaAcesso: código de exceção também fica fora do pool 3x1 nesse ramo', () => {
+    it('ramo viaAcesso: descrição de exceção também fica fora do pool 3x1 nesse ramo', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), viaAcesso: true, codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), viaAcesso: true, descricaoProcedimento: DESCRICAO_DIU },
         { ...baseItem(), viaAcesso: true },
         { ...baseItem(), viaAcesso: true },
       ];
@@ -524,37 +526,68 @@ describe('Engine: Contagem de Produção', () => {
       expect(resultado.guias).toBe(2);
     });
 
-    it('médico não-ginecologista/não-3x1 com item de código de exceção do ginecologista → não afetado, 1 guia por item', () => {
+    it('médico não-ginecologista/não-3x1 com item de descrição de exceção do ginecologista → não afetado, 1 guia por item', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), pacienteNome: 'P1', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'P1', descricaoProcedimento: DESCRICAO_DIU },
         { ...baseItem(), pacienteNome: 'P2' },
       ];
       const resultado = contarGuiasProducao(itens, 'Cirurgia Geral');
       expect(resultado.guias).toBe(2);
     });
 
-    it('urologista com item de código de exceção do ginecologista → continua 3x1 normal, sem exceção (listas são exclusivas por especialidade)', () => {
+    it('urologista com item de descrição de exceção do ginecologista → continua 3x1 normal, sem exceção (regras são exclusivas por especialidade)', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), descricaoProcedimento: DESCRICAO_DIU },
         { ...baseItem() },
         { ...baseItem() },
         { ...baseItem() },
       ];
-      // teto(4/3) = 2 — o código de exceção do ginecologista não isola nada para urologista.
+      // teto(4/3) = 2 — a descrição de exceção do ginecologista não isola nada para urologista
+      // (urologista só olha código, nunca descrição — ver `ehExcecao`).
       const resultado = contarGuiasProducao(itens, 'Urologista');
       expect(resultado.guias).toBe(2);
+    });
+
+    it('histerectomia NÃO é exceção — entra no pool 3x1 normal (correção da coordenadora, 2026-08-07: ela tinha dito "histerectomia", era "histeroscopia")', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), descricaoProcedimento: 'Histerectomia total com anexectomia uni ou bilateral (via alta ou baixa)' },
+        { ...baseItem(), descricaoProcedimento: 'Histerectomia total com anexectomia uni ou bilateral (via alta ou baixa)' },
+        { ...baseItem(), descricaoProcedimento: 'Histerectomia total com anexectomia uni ou bilateral (via alta ou baixa)' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.guias).toBe(1); // teto(3/3) = 1 — não é exceção, entrou no pool
+    });
+
+    it('histeroscopia DIAGNÓSTICA também é exceção, não só a cirúrgica (confirmado pelo usuário)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), descricaoProcedimento: 'Histeroscopia diagnóstica' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.guias).toBe(2); // 1 (exceção) + teto(2/3)=1
+    });
+
+    it('detecção por descrição é case-insensitive', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), descricaoProcedimento: 'implante de diu não hormonal - inserção' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.guias).toBe(2); // 1 (exceção) + teto(2/3)=1
     });
 
     it('caso misto: via de acesso + itens normais + exceções nos dois ramos + múltiplas datas', () => {
       const itens: ItemProducao[] = [
         // Via de acesso: 1 exceção + 3 normais (mesmo paciente/data) → 1 + teto(3/3)=1 = 2
-        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true, codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true, descricaoProcedimento: DESCRICAO_HISTEROSCOPIA },
         { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
         { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
         { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
-        // Normais: 2 exceções (mesmo código, mesmo paciente/data) + 4 normais → 2 + teto(4/3)=2 = 4
-        { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: CODIGO_EXCECAO_1 },
-        { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: CODIGO_EXCECAO_1 },
+        // Normais: 2 exceções (mesma descrição, mesmo paciente/data) + 4 normais → 2 + teto(4/3)=2 = 4
+        { ...baseItem(), pacienteNome: 'Paciente Normal', descricaoProcedimento: DESCRICAO_DIU },
+        { ...baseItem(), pacienteNome: 'Paciente Normal', descricaoProcedimento: DESCRICAO_DIU },
         { ...baseItem(), pacienteNome: 'Paciente Normal' },
         { ...baseItem(), pacienteNome: 'Paciente Normal' },
         { ...baseItem(), pacienteNome: 'Paciente Normal' },
@@ -603,14 +636,14 @@ describe('Engine: Contagem de Produção', () => {
       expect(resultado.guias).toBe(2); // teto(4/3) = 2
     });
 
-    it('não tem lista de exceção: um código que seria exceção pra urologista/ginecologista entra no pool normalmente', () => {
-      // Mesmo código nos 3 itens (só o que muda é a especialidade não ter exceção) — código
-      // diferente entre itens do mesmo paciente/data forma grupos separados desde o achado
-      // 2026-08-06 (Dr. Jansen Osterno), o que testaria outra coisa aqui.
+    it('não tem lista de exceção: uma descrição que seria exceção pra ginecologista (DIU) entra no pool normalmente', () => {
+      // Mesma descrição nos 3 itens (só o que muda é a especialidade não ter exceção) —
+      // descrição diferente entre itens do mesmo paciente/data forma grupos separados desde o
+      // achado 2026-08-06 (Dr. Jansen Osterno), o que testaria outra coisa aqui.
       const itens: ItemProducao[] = [
-        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' }, // exceção só de ginecologista
-        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
-        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' }, // exceção só de ginecologista
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
       ];
       const resultado = contarGuiasProducao(itens, 'Ortopedia');
       // teto(3/3) = 1 — nenhum item é retirado do pool (ortopedista não tem exceção)
@@ -675,11 +708,10 @@ describe('Engine: Contagem de Produção', () => {
     });
   });
 
-  describe('Códigos de exceção — cobertura individual e precedência (achados do QA, 2026-08-06)', () => {
-    // Table-driven: cada código de CODIGOS_EXCECAO_UROLOGISTA/GINECOLOGISTA precisa ser
-    // exercitado individualmente — um typo em qualquer um passaria batido nos testes "de caso
-    // misto" acima, que não cobrem os 6 códigos do urologista nem o '3.13.03.26-9' (DIU não
-    // hormonal) do ginecologista.
+  describe('Exceção — cobertura individual e precedência (achados do QA 2026-08-06 e da correção da coordenadora 2026-08-07)', () => {
+    // Table-driven: cada código de CODIGOS_EXCECAO_UROLOGISTA precisa ser exercitado
+    // individualmente — um typo em qualquer um passaria batido nos testes "de caso misto" acima,
+    // que não cobrem os 6 códigos do urologista.
     it.each([...CODIGOS_EXCECAO_UROLOGISTA].map((codigo) => [codigo]))(
       'código de exceção do urologista "%s" isolado: 1 ocorrência + 2 itens normais → 1 + teto(2/3)=1 = 2 guias',
       (codigo) => {
@@ -692,32 +724,38 @@ describe('Engine: Contagem de Produção', () => {
       },
     );
 
-    it.each([...CODIGOS_EXCECAO_GINECOLOGISTA].map((codigo) => [codigo]))(
-      'código de exceção do ginecologista "%s" isolado: 1 ocorrência + 2 itens normais → 1 + teto(2/3)=1 = 2 guias',
-      (codigo) => {
-        const itens: ItemProducao[] = [
-          { ...baseItem(), codigoProcedimento: codigo },
-          { ...baseItem() },
-          { ...baseItem() },
-        ];
-        expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
-      },
-    );
-
-    it('.trim() defensivo: código de exceção com espaços ao redor ainda é reconhecido (mapper de origem não trima proc_code)', () => {
+    // Ginecologista detecta por DESCRIÇÃO (não por código fixo, GATE 2026-08-07) — table-driven
+    // com variações reais de texto (inserção/remoção, hormonal/não hormonal, cirúrgica/
+    // diagnóstica) pra garantir que nenhum subtipo escapa da regra "contém diu OU histeroscopia".
+    it.each([
+      'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)',
+      'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU) HORMONAL - INSERCAO',
+      'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU) NAO HORMONAL - INSERCAO',
+      'RETIRADA DE DISPOSITIVO INTRA-UTERINO (DIU)',
+      'Histeroscopia cirúrgica p/ biópsia dirigida, lise de sinéquias, retirada de corpo estranho',
+      'Histeroscopia diagnóstica',
+    ])('descrição de exceção do ginecologista "%s" isolada: 1 ocorrência + 2 itens normais → 1 + teto(2/3)=1 = 2 guias', (descricao) => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), codigoProcedimento: ' 3.13.03.29-3 ' },
+        { ...baseItem(), descricaoProcedimento: descricao },
         { ...baseItem() },
         { ...baseItem() },
       ];
       expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
     });
 
-    // BUG REAL 2026-08-06 (Dr. Márcio Erlon Fontinele Moreira): a API do sistema web manda
-    // `proc_code` SEM pontuação ("31303293"), não no formato TUSS documentado nas constantes
-    // ("3.13.03.29-3") — a comparação direta nunca batia, nenhuma exceção era reconhecida (248
-    // procedimentos todos no pool 3x1, 169 guias em vez de 189). `normalizarCodigo` (dígitos
-    // puros dos dois lados) resolve isso — estes testes usam o formato CRU real, não o TUSS.
+    it('.trim() defensivo (urologista): código de exceção com espaços ao redor ainda é reconhecido (mapper de origem não trima proc_code)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: ' 3.11.02.03-4 ' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      expect(contarGuiasProducao(itens, 'Urologista').guias).toBe(2);
+    });
+
+    // BUG REAL 2026-08-06: a API do sistema web manda `proc_code` SEM pontuação ("31102034"),
+    // não no formato TUSS documentado na constante ("3.11.02.03-4") — a comparação direta nunca
+    // batia, nenhuma exceção era reconhecida. `normalizarCodigo` (dígitos puros dos dois lados)
+    // resolve isso — estes testes usam o formato CRU real, não o TUSS.
     it.each([...CODIGOS_EXCECAO_UROLOGISTA].map((codigo) => [codigo, codigo.replace(/\D/g, '')]))(
       'código de exceção do urologista "%s" no formato CRU da API ("%s", sem pontuação) ainda é reconhecido',
       (_tuss, cru) => {
@@ -730,26 +768,11 @@ describe('Engine: Contagem de Produção', () => {
       },
     );
 
-    it.each([...CODIGOS_EXCECAO_GINECOLOGISTA].map((codigo) => [codigo, codigo.replace(/\D/g, '')]))(
-      'código de exceção do ginecologista "%s" no formato CRU da API ("%s", sem pontuação) ainda é reconhecido',
-      (_tuss, cru) => {
-        const itens: ItemProducao[] = [
-          { ...baseItem(), codigoProcedimento: cru },
-          { ...baseItem() },
-          { ...baseItem() },
-        ];
-        expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
-      },
-    );
-
-    it('reprodução do caso real do Dr. Márcio: 143 itens de exceção (formato CRU) + 105 no pool 3x1 → 143 + teto(105/3 em grupos por paciente) guias, nunca os 169 do bug', () => {
-      // Reduzido pra ficar tratável no teste, preservando a mesma proporção do bug: os 3
-      // códigos de exceção do ginecologista aparecem MUITAS vezes (formato cru, sem pontuação,
-      // como a API manda) e precisam ser retirados do pool mesmo em volume alto.
+    it('reprodução do caso real do Dr. Márcio (achado 2026-08-06/07): 15 itens de exceção (descrição DIU/histeroscopia) + 6 no pool 3x1 → 17 guias', () => {
       const itens: ItemProducao[] = [
-        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `DIU-${i}`, codigoProcedimento: '31303293' })),
-        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `DIU2-${i}`, codigoProcedimento: '31303269' })),
-        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `HISTERO-${i}`, codigoProcedimento: '31303170' })),
+        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `DIU-${i}`, descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' })),
+        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `DIU2-${i}`, descricaoProcedimento: 'RETIRADA DE DISPOSITIVO INTRA-UTERINO (DIU)' })),
+        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `HISTERO-${i}`, descricaoProcedimento: 'Histeroscopia cirúrgica p/ biópsia dirigida' })),
         // 6 itens normais do mesmo paciente/data → teto(6/3) = 2 guias no pool.
         { ...baseItem(), pacienteNome: 'Normal' },
         { ...baseItem(), pacienteNome: 'Normal' },
@@ -764,18 +787,18 @@ describe('Engine: Contagem de Produção', () => {
       expect(resultado.guias).toBe(17);
     });
 
-    it('PRECEDÊNCIA (decisão de implementação, sem caso real conhecido): especialidade que bate com urologista E ginecologista ao mesmo tempo usa a lista do UROLOGISTA — a do ginecologista é ignorada, nunca há união', () => {
-      // Mesmo código nos 3 itens — código diferente entre itens do mesmo paciente/data forma
-      // grupos separados desde o achado 2026-08-06 (Dr. Jansen Osterno), testaria outra coisa.
+    it('PRECEDÊNCIA (decisão de implementação, sem caso real conhecido): especialidade que bate com urologista E ginecologista ao mesmo tempo usa a regra do UROLOGISTA (por código) — a regra do ginecologista (por descrição) nem chega a ser avaliada', () => {
       const itens: ItemProducao[] = [
-        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' }, // exceção só na lista do ginecologista
-        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
-        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
+        // Descrição bateria como exceção pra ginecologista, mas a especialidade combinada usa a
+        // regra do urologista (por código) — a descrição é ignorada por completo.
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
       ];
       // Se a precedência mudar (união, ou ginecologista primeiro), este teste deve ser
       // atualizado deliberadamente — não é um comportamento especificado pelo usuário.
       const resultado = contarGuiasProducao(itens, 'Ginecologia e Urologia');
-      expect(resultado.guias).toBe(1); // teto(3/3)=1 — código foi pro pool, lista do urologista "venceu" e não reconhece esse código
+      expect(resultado.guias).toBe(1); // teto(3/3)=1 — foi pro pool, a regra do urologista "venceu" e não reconhece por descrição
     });
   });
 });

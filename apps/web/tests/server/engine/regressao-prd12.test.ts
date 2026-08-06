@@ -2,6 +2,7 @@
 // Fixtures reproduzem a estrutura dos xlsx originais (Dra. A e Dr. E) já no formato
 // ItemProducao do contrato real; atendimentoExternoId faz o papel do numero_atendimento.
 import { describe, it, expect } from 'vitest';
+import type { ItemProducao } from '@cobranca/shared';
 import {
   contarGuiasProducao as contarGuias,
   consolidarProducao as consolidarPorAtendimento,
@@ -142,16 +143,15 @@ describe('MODO INCONSISTENTE em ginecologista/urologista/ortopedista (GATE 2026-
   );
 });
 
-describe('Achado real 2026-08-06 — Dr. Jansen Osterno Vasconcelos (pediatra)', () => {
-  // Origem deu senha PRÓPRIA a cada uma das 222 linhas (nenhuma se repete — mesmo padrão de
-  // José Neias/Bruno de Brito Botelho). Sem senha confiável, o fallback cai em paciente+código:
-  // 3 pacientes tiveram 2 procedimentos DIFERENTES na MESMA data (atendimentos genuinamente
-  // separados que só coincidiram na data, confirmado pelo dono) — não podem colapsar em 1 guia
-  // cada. As outras 216 linhas são únicas (paciente ou código diferente) → 1 guia cada.
-  // Total esperado: 222 (3 pares de 2 guias cada, mais 216 avulsas) — NUNCA 219 (o bug: os 3
-  // pares eram colapsados a 1 guia cada só por coincidirem paciente+data, teto(2/3)=1×3=3
-  // guias a menos).
-  function itemJansen(over: Partial<ItemProducao> & { pacienteNome: string; data: string; codigoProcedimento: string }): ItemProducao {
+describe('Fallback sem senha: paciente+data, decisão final do dono (GATE 2026-08-07)', () => {
+  // Quando a senha não é confiável (única por linha, nunca se repete — José Neias/Bruno de
+  // Brito Botelho/Jansen/Felipe/Márcio, o mesmo padrão real em vários médicos), o fallback
+  // agrupa por PACIENTE+DATA, sem olhar o código do procedimento. Chegou a existir uma versão
+  // que também exigia o mesmo código (resolvia o caso do Jansen), mas quebrava os casos mais
+  // comuns — decisão consciente do dono: reverter, aceitando o Jansen como exceção pontual
+  // (corrigida manualmente fora do motor) em troca de acertar a maioria. Ver comentário de
+  // `chaveAgrupamento3x1` em contagem-producao.ts pro histórico completo.
+  function item(over: Partial<ItemProducao> & { pacienteNome: string; data: string; codigoProcedimento: string }): ItemProducao {
     return {
       atendimentoExternoId: `SENHA-${Math.random()}`, // única por linha — nunca se repete no lote
       descricaoProcedimento: 'Procedimento',
@@ -164,38 +164,33 @@ describe('Achado real 2026-08-06 — Dr. Jansen Osterno Vasconcelos (pediatra)',
     };
   }
 
-  it('2 procedimentos DIFERENTES, mesmo paciente, mesma data, sem senha compartilhada → 2 guias (não colapsa)', () => {
+  it('Dr. Felipe de Brito Rocha (achado 2026-08-07): mesmo paciente, mesma data, 3 procedimentos DIFERENTES sem senha compartilhada → colapsa em teto(3/3)=1 (cirurgia combinada, não atendimentos separados)', () => {
     const itens: ItemProducao[] = [
-      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '10101012' }),
-      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '20202023' }),
+      item({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303001' }),
+      item({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303002' }),
+      item({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303003' }),
     ];
     const resultado = contarGuias(itens, 'Pediatria');
-    expect(resultado.guias).toBe(2);
+    expect(resultado.guias).toBe(1);
   });
 
-  it('2 ocorrências do MESMO procedimento, mesmo paciente, mesma data, sem senha compartilhada → 1 guia (continua colapsando — padrão "via de acesso 3x", achado 2026-08-04)', () => {
+  it('2 ocorrências do MESMO procedimento, mesmo paciente, mesma data, sem senha compartilhada → 1 guia (padrão "via de acesso 3x", achado 2026-08-04 — preservado)', () => {
     const itens: ItemProducao[] = [
-      itemJansen({ pacienteNome: 'Paciente X', data: '2026-07-01', codigoProcedimento: '10101012' }),
-      itemJansen({ pacienteNome: 'Paciente X', data: '2026-07-01', codigoProcedimento: '10101012' }),
+      item({ pacienteNome: 'Paciente X', data: '2026-07-01', codigoProcedimento: '10101012' }),
+      item({ pacienteNome: 'Paciente X', data: '2026-07-01', codigoProcedimento: '10101012' }),
     ];
     const resultado = contarGuias(itens, 'Pediatria');
     expect(resultado.guias).toBe(1); // teto(2/3) = 1
   });
 
-  it('reproduz o caso real: 3 pares de procedimentos diferentes no mesmo dia + 216 linhas avulsas → 222 guias, nunca 219', () => {
-    const pares: ItemProducao[] = [
-      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303001' }),
-      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303002' }),
-      itemJansen({ pacienteNome: 'Daniel da Silva Rodrigues', data: '2026-07-01', codigoProcedimento: '31303003' }),
-      itemJansen({ pacienteNome: 'Daniel da Silva Rodrigues', data: '2026-07-01', codigoProcedimento: '31303004' }),
-      itemJansen({ pacienteNome: 'Rejane Maria Leite Campos', data: '2026-07-01', codigoProcedimento: '31303005' }),
-      itemJansen({ pacienteNome: 'Rejane Maria Leite Campos', data: '2026-07-01', codigoProcedimento: '31303006' }),
+  it('LIMITAÇÃO CONHECIDA (Dr. Jansen Osterno Vasconcelos, 2026-08-06): 2 procedimentos DIFERENTES, mesmo paciente/data, sem senha, SÃO atendimentos genuinamente separados (confirmado pelo dono) mas colapsam em 1 guia — corrigido manualmente fora do motor, não pelo código', () => {
+    const itens: ItemProducao[] = [
+      item({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '10101012' }),
+      item({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '20202023' }),
     ];
-    const avulsas: ItemProducao[] = Array.from({ length: 216 }, (_, i) =>
-      itemJansen({ pacienteNome: `Paciente ${i}`, data: '2026-07-10', codigoProcedimento: '10101012' }),
-    );
-    const resultado = contarGuias([...pares, ...avulsas], 'Pediatria');
-    expect(resultado.guias).toBe(222); // 6 (3 pares, 1 guia cada item) + 216 (avulsas)
-    expect(resultado.cirurgias).toBe(222); // cada senha é única → 222 "cirurgias" distintas
+    const resultado = contarGuias(itens, 'Pediatria');
+    // Seria 2 se o motor distinguisse por código — decisão do dono foi aceitar essa divergência
+    // pontual em troca do fallback simples acertar os casos mais comuns (ver describe acima).
+    expect(resultado.guias).toBe(1);
   });
 });
