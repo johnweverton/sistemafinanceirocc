@@ -62,7 +62,9 @@ if (!whatsapp && !email) {
 }
 
 function normalizarNumero(to: string): string {
-  const digitos = to.replace(/\D/g, '');
+  const semEspacos = to.trim();
+  if (semEspacos.includes('-')) return semEspacos;
+  const digitos = semEspacos.replace(/\D/g, '');
   if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`;
   return digitos;
 }

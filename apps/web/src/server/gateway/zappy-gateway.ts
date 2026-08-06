@@ -44,9 +44,15 @@ export class ZappyGateway {
   /**
    * Normaliza número BR para o formato aceito pelo Whaticket (dígitos, com DDI).
    * "(85) 99999-9999" → "5585999999999". Se já vier com 55, mantém.
+   * ID de grupo (ex.: "558597180005-1552156770") passa direto — o hífen faz parte do ID
+   * e é assim que o Whaticket reconhece "isso é um grupo" (vira `<isso>@g.us` no backend).
+   * Removê-lo (como o `\D` global fazia antes) concatena os dois números e produz um
+   * contato inexistente → 400 ERR_WAPP_INVALID_CONTACT.
    */
   private normalizarNumero(to: string): string {
-    const digitos = to.replace(/\D/g, '');
+    const semEspacos = to.trim();
+    if (semEspacos.includes('-')) return semEspacos;
+    const digitos = semEspacos.replace(/\D/g, '');
     if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`;
     return digitos;
   }
