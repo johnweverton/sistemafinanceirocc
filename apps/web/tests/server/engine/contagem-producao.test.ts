@@ -8,6 +8,10 @@ import {
   contarConsultasProducao,
   isPediatra,
   isUrologista,
+  isGinecologista,
+  isOrtopedista,
+  CODIGOS_EXCECAO_UROLOGISTA,
+  CODIGOS_EXCECAO_GINECOLOGISTA,
 } from '../../../src/server/engine/contagem-producao';
 
 describe('Engine: Contagem de Produção', () => {
@@ -335,6 +339,27 @@ describe('Engine: Contagem de Produção', () => {
       // 1 (exceção, fora do pool) + teto(3/3)=1 (os outros 3 itens) = 2
       expect(consolidarProducao(itens, 'Urologista')).toBe(2);
     });
+
+    it('ginecologista: aplica a MESMA regra completa do valor real (exceção + teto(n/3)), GATE 2026-08-06', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-01', codigoProcedimento: '3.13.03.29-3' },
+        { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-02' },
+        { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-03' },
+        { ...baseItem(), pacienteNome: 'Paciente Gineco', data: '2026-07-04' },
+      ];
+      // 1 (exceção, fora do pool) + teto(3/3)=1 (os outros 3 itens) = 2
+      expect(consolidarProducao(itens, 'Ginecologista')).toBe(2);
+    });
+
+    it('ortopedista: teto(n/3) sem nenhuma exceção de código', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'Paciente Orto', data: '2026-07-01' },
+        { ...baseItem(), pacienteNome: 'Paciente Orto', data: '2026-07-02' },
+        { ...baseItem(), pacienteNome: 'Paciente Orto', data: '2026-07-03' },
+        { ...baseItem(), pacienteNome: 'Paciente Orto', data: '2026-07-04' },
+      ];
+      expect(consolidarProducao(itens, 'Ortopedista')).toBe(2); // teto(4/3) = 2
+    });
   });
 
   describe('Urologista (3x1 + exceção de códigos, GATE 2026-08-06)', () => {
@@ -451,6 +476,181 @@ describe('Engine: Contagem de Produção', () => {
     });
   });
 
+  describe('Ginecologista (3x1 + exceção de códigos, GATE 2026-08-06)', () => {
+    // Implante de DIU hormonal — inserção — está em CODIGOS_EXCECAO_GINECOLOGISTA.
+    const CODIGO_EXCECAO_1 = '3.13.03.29-3';
+    // Histeroscopia cirúrgica p/ biópsia dirigida, lise de sinéquias, retirada de corpo estranho — está em CODIGOS_EXCECAO_GINECOLOGISTA.
+    const CODIGO_EXCECAO_2 = '3.13.03.17-0';
+
+    it('sem nenhum código de exceção, 4 itens normais mesmo paciente/data → teto(4/3) = 2 guias (igual pediatra/urologista)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('1 item de código de exceção + 2 itens normais no mesmo grupo → 1 (exceção) + teto(2/3)=1 = 2 guias', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologia');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('3 ocorrências do MESMO código de exceção, mesmo paciente/data → 3 guias (não colapsa, cada uma é individual)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_2 },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.guias).toBe(3);
+    });
+
+    it('ramo viaAcesso: código de exceção também fica fora do pool 3x1 nesse ramo', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), viaAcesso: true, codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), viaAcesso: true },
+        { ...baseItem(), viaAcesso: true },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      // 1 (exceção) + teto(2/3)=1 (via de acesso normal) = 2
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('médico não-ginecologista/não-3x1 com item de código de exceção do ginecologista → não afetado, 1 guia por item', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'P2' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Cirurgia Geral');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('urologista com item de código de exceção do ginecologista → continua 3x1 normal, sem exceção (listas são exclusivas por especialidade)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      // teto(4/3) = 2 — o código de exceção do ginecologista não isola nada para urologista.
+      const resultado = contarGuiasProducao(itens, 'Urologista');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('caso misto: via de acesso + itens normais + exceções nos dois ramos + múltiplas datas', () => {
+      const itens: ItemProducao[] = [
+        // Via de acesso: 1 exceção + 3 normais (mesmo paciente/data) → 1 + teto(3/3)=1 = 2
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true, codigoProcedimento: CODIGO_EXCECAO_2 },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+        { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+        // Normais: 2 exceções (mesmo código, mesmo paciente/data) + 4 normais → 2 + teto(4/3)=2 = 4
+        { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: CODIGO_EXCECAO_1 },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        { ...baseItem(), pacienteNome: 'Paciente Normal' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.guias).toBe(6); // 2 (via de acesso) + 4 (normais)
+    });
+
+    it('métrica "cirurgias" aparece para ginecologista mesmo sem itens via de acesso', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1' },
+        { ...baseItem(), pacienteNome: 'P2' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      expect(resultado.cirurgias).toBe(2);
+    });
+  });
+
+  describe('isGinecologista', () => {
+    it('reconhece "Ginecologia", "Ginecologista" e "Ginecologia e Obstetrícia"', () => {
+      expect(isGinecologista('Ginecologia')).toBe(true);
+      expect(isGinecologista('Ginecologista')).toBe(true);
+      expect(isGinecologista('ginecologista')).toBe(true);
+      expect(isGinecologista('Ginecologia e Obstetrícia')).toBe(true);
+    });
+
+    it('não reconhece especialidades sem relação, null ou vazio', () => {
+      expect(isGinecologista('Obstetrícia')).toBe(false);
+      expect(isGinecologista('Cirurgia Geral')).toBe(false);
+      expect(isGinecologista(null)).toBe(false);
+      expect(isGinecologista(undefined)).toBe(false);
+      expect(isGinecologista('')).toBe(false);
+    });
+  });
+
+  describe('Ortopedista (3x1 sem exceção, GATE 2026-08-06)', () => {
+    it('teto(n/3) aplica normalmente, igual pediatra/urologista/ginecologista', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ortopedista');
+      expect(resultado.guias).toBe(2); // teto(4/3) = 2
+    });
+
+    it('não tem lista de exceção: um código que seria exceção pra urologista/ginecologista entra no pool normalmente', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' }, // exceção só de ginecologista
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ortopedia');
+      // teto(3/3) = 1 — nenhum item é retirado do pool (ortopedista não tem exceção)
+      expect(resultado.guias).toBe(1);
+    });
+
+    it('ramo viaAcesso também usa teto(n/3), sem exceção', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), viaAcesso: true },
+        { ...baseItem(), viaAcesso: true },
+        { ...baseItem(), viaAcesso: true },
+        { ...baseItem(), viaAcesso: true },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ortopedista');
+      expect(resultado.guias).toBe(2); // teto(4/3) = 2
+    });
+
+    it('métrica "cirurgias" aparece para ortopedista mesmo sem itens via de acesso', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1' },
+        { ...baseItem(), pacienteNome: 'P2' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ortopedista');
+      expect(resultado.cirurgias).toBe(2);
+    });
+  });
+
+  describe('isOrtopedista', () => {
+    it('reconhece "Ortopedia", "Ortopedista" e "Ortopedia e Traumatologia"', () => {
+      expect(isOrtopedista('Ortopedia')).toBe(true);
+      expect(isOrtopedista('Ortopedista')).toBe(true);
+      expect(isOrtopedista('ortopedista')).toBe(true);
+      expect(isOrtopedista('Ortopedia e Traumatologia')).toBe(true);
+    });
+
+    it('não reconhece especialidades sem relação, null ou vazio', () => {
+      expect(isOrtopedista('Cirurgia Geral')).toBe(false);
+      expect(isOrtopedista(null)).toBe(false);
+      expect(isOrtopedista(undefined)).toBe(false);
+      expect(isOrtopedista('')).toBe(false);
+    });
+  });
+
   describe('isPediatra', () => {
     it('reconhece "Pediatra" e "Pediatria" (grafias completas)', () => {
       expect(isPediatra('Pediatra')).toBe(true);
@@ -469,6 +669,57 @@ describe('Engine: Contagem de Produção', () => {
       expect(isPediatra(null)).toBe(false);
       expect(isPediatra(undefined)).toBe(false);
       expect(isPediatra('')).toBe(false);
+    });
+  });
+
+  describe('Códigos de exceção — cobertura individual e precedência (achados do QA, 2026-08-06)', () => {
+    // Table-driven: cada código de CODIGOS_EXCECAO_UROLOGISTA/GINECOLOGISTA precisa ser
+    // exercitado individualmente — um typo em qualquer um passaria batido nos testes "de caso
+    // misto" acima, que não cobrem os 6 códigos do urologista nem o '3.13.03.26-9' (DIU não
+    // hormonal) do ginecologista.
+    it.each([...CODIGOS_EXCECAO_UROLOGISTA].map((codigo) => [codigo]))(
+      'código de exceção do urologista "%s" isolado: 1 ocorrência + 2 itens normais → 1 + teto(2/3)=1 = 2 guias',
+      (codigo) => {
+        const itens: ItemProducao[] = [
+          { ...baseItem(), codigoProcedimento: codigo },
+          { ...baseItem() },
+          { ...baseItem() },
+        ];
+        expect(contarGuiasProducao(itens, 'Urologista').guias).toBe(2);
+      },
+    );
+
+    it.each([...CODIGOS_EXCECAO_GINECOLOGISTA].map((codigo) => [codigo]))(
+      'código de exceção do ginecologista "%s" isolado: 1 ocorrência + 2 itens normais → 1 + teto(2/3)=1 = 2 guias',
+      (codigo) => {
+        const itens: ItemProducao[] = [
+          { ...baseItem(), codigoProcedimento: codigo },
+          { ...baseItem() },
+          { ...baseItem() },
+        ];
+        expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
+      },
+    );
+
+    it('.trim() defensivo: código de exceção com espaços ao redor ainda é reconhecido (mapper de origem não trima proc_code)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: ' 3.13.03.29-3 ' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
+    });
+
+    it('PRECEDÊNCIA (decisão de implementação, sem caso real conhecido): especialidade que bate com urologista E ginecologista ao mesmo tempo usa a lista do UROLOGISTA — a do ginecologista é ignorada, nunca há união', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' }, // exceção só na lista do ginecologista
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      // Se a precedência mudar (união, ou ginecologista primeiro), este teste deve ser
+      // atualizado deliberadamente — não é um comportamento especificado pelo usuário.
+      const resultado = contarGuiasProducao(itens, 'Ginecologia e Urologia');
+      expect(resultado.guias).toBe(1); // teto(3/3)=1 — código foi pro pool, lista do urologista "venceu" e não reconhece esse código
     });
   });
 });

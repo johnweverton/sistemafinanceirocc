@@ -12,5 +12,8 @@ export {
   contarConsultasProducao,
   isPediatra,
   isUrologista,
+  isGinecologista,
+  isOrtopedista,
   CODIGOS_EXCECAO_UROLOGISTA,
+  CODIGOS_EXCECAO_GINECOLOGISTA,
 } from './contagem-producao';
