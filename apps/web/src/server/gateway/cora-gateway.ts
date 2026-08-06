@@ -72,6 +72,17 @@ function montarPaymentTerms(condicoes: CondicoesEmissao): Record<string, unknown
   return terms;
 }
 
+/**
+ * Descrição do item de cobrança enviado à Cora — aparece no boleto/PIX gerado. Inclui a
+ * quantidade de guias cobradas quando disponível (pedido do dono, 2026-08-06); resultados sem
+ * produção de guias (ex.: cliente contábil) omitem o trecho em vez de mostrar "0 guias".
+ */
+function montarDescricaoServico(competencia: string, quantidadeGuias: number | null | undefined): string {
+  const base = `Cobrança competência ${competencia}`;
+  if (!quantidadeGuias || quantidadeGuias <= 0) return base;
+  return `${base} — ${quantidadeGuias} guia${quantidadeGuias === 1 ? '' : 's'}`;
+}
+
 export class CoraGateway implements BoletoGatewayPort {
   private http: CoraHttpClient;
 
@@ -122,7 +133,7 @@ export class CoraGateway implements BoletoGatewayPort {
         payment_terms: montarPaymentTerms(condicoes),
         services: [
           {
-            name: `Cobrança competência ${dados.competencia}`,
+            name: montarDescricaoServico(dados.competencia, dados.quantidadeGuias),
             amount: Math.round(dados.valor * 100),
           },
         ],
@@ -234,4 +245,4 @@ export class CoraGateway implements BoletoGatewayPort {
 // Exporta também as funções internas para testes unitários com mocks.
 // criarAgentMtls/fetchMtls moram em cora-http.ts desde a Story 8.1 (re-export p/ compat).
 export { criarAgentMtls, fetchMtls } from './cora-http';
-export { calcularVencimento, montarPaymentTerms, normalizarStatusInvoice };
+export { calcularVencimento, montarPaymentTerms, montarDescricaoServico, normalizarStatusInvoice };

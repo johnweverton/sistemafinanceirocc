@@ -284,6 +284,7 @@ export async function emitirBoletoParaResultado(
       execucaoResultadoId,
       competencia: resultadoRow.execucoes.competencia,
       valor: Number(resultadoRow.total_valor),
+      quantidadeGuias: resultadoRow.guias,
       pagador: {
         nome: cobranca.pagadorNome,
         documento: cobranca.pagadorDocumento,

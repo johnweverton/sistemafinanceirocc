@@ -256,6 +256,80 @@ describe('CoraGateway', () => {
     expect(terms.discount).toBeUndefined();
   });
 
+  it('inclui a quantidade de guias na descrição do serviço quando informada (pedido do dono, 2026-08-06)', async () => {
+    let invoicePayload: Record<string, unknown> = {};
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(
+        (
+          _o: unknown,
+          callback: (res: { statusCode: number; statusMessage: string; headers: Record<string, string>; on: (event: string, handler: (data?: unknown) => void) => void }) => void,
+        ) => {
+          const res = {
+            statusCode: 201,
+            statusMessage: 'Created',
+            headers: { 'content-type': 'application/json' },
+            on: (event: string, handler: (data?: unknown) => void) => {
+              if (event === 'data') handler(Buffer.from(JSON.stringify({ id: 'inv_guias' })));
+              if (event === 'end') handler();
+            },
+          };
+          callback(res);
+          return {
+            on: vi.fn(),
+            setTimeout: vi.fn(),
+            write: vi.fn((data: string) => { invoicePayload = JSON.parse(data); }),
+            end: vi.fn(),
+            destroy: vi.fn(),
+          };
+        },
+      );
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const gateway = new CoraGateway(CRED_TESTE);
+    await gateway.emitir({ ...dadosPadrao, quantidadeGuias: 42 }, 'idem-key-teste');
+
+    const services = invoicePayload.services as { name: string; amount: number }[];
+    expect(services[0]?.name).toBe('Cobrança competência 2025-06 — 42 guias');
+  });
+
+  it('não menciona guias na descrição quando quantidadeGuias é null/0/ausente (ex.: cliente contábil)', async () => {
+    let invoicePayload: Record<string, unknown> = {};
+    mockRequest
+      .mockImplementationOnce(simularResposta(200, { access_token: 'tok', token_type: 'Bearer', expires_in: 3600 }))
+      .mockImplementationOnce(
+        (
+          _o: unknown,
+          callback: (res: { statusCode: number; statusMessage: string; headers: Record<string, string>; on: (event: string, handler: (data?: unknown) => void) => void }) => void,
+        ) => {
+          const res = {
+            statusCode: 201,
+            statusMessage: 'Created',
+            headers: { 'content-type': 'application/json' },
+            on: (event: string, handler: (data?: unknown) => void) => {
+              if (event === 'data') handler(Buffer.from(JSON.stringify({ id: 'inv_sem_guias' })));
+              if (event === 'end') handler();
+            },
+          };
+          callback(res);
+          return {
+            on: vi.fn(),
+            setTimeout: vi.fn(),
+            write: vi.fn((data: string) => { invoicePayload = JSON.parse(data); }),
+            end: vi.fn(),
+            destroy: vi.fn(),
+          };
+        },
+      );
+
+    const { CoraGateway } = await import('@/server/gateway/cora-gateway');
+    const gateway = new CoraGateway(CRED_TESTE);
+    await gateway.emitir({ ...dadosPadrao, quantidadeGuias: null }, 'idem-key-teste');
+
+    const services = invoicePayload.services as { name: string; amount: number }[];
+    expect(services[0]?.name).toBe('Cobrança competência 2025-06');
+  });
+
   it('omite email e address do customer quando o pagador não tem (Épico 6: opcionais)', async () => {
     let invoicePayload: Record<string, unknown> = {};
     mockRequest

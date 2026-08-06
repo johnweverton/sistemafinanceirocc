@@ -84,6 +84,9 @@ export interface DadosEmissaoBoleto {
   execucaoResultadoId: string;
   competencia: string;
   valor: number;
+  /** Nº de guias cobradas neste resultado — entra na descrição do boleto (item `services`
+   *  da Cora). Null/undefined (ex.: cliente contábil, sem produção de guias) omite o trecho. */
+  quantidadeGuias?: number | null;
   pagador: {
     nome: string;
     documento: string; // CPF (11) ou CNPJ (14), dígitos
