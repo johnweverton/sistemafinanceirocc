@@ -100,6 +100,11 @@ export const POST = withErrorHandler(async (req) => {
 
   const extrato = await gateway.consultarExtrato({ inicio, fim });
   if (!extrato.sucesso) {
+    // Achado 2026-08-06: o log genérico de withErrorHandler (api-error.ts) omite `details` de
+    // propósito (evita vazar detalhe sensível de rotas em geral) — mas o motivo real da falha
+    // do gateway (status HTTP da Cora, ex. 401/403) não é sensível e é essencial pra diagnosticar
+    // qual das 4 contas emissoras está com problema sem precisar inspecionar o browser do operador.
+    console.error('[extrato-sincronizar] gateway falhou', { conta, periodo: { inicio, fim }, erro: extrato.erro });
     throw new ApiError(502, 'A consulta do extrato no banco falhou.', 'SYNC_FALHOU', {
       conta,
       periodo: { inicio, fim },
