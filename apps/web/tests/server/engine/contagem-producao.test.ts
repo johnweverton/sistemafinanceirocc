@@ -604,10 +604,13 @@ describe('Engine: Contagem de Produção', () => {
     });
 
     it('não tem lista de exceção: um código que seria exceção pra urologista/ginecologista entra no pool normalmente', () => {
+      // Mesmo código nos 3 itens (só o que muda é a especialidade não ter exceção) — código
+      // diferente entre itens do mesmo paciente/data forma grupos separados desde o achado
+      // 2026-08-06 (Dr. Jansen Osterno), o que testaria outra coisa aqui.
       const itens: ItemProducao[] = [
         { ...baseItem(), codigoProcedimento: '3.13.03.29-3' }, // exceção só de ginecologista
-        { ...baseItem() },
-        { ...baseItem() },
+        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
+        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
       ];
       const resultado = contarGuiasProducao(itens, 'Ortopedia');
       // teto(3/3) = 1 — nenhum item é retirado do pool (ortopedista não tem exceção)
@@ -710,11 +713,64 @@ describe('Engine: Contagem de Produção', () => {
       expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
     });
 
+    // BUG REAL 2026-08-06 (Dr. Márcio Erlon Fontinele Moreira): a API do sistema web manda
+    // `proc_code` SEM pontuação ("31303293"), não no formato TUSS documentado nas constantes
+    // ("3.13.03.29-3") — a comparação direta nunca batia, nenhuma exceção era reconhecida (248
+    // procedimentos todos no pool 3x1, 169 guias em vez de 189). `normalizarCodigo` (dígitos
+    // puros dos dois lados) resolve isso — estes testes usam o formato CRU real, não o TUSS.
+    it.each([...CODIGOS_EXCECAO_UROLOGISTA].map((codigo) => [codigo, codigo.replace(/\D/g, '')]))(
+      'código de exceção do urologista "%s" no formato CRU da API ("%s", sem pontuação) ainda é reconhecido',
+      (_tuss, cru) => {
+        const itens: ItemProducao[] = [
+          { ...baseItem(), codigoProcedimento: cru },
+          { ...baseItem() },
+          { ...baseItem() },
+        ];
+        expect(contarGuiasProducao(itens, 'Urologista').guias).toBe(2);
+      },
+    );
+
+    it.each([...CODIGOS_EXCECAO_GINECOLOGISTA].map((codigo) => [codigo, codigo.replace(/\D/g, '')]))(
+      'código de exceção do ginecologista "%s" no formato CRU da API ("%s", sem pontuação) ainda é reconhecido',
+      (_tuss, cru) => {
+        const itens: ItemProducao[] = [
+          { ...baseItem(), codigoProcedimento: cru },
+          { ...baseItem() },
+          { ...baseItem() },
+        ];
+        expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
+      },
+    );
+
+    it('reprodução do caso real do Dr. Márcio: 143 itens de exceção (formato CRU) + 105 no pool 3x1 → 143 + teto(105/3 em grupos por paciente) guias, nunca os 169 do bug', () => {
+      // Reduzido pra ficar tratável no teste, preservando a mesma proporção do bug: os 3
+      // códigos de exceção do ginecologista aparecem MUITAS vezes (formato cru, sem pontuação,
+      // como a API manda) e precisam ser retirados do pool mesmo em volume alto.
+      const itens: ItemProducao[] = [
+        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `DIU-${i}`, codigoProcedimento: '31303293' })),
+        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `DIU2-${i}`, codigoProcedimento: '31303269' })),
+        ...Array.from({ length: 5 }, (_, i) => ({ ...baseItem(), pacienteNome: `HISTERO-${i}`, codigoProcedimento: '31303170' })),
+        // 6 itens normais do mesmo paciente/data → teto(6/3) = 2 guias no pool.
+        { ...baseItem(), pacienteNome: 'Normal' },
+        { ...baseItem(), pacienteNome: 'Normal' },
+        { ...baseItem(), pacienteNome: 'Normal' },
+        { ...baseItem(), pacienteNome: 'Normal' },
+        { ...baseItem(), pacienteNome: 'Normal' },
+        { ...baseItem(), pacienteNome: 'Normal' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Ginecologista');
+      // 15 (exceção, 1 cada) + 2 (pool: teto(6/3)) = 17 — NUNCA 6 (que seria o resultado do bug,
+      // com os 15 itens de exceção diluídos no pool junto dos 6 normais: teto(21/3) = 7).
+      expect(resultado.guias).toBe(17);
+    });
+
     it('PRECEDÊNCIA (decisão de implementação, sem caso real conhecido): especialidade que bate com urologista E ginecologista ao mesmo tempo usa a lista do UROLOGISTA — a do ginecologista é ignorada, nunca há união', () => {
+      // Mesmo código nos 3 itens — código diferente entre itens do mesmo paciente/data forma
+      // grupos separados desde o achado 2026-08-06 (Dr. Jansen Osterno), testaria outra coisa.
       const itens: ItemProducao[] = [
         { ...baseItem(), codigoProcedimento: '3.13.03.29-3' }, // exceção só na lista do ginecologista
-        { ...baseItem() },
-        { ...baseItem() },
+        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
+        { ...baseItem(), codigoProcedimento: '3.13.03.29-3' },
       ];
       // Se a precedência mudar (união, ou ginecologista primeiro), este teste deve ser
       // atualizado deliberadamente — não é um comportamento especificado pelo usuário.

@@ -141,3 +141,61 @@ describe('MODO INCONSISTENTE em ginecologista/urologista/ortopedista (GATE 2026-
     },
   );
 });
+
+describe('Achado real 2026-08-06 — Dr. Jansen Osterno Vasconcelos (pediatra)', () => {
+  // Origem deu senha PRÓPRIA a cada uma das 222 linhas (nenhuma se repete — mesmo padrão de
+  // José Neias/Bruno de Brito Botelho). Sem senha confiável, o fallback cai em paciente+código:
+  // 3 pacientes tiveram 2 procedimentos DIFERENTES na MESMA data (atendimentos genuinamente
+  // separados que só coincidiram na data, confirmado pelo dono) — não podem colapsar em 1 guia
+  // cada. As outras 216 linhas são únicas (paciente ou código diferente) → 1 guia cada.
+  // Total esperado: 222 (3 pares de 2 guias cada, mais 216 avulsas) — NUNCA 219 (o bug: os 3
+  // pares eram colapsados a 1 guia cada só por coincidirem paciente+data, teto(2/3)=1×3=3
+  // guias a menos).
+  function itemJansen(over: Partial<ItemProducao> & { pacienteNome: string; data: string; codigoProcedimento: string }): ItemProducao {
+    return {
+      atendimentoExternoId: `SENHA-${Math.random()}`, // única por linha — nunca se repete no lote
+      descricaoProcedimento: 'Procedimento',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+      ...over,
+    };
+  }
+
+  it('2 procedimentos DIFERENTES, mesmo paciente, mesma data, sem senha compartilhada → 2 guias (não colapsa)', () => {
+    const itens: ItemProducao[] = [
+      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '10101012' }),
+      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '20202023' }),
+    ];
+    const resultado = contarGuias(itens, 'Pediatria');
+    expect(resultado.guias).toBe(2);
+  });
+
+  it('2 ocorrências do MESMO procedimento, mesmo paciente, mesma data, sem senha compartilhada → 1 guia (continua colapsando — padrão "via de acesso 3x", achado 2026-08-04)', () => {
+    const itens: ItemProducao[] = [
+      itemJansen({ pacienteNome: 'Paciente X', data: '2026-07-01', codigoProcedimento: '10101012' }),
+      itemJansen({ pacienteNome: 'Paciente X', data: '2026-07-01', codigoProcedimento: '10101012' }),
+    ];
+    const resultado = contarGuias(itens, 'Pediatria');
+    expect(resultado.guias).toBe(1); // teto(2/3) = 1
+  });
+
+  it('reproduz o caso real: 3 pares de procedimentos diferentes no mesmo dia + 216 linhas avulsas → 222 guias, nunca 219', () => {
+    const pares: ItemProducao[] = [
+      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303001' }),
+      itemJansen({ pacienteNome: 'Anthony Gael Pereira Angelo', data: '2026-07-17', codigoProcedimento: '31303002' }),
+      itemJansen({ pacienteNome: 'Daniel da Silva Rodrigues', data: '2026-07-01', codigoProcedimento: '31303003' }),
+      itemJansen({ pacienteNome: 'Daniel da Silva Rodrigues', data: '2026-07-01', codigoProcedimento: '31303004' }),
+      itemJansen({ pacienteNome: 'Rejane Maria Leite Campos', data: '2026-07-01', codigoProcedimento: '31303005' }),
+      itemJansen({ pacienteNome: 'Rejane Maria Leite Campos', data: '2026-07-01', codigoProcedimento: '31303006' }),
+    ];
+    const avulsas: ItemProducao[] = Array.from({ length: 216 }, (_, i) =>
+      itemJansen({ pacienteNome: `Paciente ${i}`, data: '2026-07-10', codigoProcedimento: '10101012' }),
+    );
+    const resultado = contarGuias([...pares, ...avulsas], 'Pediatria');
+    expect(resultado.guias).toBe(222); // 6 (3 pares, 1 guia cada item) + 216 (avulsas)
+    expect(resultado.cirurgias).toBe(222); // cada senha é única → 222 "cirurgias" distintas
+  });
+});

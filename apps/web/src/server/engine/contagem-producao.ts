@@ -41,7 +41,16 @@ export function chaveAtendimento(item: ItemProducao): string {
  * (José Neias 2026-08-04, Bruno de Brito Botelho 2026-08-05: toda linha com senha única, nenhuma
  * repetida — usar a senha nesse caso fragmenta um único atendimento em várias guias).
  * Resolve os dois: usa a senha quando ela aparece em 2+ linhas (atendimento real, compartilhado);
- * cai para `pacienteNome` quando a senha é única por linha ou ausente.
+ * cai para `paciente + código de procedimento` quando a senha é única por linha ou ausente.
+ *
+ * O código de procedimento entra no fallback por causa do achado real 2026-08-06 (Dr. Jansen
+ * Osterno Vasconcelos, pediatra): sem senha confiável, paciente+data sozinho fundiu 3 pares de
+ * atendimentos GENUINAMENTE separados que só coincidiram na data (222 cirurgias → 219 guias,
+ * -3 errado — confirmado pelo dono: "são dois atendimentos genuinamente separados"). Exigir
+ * também o MESMO código resolve os dois casos reais conhecidos: mesmo procedimento repetido no
+ * mesmo dia sem senha compartilhada (padrão "via de acesso 3x", achado 2026-08-04 — ainda
+ * agrupa, é o cenário que a regra 3x1 foi desenhada pra cobrir) continua colapsando; códigos
+ * DIFERENTES no mesmo dia (Jansen) não colapsam mais — cada um vira seu próprio grupo.
  */
 function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => string {
   const contagemSenha = new Map<string, number>();
@@ -55,7 +64,7 @@ function chaveAgrupamento3x1(itens: ItemProducao[]): (item: ItemProducao) => str
     if (senha && senha.trim() !== '' && (contagemSenha.get(senha) ?? 0) > 1) {
       return senha;
     }
-    return item.pacienteNome;
+    return `${item.pacienteNome}|${item.codigoProcedimento}`;
   };
 }
 
@@ -291,6 +300,28 @@ export const CODIGOS_EXCECAO_GINECOLOGISTA: ReadonlySet<string> = new Set([
   '3.13.03.17-0', // Histeroscopia cirúrgica p/ biópsia dirigida, lise de sinéquias, retirada de corpo estranho
 ]);
 
+/**
+ * Normaliza um código de procedimento pra só dígitos — resolve a divergência de formato entre
+ * a notação TUSS documentada ("3.13.03.29-3", usada nas constantes acima, mais legível/
+ * auditável) e o que a API real do sistema web efetivamente manda em `proc_code`: dígitos
+ * puros, sem pontuação ("31303293"). BUG REAL 2026-08-06 (Dr. Márcio Erlon Fontinele Moreira,
+ * ginecologista): comparar os dois formatos direto NUNCA batia — nenhuma exceção era
+ * reconhecida, todos os 248 procedimentos caíam no pool 3x1 (169 guias em vez das 189
+ * corretas). Mesmo bug provavelmente afeta CODIGOS_EXCECAO_UROLOGISTA desde a implementação
+ * original (mesma API, mesmo campo `proc_code`) — nunca confirmado porque não havia caso real
+ * de exceção de urologista auditado até agora.
+ */
+function normalizarCodigo(codigo: string): string {
+  return codigo.replace(/\D/g, '');
+}
+
+const CODIGOS_EXCECAO_UROLOGISTA_NORM: ReadonlySet<string> = new Set(
+  [...CODIGOS_EXCECAO_UROLOGISTA].map(normalizarCodigo),
+);
+const CODIGOS_EXCECAO_GINECOLOGISTA_NORM: ReadonlySet<string> = new Set(
+  [...CODIGOS_EXCECAO_GINECOLOGISTA].map(normalizarCodigo),
+);
+
 /** Conjunto vazio compartilhado — especialidade sem lista de exceção própria (pediatra,
  *  ortopedista, ou nenhuma 3x1). Constante única em vez de `new Set()` por chamada: é o caso
  *  mais comum (todo médico fora de urologia/ginecologia cai aqui). */
@@ -310,17 +341,18 @@ const SEM_EXCECAO: ReadonlySet<string> = new Set();
  * prioridade combinada) em vez de depender desta ordem implícita de `if`.
  */
 function codigosExcecaoPara(especialidade?: string | null): ReadonlySet<string> {
-  if (isUrologista(especialidade)) return CODIGOS_EXCECAO_UROLOGISTA;
-  if (isGinecologista(especialidade)) return CODIGOS_EXCECAO_GINECOLOGISTA;
+  if (isUrologista(especialidade)) return CODIGOS_EXCECAO_UROLOGISTA_NORM;
+  if (isGinecologista(especialidade)) return CODIGOS_EXCECAO_GINECOLOGISTA_NORM;
   return SEM_EXCECAO;
 }
 
 /**
- * `.trim()` defensivo: o mapper do proc_code (fin-api-client.ts) não trima o valor, diferente
- * de outros campos do item — evita falso negativo silencioso por espaço acidental na origem.
+ * Compara por dígitos normalizados dos dois lados (ver `normalizarCodigo`) — não importa se o
+ * código do item chega pontuado ("3.13.03.29-3") ou cru ("31303293", formato real observado),
+ * nem se tem espaço em volta (mapper do proc_code em fin-api-client.ts não trima o valor).
  */
 function ehExcecao(item: ItemProducao, codigos: ReadonlySet<string>): boolean {
-  return codigos.has((item.codigoProcedimento ?? '').trim());
+  return codigos.has(normalizarCodigo(item.codigoProcedimento ?? ''));
 }
 
 /**
