@@ -14,6 +14,7 @@ const mockIgnorar = vi.fn();
 const mockDesfazer = vi.fn();
 const mockBoletosConciliaveis = vi.fn();
 const mockCategorizar = vi.fn();
+const mockExportarOfx = vi.fn();
 vi.mock('../../src/services/extrato', () => ({
   extratoService: {
     listar: (...a: unknown[]) => mockListar(...a),
@@ -23,6 +24,7 @@ vi.mock('../../src/services/extrato', () => ({
     desfazer: (...a: unknown[]) => mockDesfazer(...a),
     boletosConciliaveis: (...a: unknown[]) => mockBoletosConciliaveis(...a),
     categorizar: (...a: unknown[]) => mockCategorizar(...a),
+    exportarOfx: (...a: unknown[]) => mockExportarOfx(...a),
   },
   extratoQueryKeys: {
     extrato: (f: unknown) => ['extrato', f],
@@ -231,6 +233,35 @@ describe('ExtratoManager', () => {
     expect(within(linhaConfirmada).queryByRole('button', { name: 'Categorizar' })).toBeNull();
     const linhaSemCategoria = screen.getByText('Sem categoria').closest('tr')!;
     expect(within(linhaSemCategoria).getByRole('button', { name: 'Categorizar' })).toBeInTheDocument();
+  });
+
+  it('Exportar OFX: chama o serviço com conta/período e dispara o download do blob', async () => {
+    mockListar.mockResolvedValue({ transacoes: [semMatch], totais });
+    const blob = new Blob(['OFXHEADER:100'], { type: 'application/x-ofx' });
+    mockExportarOfx.mockResolvedValue(blob);
+
+    // jsdom não implementa URL.createObjectURL/revokeObjectURL nem navegação real de <a> —
+    // stub mínimo só pra verificar que o fluxo de download foi acionado, sem testar o browser.
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    renderComProviders();
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar OFX' }));
+
+    await waitFor(() =>
+      expect(mockExportarOfx).toHaveBeenCalledWith(
+        expect.objectContaining({ conta: 'mc' }),
+      ),
+    );
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(blob));
+    expect(clickSpy).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it('diálogo de categorização: escolhe uma categoria e chama categorizar', async () => {

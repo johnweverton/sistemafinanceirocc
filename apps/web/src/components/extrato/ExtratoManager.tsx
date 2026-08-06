@@ -411,6 +411,20 @@ export function ExtratoManager() {
     },
   });
 
+  const exportarOfx = useMutation({
+    mutationFn: () => extratoService.exportarOfx({ conta, inicio, fim }),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `extrato-${conta}-${inicio}-a-${fim}.ofx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Arquivo OFX gerado. Importe no sistema contábil, na conciliação bancária.', 'success');
+    },
+    onError: (e) => erroToast(e, 'Erro ao exportar OFX'),
+  });
+
   const conciliar = useMutation({
     mutationFn: ({ transacaoId, boletoId }: { transacaoId: string; boletoId: string }) =>
       extratoService.conciliar(transacaoId, boletoId),
@@ -536,6 +550,14 @@ export function ExtratoManager() {
             className="btn-primary btn btn-sm"
           >
             {sincronizar.isPending ? 'Sincronizando…' : `Sincronizar (${CONTA_EMISSORA_LABEL[conta]})`}
+          </button>
+          <button
+            onClick={() => exportarOfx.mutate()}
+            disabled={exportarOfx.isPending}
+            className="btn-ghost btn btn-sm"
+            title="Exporta o extrato do período em OFX, para importar no sistema contábil"
+          >
+            {exportarOfx.isPending ? 'Gerando…' : 'Exportar OFX'}
           </button>
         </div>
       </div>

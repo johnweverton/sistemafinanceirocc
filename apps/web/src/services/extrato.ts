@@ -6,7 +6,8 @@ import type {
   TipoTransacaoExtrato,
   TotaisExtrato,
 } from '@cobranca/shared';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import type { ApiErrorBody } from '@/lib/api-error';
 
 export interface FiltroExtratoUi {
   conta: ContaEmissora;
@@ -70,6 +71,29 @@ export const extratoService = {
     }),
   boletosConciliaveis: (conta: ContaEmissora) =>
     apiFetch<Recebivel[]>(`/extrato/boletos-conciliaveis?conta=${conta}`),
+  /**
+   * Exporta o extrato do período em arquivo OFX (Fase 1 da exportação financeiro→contábil —
+   * ver docs/research/2026-08-06-...). Resposta é um arquivo, não JSON — não usa `apiFetch`.
+   */
+  exportarOfx: async (filtros: { conta: ContaEmissora; inicio: string; fim: string }): Promise<Blob> => {
+    const qs = new URLSearchParams(filtros);
+    const res = await fetch(`/api/extrato/exportar-ofx?${qs.toString()}`);
+    if (!res.ok) {
+      let body: ApiErrorBody | null = null;
+      try {
+        body = (await res.json()) as ApiErrorBody;
+      } catch {
+        /* corpo não-JSON */
+      }
+      throw new ApiClientError(
+        res.status,
+        body?.error?.message ?? `Erro ${res.status}`,
+        body?.error?.code ?? 'ERROR',
+        body?.error?.details,
+      );
+    }
+    return res.blob();
+  },
 };
 
 export const extratoQueryKeys = {
