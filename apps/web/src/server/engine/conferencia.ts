@@ -2,7 +2,7 @@
 // PRD §5.3 (modo inconsistente), §5.6 (dado incompleto), §8.5 (variação anômala). Pura.
 import type { ModoMudancaData } from '@cobranca/shared';
 import type { ItemProducao, ModoObservado } from '@cobranca/shared';
-import { isPediatra } from './contagem-producao';
+import { usaRegra3x1 } from './contagem-producao';
 
 /** Limiar de variação anômala mês a mês (PRD §8.5, §11 — sugestão inicial 40%). */
 export const LIMIAR_VARIACAO = 0.4;
@@ -24,7 +24,7 @@ export function checar(
 ): string[] {
   const alertas: string[] = [];
 
-  if (isPediatra(especialidade) && modoDetectado) {
+  if (usaRegra3x1(especialidade) && modoDetectado) {
     if (modoCadastro !== modoDetectado) {
       alertas.push(
         `MODO INCONSISTENTE. Cadastro: ${modoCadastro.toUpperCase()}, ` +

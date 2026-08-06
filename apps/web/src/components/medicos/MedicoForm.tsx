@@ -192,14 +192,19 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
     }
   }
 
-  const isPediatra = form.especialidade?.toLowerCase().includes('pediat') ?? false;
+  // Mesmo critério do Engine (`usaRegra3x1` em contagem-producao.ts) — checagem local, sem I/O,
+  // igual ao padrão já usado em NovaExecucao.tsx. "Mudança de data" só faz sentido pra
+  // especialidades que agrupam por atendimento (teto(n/3)): a ambiguidade senha-vs-paciente que
+  // esse campo resolve é do mecanismo de agrupamento 3x1 em si, não exclusiva de pediatra
+  // (achado 2026-08-06: ginecologista/urologista/ortopedista usam o MESMO agrupamento).
+  const usaRegra3x1 = /pediatr|urolog|ginecolog|ortoped/.test(form.especialidade?.toLowerCase() ?? '');
 
   function handleSubmit() {
     const payload: NovoMedicoPayload = {
       ...form,
       // Garantido por podeSalvar (contaOk) — aqui nunca é ''.
       contaEmissora: form.contaEmissora as ContaEmissora,
-      modoMudancaData: isPediatra ? form.modoMudancaData : 'nao',
+      modoMudancaData: usaRegra3x1 ? form.modoMudancaData : 'nao',
       cobranca: temAlgumaCobranca(cobranca) ? cobranca : null,
       condicoes: temAlgumaCondicao(condicoes) ? condicoes : null,
       empresaGrupoId: form.empresaGrupoId === '' ? null : form.empresaGrupoId,
@@ -280,8 +285,8 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           />
         </Field>
 
-        {isPediatra && (
-          <Field label="Mudança de data (Pediatria)">
+        {usaRegra3x1 && (
+          <Field label="Mudança de data (regra 3x1)">
             <select
               name="modoMudancaData"
               value={form.modoMudancaData}

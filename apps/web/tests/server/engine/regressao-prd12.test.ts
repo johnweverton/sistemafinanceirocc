@@ -119,7 +119,25 @@ describe('Regra de Outras Especialidades (Não Pediatra)', () => {
     expect(r.guias).toBe(49);
     expect(r.procedimentos).toBe(49);
     expect(r.guiasConsolidado).toBe(49);
-    // Alerta de modo é regra exclusiva de pediatra (PRD §5.3).
+    // Alerta de modo é regra exclusiva das especialidades 3x1 (PRD §5.3 + GATE 2026-08-06).
     expect(r.alertas.some((a) => a.includes('MODO INCONSISTENTE'))).toBe(false);
   });
+});
+
+describe('MODO INCONSISTENTE em ginecologista/urologista/ortopedista (GATE 2026-08-06)', () => {
+  it.each(['Ginecologista', 'Urologista', 'Ortopedista'])(
+    '%s: cadastro SIM mas observado NÃO → alerta de modo inconsistente (mesmo agrupamento 3x1 do pediatra)',
+    (especialidade) => {
+      const alertas = checar(procedimentosDrE, 'sim', 17, null, especialidade, 'nao');
+      expect(alertas.some((a) => a.includes('MODO INCONSISTENTE'))).toBe(true);
+    },
+  );
+
+  it.each(['Ginecologista', 'Urologista', 'Ortopedista'])(
+    '%s: cadastro bate com observado → sem alerta de modo',
+    (especialidade) => {
+      const alertas = checar(procedimentosDraA, 'sim', 17, null, especialidade, 'sim');
+      expect(alertas.some((a) => a.includes('MODO INCONSISTENTE'))).toBe(false);
+    },
+  );
 });

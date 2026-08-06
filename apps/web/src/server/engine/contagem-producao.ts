@@ -251,8 +251,13 @@ export function isOrtopedista(especialidade?: string | null): boolean {
 /**
  * Especialidades que usam o teto(n/3) por atendimento em vez de 1 guia por procedimento (PRD
  * §12; GATE 2026-08-06 ampliando de pediatra/urologista para ginecologista/ortopedista).
+ * Exportada (não só uso interno) porque `conferencia.ts` reusa o mesmo critério pro alerta de
+ * "MODO INCONSISTENTE" — a ambiguidade senha-vs-paciente que esse alerta cobre é do mecanismo
+ * de agrupamento 3x1 em si (`chaveAgrupamento3x1`/`detectarModoProducao`), não algo exclusivo
+ * de pediatra (achado 2026-08-06: o campo "Mudança de data" só aparecia no cadastro pra
+ * pediatra, mas as 3 especialidades novas usam o MESMO agrupamento e têm a MESMA ambiguidade).
  */
-function usaRegra3x1(especialidade?: string | null): boolean {
+export function usaRegra3x1(especialidade?: string | null): boolean {
   return (
     isPediatra(especialidade) ||
     isUrologista(especialidade) ||
