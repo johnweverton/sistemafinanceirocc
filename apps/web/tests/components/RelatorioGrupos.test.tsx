@@ -335,3 +335,46 @@ describe('RelatorioGrupos — contribuições por médico de resultado agregado 
     expect(screen.queryByText('Ver contribuições por médico')).not.toBeInTheDocument();
   });
 });
+
+describe('RelatorioGrupos — total de guias somando todos os lotes (achado real 2026-08-06, Dr. Felipe de Brito Rocha)', () => {
+  // `r.guias` (52) só reflete o lote principal (HAPVIDA_CRED); o médico também tem Outros
+  // Hospitais (11 guias) num lote separado (Story 10.5) — o resumo tinha que mostrar 63, a
+  // soma dos dois, não só o lote principal.
+  const resultadoFelipe = {
+    ...resultadoOk,
+    id: 'r-felipe',
+    nome: 'FELIPE DE BRITO ROCHA',
+    guias: 52,
+    cirurgias: 139,
+    guiasConsolidado: 52,
+    subtotais: [
+      { classe: 'HAPVIDA_CRED', guias: 52, valor: 697.71, faixa: 'até 80 guias' },
+      { classe: 'OUTROS_HOSPITAIS', guias: 11, valor: 172.2, faixa: 'até 30 guias' },
+    ],
+    totalValor: 869.91,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoFelipe]);
+    mockListarMedicos.mockResolvedValue([]);
+  });
+
+  it('mostra a soma de guias de todos os lotes (52 + 11 = 63), não só o lote principal (52)', async () => {
+    renderComProviders();
+    await screen.findByText('FELIPE DE BRITO ROCHA');
+
+    expect(screen.getByText(/63 guias \(todos os lotes\)/)).toBeInTheDocument();
+    expect(screen.getByText(/139 cirurgias · consolidado 52 \(lote principal\)/)).toBeInTheDocument();
+  });
+
+  it('resultado de lote único (sem Outros Hospitais/Imobilizações) não mostra o qualificador "(todos os lotes)"', async () => {
+    mockResultados.mockResolvedValue([resultadoOk]);
+    renderComProviders();
+    await screen.findByText('Dr. Teste');
+
+    expect(screen.getByText(/^1 guias/)).toBeInTheDocument();
+    expect(screen.queryByText(/todos os lotes/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/lote principal/)).not.toBeInTheDocument();
+  });
+});

@@ -82,6 +82,23 @@ function ContribuicoesEmpresa({ resultadoId }: { resultadoId: string }) {
   );
 }
 
+/**
+ * Total de guias somando TODOS os lotes (HAPVIDA_CRED/NAO_CRED, OUTROS_HOSPITAIS,
+ * IMOBILIZACOES, PERCENTUAL_PRODUCAO, PRECO_PROPRIO) — achado real 2026-08-06 (Dr. Felipe de
+ * Brito Rocha): `r.guias` (o campo usado aqui antes) só reflete o lote PRINCIPAL, nunca os
+ * lotes separados (Story 10.5 — Outros Hospitais/Imobilizações vêm de produções à parte, com
+ * contagem própria). O valor cobrado (`r.totalValor`) já soma tudo certo; só o texto do resumo
+ * mostrava um número que parecia o total mas não era, confundindo quem revisa.
+ * CONSULTA_PEDIATRIA fica de fora da soma — a unidade dela é "consultas", não "guias" (Story
+ * 10.2), somar misturaria unidades diferentes.
+ */
+function totalGuiasTodosLotes(r: ExecucaoResultado): number {
+  if (!r.subtotais || r.subtotais.length === 0) return r.guias ?? 0;
+  return r.subtotais
+    .filter((s) => s.classe !== 'CONSULTA_PEDIATRIA')
+    .reduce((acc, s) => acc + s.guias, 0);
+}
+
 function normalizarBusca(s: string): string {
   return s
     .normalize('NFD')
@@ -431,7 +448,11 @@ function Grupo({
               </div>
               {!resumido && (
                 <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
-                  {r.guias ?? 0} guias · {r.cirurgias ?? 0} cirurgias · consolidado {r.guiasConsolidado ?? 0}
+                  {totalGuiasTodosLotes(r)} guias
+                  {r.subtotais && r.subtotais.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length > 1 && ' (todos os lotes)'}
+                  {' · '}
+                  {r.cirurgias ?? 0} cirurgias · consolidado {r.guiasConsolidado ?? 0}
+                  {r.subtotais && r.subtotais.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length > 1 && ' (lote principal)'}
                 </div>
               )}
               {!resumido && r.subtotais && r.subtotais.length > 0 && (
