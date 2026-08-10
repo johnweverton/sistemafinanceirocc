@@ -51,14 +51,20 @@ export interface FakeState {
   selecoes: {
     execucaoId: string;
     medicoId: string;
-    producaoExternaId: string;
-    producaoNome: string;
+    producaoExternaId: string | null;
+    producaoNome: string | null;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
     producaoOutrosHospitaisExternaId?: string | null;
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
+    producaoCateterExternaId?: string | null;
+    producaoCateterNome?: string | null;
+    producaoFistulaExternaId?: string | null;
+    producaoFistulaNome?: string | null;
+    producaoAngiografiaExternaId?: string | null;
+    producaoAngiografiaNome?: string | null;
   }[];
   itensPorProducao: Record<string, ItemProducao[]>;
   guiasAnterioresPorMedicoId: Record<string, number | null>;

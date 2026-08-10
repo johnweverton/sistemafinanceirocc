@@ -666,8 +666,9 @@ export function toExecucao(row: ExecucaoRow): Execucao {
 export interface ExecucaoSelecaoRow {
   execucao_id: string;
   medico_id: string;
-  producao_externa_id: string;
-  producao_nome: string;
+  /** Null pra médico Angiologista (GATE 2026-08-07, migration 0044) — sem lote principal. */
+  producao_externa_id: string | null;
+  producao_nome: string | null;
   /** Produção de consultas de pediatria (migration 0026) — opcional em bancos sem a migration. */
   producao_consultas_externa_id?: string | null;
   producao_consultas_nome?: string | null;
@@ -676,19 +677,32 @@ export interface ExecucaoSelecaoRow {
   producao_outros_hospitais_nome?: string | null;
   producao_imobilizacoes_externa_id?: string | null;
   producao_imobilizacoes_nome?: string | null;
+  /** Lotes de Cateter/Fístula/Angiografia do Angiologista (GATE 2026-08-07, migration 0044). */
+  producao_cateter_externa_id?: string | null;
+  producao_cateter_nome?: string | null;
+  producao_fistula_externa_id?: string | null;
+  producao_fistula_nome?: string | null;
+  producao_angiografia_externa_id?: string | null;
+  producao_angiografia_nome?: string | null;
 }
 
 export function toExecucaoSelecaoRow(selecao: {
   execucaoId: string;
   medicoId: string;
-  producaoExternaId: string;
-  producaoNome: string;
+  producaoExternaId: string | null;
+  producaoNome: string | null;
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
   producaoOutrosHospitaisExternaId?: string | null;
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
+  producaoCateterExternaId?: string | null;
+  producaoCateterNome?: string | null;
+  producaoFistulaExternaId?: string | null;
+  producaoFistulaNome?: string | null;
+  producaoAngiografiaExternaId?: string | null;
+  producaoAngiografiaNome?: string | null;
 }): ExecucaoSelecaoRow {
   return {
     execucao_id: selecao.execucaoId,
@@ -701,6 +715,12 @@ export function toExecucaoSelecaoRow(selecao: {
     producao_outros_hospitais_nome: selecao.producaoOutrosHospitaisNome ?? null,
     producao_imobilizacoes_externa_id: selecao.producaoImobilizacoesExternaId ?? null,
     producao_imobilizacoes_nome: selecao.producaoImobilizacoesNome ?? null,
+    producao_cateter_externa_id: selecao.producaoCateterExternaId ?? null,
+    producao_cateter_nome: selecao.producaoCateterNome ?? null,
+    producao_fistula_externa_id: selecao.producaoFistulaExternaId ?? null,
+    producao_fistula_nome: selecao.producaoFistulaNome ?? null,
+    producao_angiografia_externa_id: selecao.producaoAngiografiaExternaId ?? null,
+    producao_angiografia_nome: selecao.producaoAngiografiaNome ?? null,
   };
 }
 
@@ -716,6 +736,12 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     producaoOutrosHospitaisNome: row.producao_outros_hospitais_nome ?? null,
     producaoImobilizacoesExternaId: row.producao_imobilizacoes_externa_id ?? null,
     producaoImobilizacoesNome: row.producao_imobilizacoes_nome ?? null,
+    producaoCateterExternaId: row.producao_cateter_externa_id ?? null,
+    producaoCateterNome: row.producao_cateter_nome ?? null,
+    producaoFistulaExternaId: row.producao_fistula_externa_id ?? null,
+    producaoFistulaNome: row.producao_fistula_nome ?? null,
+    producaoAngiografiaExternaId: row.producao_angiografia_externa_id ?? null,
+    producaoAngiografiaNome: row.producao_angiografia_nome ?? null,
   };
 }
 

@@ -14,6 +14,12 @@ function isPediatraEspecialidade(especialidade: string | null | undefined): bool
   return especialidade?.toLowerCase().includes('pediat') ?? false;
 }
 
+/** Mesmo critério do Engine (isAngiologista) — checagem local, sem I/O (GATE 2026-08-07).
+ *  Angiologista não tem lote principal: a produção dele vem de Cateter/Fístula/Angiografia. */
+function isAngiologistaEspecialidade(especialidade: string | null | undefined): boolean {
+  return especialidade?.toLowerCase().includes('angiolog') ?? false;
+}
+
 function normalizeName(name: string) {
   return name
     .toLowerCase()
@@ -104,6 +110,11 @@ export function NovaExecucao() {
   const [consultaProducaoId, setConsultaProducaoId] = useState('');
   const [outrosHospitaisProducaoId, setOutrosHospitaisProducaoId] = useState('');
   const [imobilizacoesProducaoId, setImobilizacoesProducaoId] = useState('');
+  // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — substituem o
+  // seletor de "Produção" normal, que não existe pra essa especialidade (sem lote principal).
+  const [cateterProducaoId, setCateterProducaoId] = useState('');
+  const [fistulaProducaoId, setFistulaProducaoId] = useState('');
+  const [angiografiaProducaoId, setAngiografiaProducaoId] = useState('');
 
   // Seleção do modo "Por empresa" — empresa + produção de guias cardíacas de cada médico
   // vinculado, sempre manual (nunca auto-match).
@@ -301,8 +312,17 @@ export function NovaExecucao() {
   // Médico já tem boleto ativo (emitido/pago) nesta competência, de uma execução ANTERIOR —
   // mesma checagem do modo "Por competência" (achado real 2026-08-04), bloqueia disparo.
   const medicoJaTemBoleto = Boolean(medicoId) && medicosComBoletoAtivo.has(medicoId);
+  const medicoSelecionadoAngiologista = isAngiologistaEspecialidade(
+    validMedicos.find((m) => m.id === medicoId)?.especialidade,
+  );
+  // Angiologista não tem "Produção" (lote principal) pra exigir — em troca, exige pelo menos UM
+  // dos 3 lotes próprios selecionado (Cateter/Fístula/Angiografia), senão não haveria nada pra
+  // processar (GATE 2026-08-07).
+  const producaoObrigatoriaOk = medicoSelecionadoAngiologista
+    ? Boolean(cateterProducaoId || fistulaProducaoId || angiografiaProducaoId)
+    : Boolean(producaoSelecionada);
   const canDispararMedico =
-    Boolean(medicoId && producaoSelecionada && competenciaValida) && !medicoJaTemBoleto && !disparar.isPending;
+    Boolean(medicoId && competenciaValida) && producaoObrigatoriaOk && !medicoJaTemBoleto && !disparar.isPending;
 
   const medicosDaEmpresa = validMedicos.filter((m) => m.empresaGrupoId === empresaId);
   const empresaSelecoesPayload: ExecucaoSelecaoPayload[] = medicosDaEmpresa
@@ -312,7 +332,7 @@ export function NovaExecucao() {
       const prod = prodId ? producoesDoMedico.find((p) => p.id === prodId) : undefined;
       return prod ? { medicoId: m.id, producaoExternaId: prod.id, producaoNome: prod.nome } : null;
     })
-    .filter((s): s is ExecucaoSelecaoPayload => s != null);
+    .filter((s): s is NonNullable<typeof s> => s != null);
   const canDispararEmpresa =
     Boolean(empresaId) &&
     empresaSelecoesPayload.length > 0 &&
@@ -466,6 +486,9 @@ export function NovaExecucao() {
                     setConsultaProducaoId('');
                     setOutrosHospitaisProducaoId('');
                     setImobilizacoesProducaoId('');
+                    setCateterProducaoId('');
+                    setFistulaProducaoId('');
+                    setAngiografiaProducaoId('');
                   }}
                   disabled={isApoioLoading}
                 >
@@ -483,37 +506,76 @@ export function NovaExecucao() {
                 )}
               </div>
 
-              <div>
-                <label htmlFor="producao-select" className="field-label mb-1.5">
-                  Produção
-                </label>
-                <select
-                  id="producao-select"
-                  className="input"
-                  value={producaoId}
-                  onChange={(e) => {
-                    const novaProducaoId = e.target.value;
-                    setProducaoId(novaProducaoId);
-                    const producao = producoesDoMedicoSelecionado.find((p) => p.id === novaProducaoId);
-                    if (producao) preencherCompetenciaAuto(producao.nome);
-                  }}
-                  disabled={!medicoId}
-                >
-                  <option value="">
-                    {medicoId ? 'Selecione a produção…' : 'Selecione um médico primeiro'}
-                  </option>
-                  {producoesDoMedicoSelecionado.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}
-                    </option>
+              {medicoSelecionadoAngiologista ? (
+                <>
+                  {(
+                    [
+                      { label: 'Lote de Cateter', valor: cateterProducaoId, set: setCateterProducaoId, id: 'producao-cateter-select' },
+                      { label: 'Lote de Fístula', valor: fistulaProducaoId, set: setFistulaProducaoId, id: 'producao-fistula-select' },
+                      { label: 'Lote de Angiografia', valor: angiografiaProducaoId, set: setAngiografiaProducaoId, id: 'producao-angiografia-select' },
+                    ] as const
+                  ).map(({ label, valor, set, id }) => (
+                    <div key={id}>
+                      <label htmlFor={id} className="field-label mb-1.5">
+                        {label} <span className="font-normal normal-case text-cc-muted">(opcional)</span>
+                      </label>
+                      <select
+                        id={id}
+                        className="input"
+                        value={valor}
+                        onChange={(e) => {
+                          set(e.target.value);
+                          const producao = producoesDoMedicoSelecionado.find((p) => p.id === e.target.value);
+                          if (producao) preencherCompetenciaAuto(producao.nome);
+                        }}
+                        disabled={!medicoId}
+                      >
+                        <option value="">Sem esse lote nesta execução</option>
+                        {producoesDoMedicoSelecionado.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   ))}
-                </select>
-                {medicoId && producoesDoMedicoSelecionado.length === 0 && (
-                  <p className="mt-1.5 text-xs text-cc-muted">
-                    Este médico não tem produções disponíveis na origem.
+                  <p className="text-xs text-cc-muted">
+                    Médico Angiologista: sem lote principal — a produção vem de Cateter (1x1), Fístula (1x1) e Angiografia (3x1 + exceção Intra-operatório). Lote sem seleção NÃO é cobrado (o motor gera alerta em vez de chutar).
                   </p>
-                )}
-              </div>
+                </>
+              ) : (
+                <div>
+                  <label htmlFor="producao-select" className="field-label mb-1.5">
+                    Produção
+                  </label>
+                  <select
+                    id="producao-select"
+                    className="input"
+                    value={producaoId}
+                    onChange={(e) => {
+                      const novaProducaoId = e.target.value;
+                      setProducaoId(novaProducaoId);
+                      const producao = producoesDoMedicoSelecionado.find((p) => p.id === novaProducaoId);
+                      if (producao) preencherCompetenciaAuto(producao.nome);
+                    }}
+                    disabled={!medicoId}
+                  >
+                    <option value="">
+                      {medicoId ? 'Selecione a produção…' : 'Selecione um médico primeiro'}
+                    </option>
+                    {producoesDoMedicoSelecionado.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
+                  </select>
+                  {medicoId && producoesDoMedicoSelecionado.length === 0 && (
+                    <p className="mt-1.5 text-xs text-cc-muted">
+                      Este médico não tem produções disponíveis na origem.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {medicoId && isPediatraEspecialidade(validMedicos.find((m) => m.id === medicoId)?.especialidade) && (
                 <div>
@@ -612,7 +674,7 @@ export function NovaExecucao() {
 
               <button
                 onClick={() => {
-                  if (!producaoSelecionada) return;
+                  if (!producaoObrigatoriaOk) return;
                   const consultaProd = producoesDoMedicoSelecionado.find((p) => p.id === consultaProducaoId);
                   const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === outrosHospitaisProducaoId,
@@ -620,13 +682,17 @@ export function NovaExecucao() {
                   const imobilizacoesProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === imobilizacoesProducaoId,
                   );
+                  const cateterProd = producoesDoMedicoSelecionado.find((p) => p.id === cateterProducaoId);
+                  const fistulaProd = producoesDoMedicoSelecionado.find((p) => p.id === fistulaProducaoId);
+                  const angiografiaProd = producoesDoMedicoSelecionado.find((p) => p.id === angiografiaProducaoId);
                   disparar.mutate({
                     competencia,
                     selecoes: [
                       {
                         medicoId,
-                        producaoExternaId: producaoSelecionada.id,
-                        producaoNome: producaoSelecionada.nome,
+                        // Angiologista não tem lote principal (GATE 2026-08-07) — vai null.
+                        producaoExternaId: medicoSelecionadoAngiologista ? null : (producaoSelecionada?.id ?? null),
+                        producaoNome: medicoSelecionadoAngiologista ? null : (producaoSelecionada?.nome ?? null),
                         ...(consultaProd
                           ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
                           : {}),
@@ -640,6 +706,18 @@ export function NovaExecucao() {
                           ? {
                               producaoImobilizacoesExternaId: imobilizacoesProd.id,
                               producaoImobilizacoesNome: imobilizacoesProd.nome,
+                            }
+                          : {}),
+                        ...(cateterProd
+                          ? { producaoCateterExternaId: cateterProd.id, producaoCateterNome: cateterProd.nome }
+                          : {}),
+                        ...(fistulaProd
+                          ? { producaoFistulaExternaId: fistulaProd.id, producaoFistulaNome: fistulaProd.nome }
+                          : {}),
+                        ...(angiografiaProd
+                          ? {
+                              producaoAngiografiaExternaId: angiografiaProd.id,
+                              producaoAngiografiaNome: angiografiaProd.nome,
                             }
                           : {}),
                       },

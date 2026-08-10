@@ -33,14 +33,21 @@ export async function criarExecucao(
   iniciadoPor: string,
   selecoes: {
     medicoId: string;
-    producaoExternaId: string;
-    producaoNome: string;
+    /** Null pra médico Angiologista (GATE 2026-08-07) — sem lote principal. */
+    producaoExternaId: string | null;
+    producaoNome: string | null;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
     producaoOutrosHospitaisExternaId?: string | null;
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
+    producaoCateterExternaId?: string | null;
+    producaoCateterNome?: string | null;
+    producaoFistulaExternaId?: string | null;
+    producaoFistulaNome?: string | null;
+    producaoAngiografiaExternaId?: string | null;
+    producaoAngiografiaNome?: string | null;
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
@@ -79,6 +86,12 @@ export async function criarExecucao(
       producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
       producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,
       producao_imobilizacoes_nome: s.producaoImobilizacoesNome ?? null,
+      producao_cateter_externa_id: s.producaoCateterExternaId ?? null,
+      producao_cateter_nome: s.producaoCateterNome ?? null,
+      producao_fistula_externa_id: s.producaoFistulaExternaId ?? null,
+      producao_fistula_nome: s.producaoFistulaNome ?? null,
+      producao_angiografia_externa_id: s.producaoAngiografiaExternaId ?? null,
+      producao_angiografia_nome: s.producaoAngiografiaNome ?? null,
     }))
   );
   if (selecoesError) {

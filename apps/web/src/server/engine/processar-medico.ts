@@ -7,6 +7,7 @@ import type {
   TabelaPreco,
   Subtotal,
   Classe,
+  ItemProducao,
 } from '@cobranca/shared';
 import {
   itensValidos,
@@ -15,6 +16,7 @@ import {
   detectarModoProducao,
   contarConsultasProducao,
   isPediatra,
+  isAngiologista,
   filtrarPorCompetencia,
 } from './contagem-producao';
 import { checar } from './conferencia';
@@ -42,7 +44,26 @@ export function processarMedico(
   tabela: TabelaPreco = TABELA_PRECO_PADRAO,
   valorConsultaPediatria: number = VALOR_CONSULTA_PEDIATRIA_PADRAO,
 ): ResultadoMedico {
-  const { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes, competencia } = entrada;
+  const {
+    medico,
+    itens,
+    historicoGuias,
+    itensConsultas,
+    itensOutrosHospitais,
+    itensImobilizacoes,
+    itensCateter,
+    itensFistula,
+    itensAngiografia,
+    competencia,
+  } = entrada;
+
+  // Angiologista NÃO tem lote principal (GATE 2026-08-07) — a produção inteira vem de Cateter
+  // (1x1) + Fístula (1x1) + Angiografia (3x1 + exceção Intra-operatório). Desvia ANTES do fluxo
+  // normal baseado em `itens`, que fica sempre vazio pra essa especialidade.
+  if (isAngiologista(medico.especialidade)) {
+    return processarAngiologista(medico, { itensCateter, itensFistula, itensAngiografia }, tabela);
+  }
+
   const { validos } = itensValidos(itens);
   const consultasValidas = itensConsultas ? itensValidos(itensConsultas).validos : [];
 
@@ -239,6 +260,110 @@ export function processarMedico(
     guiasConsolidado,
     subtotais,
     totalValor,
+    status: alertas.length > 0 ? 'alerta' : 'ok',
+    alertas,
+  };
+}
+
+/**
+ * Processa um médico Angiologista (GATE 2026-08-07) — especialidade SEM lote principal, a
+ * produção inteira vem de 3 lotes próprios, cada um com regra de contagem diferente:
+ *   - Cateter: 1x1 — cada item válido é 1 guia, SEM agrupamento (é um "pacote" por natureza,
+ *     não guias hospitalares soltas que fariam sentido bundlar 3x1).
+ *   - Fístula: mesmo mecanismo do Cateter.
+ *   - Angiografia: 3x1 (teto(n/3)) com exceção — Intra-operatório (`CODIGOS_EXCECAO_ANGIOGRAFIA`)
+ *     nunca entra no pool, cada ocorrência é 1 guia individual. Reusa `contarGuiasProducao`
+ *     passando a especialidade do médico (que já ativa esse comportamento via `usaRegra3x1`/
+ *     `ehExcecao`) — mesma função usada por todo mundo, não uma regra paralela.
+ * As 3 guias SOMADAS caem numa faixa ÚNICA da tabela HAPVIDA padrão do médico (crédito/não
+ * credenciado) — confirmado pelo dono: não são classes/tabelas de preço próprias, só fontes de
+ * dados com regra de CONTAGEM diferente. Lote não selecionado nesta execução → alerta explícito
+ * (nunca chuta, mesmo padrão de Outros Hospitais/Imobilizações) e 0 guias daquele lote — nunca
+ * reaproveita a contagem de outro lote.
+ */
+function processarAngiologista(
+  medico: EntradaProcessamentoMedico['medico'],
+  lotes: { itensCateter?: ItemProducao[]; itensFistula?: ItemProducao[]; itensAngiografia?: ItemProducao[] },
+  tabela: TabelaPreco,
+): ResultadoMedico {
+  const alertas: string[] = [];
+
+  let guiasCateter = 0;
+  let procedimentosCateter = 0;
+  if (lotes.itensCateter !== undefined) {
+    procedimentosCateter = itensValidos(lotes.itensCateter).validos.length;
+    guiasCateter = procedimentosCateter; // 1x1 — sem agrupamento
+  } else {
+    alertas.push(
+      'Médico Angiologista, mas o lote de Cateter não foi selecionado nesta execução. Guias de Cateter NÃO cobradas, selecionar a produção correspondente.',
+    );
+  }
+
+  let guiasFistula = 0;
+  let procedimentosFistula = 0;
+  if (lotes.itensFistula !== undefined) {
+    procedimentosFistula = itensValidos(lotes.itensFistula).validos.length;
+    guiasFistula = procedimentosFistula; // 1x1 — sem agrupamento
+  } else {
+    alertas.push(
+      'Médico Angiologista, mas o lote de Fístula não foi selecionado nesta execução. Guias de Fístula NÃO cobradas, selecionar a produção correspondente.',
+    );
+  }
+
+  let guiasAngiografia = 0;
+  let cirurgiasAngiografia = 0;
+  let consolidadoAngiografia = 0;
+  let procedimentosAngiografia = 0;
+  if (lotes.itensAngiografia !== undefined) {
+    procedimentosAngiografia = itensValidos(lotes.itensAngiografia).validos.length;
+    const r = contarGuiasProducao(lotes.itensAngiografia, medico.especialidade);
+    guiasAngiografia = r.guias;
+    cirurgiasAngiografia = r.cirurgias;
+    consolidadoAngiografia = consolidarProducao(lotes.itensAngiografia, medico.especialidade);
+  } else {
+    alertas.push(
+      'Médico Angiologista, mas o lote de Angiografia não foi selecionado nesta execução. Guias de Angiografia NÃO cobradas, selecionar a produção correspondente.',
+    );
+  }
+
+  const guias = guiasCateter + guiasFistula + guiasAngiografia;
+  const cirurgias = guiasCateter + guiasFistula + cirurgiasAngiografia;
+  const guiasConsolidado = guiasCateter + guiasFistula + consolidadoAngiografia;
+  const procedimentos = procedimentosCateter + procedimentosFistula + procedimentosAngiografia;
+
+  if (guias === 0) {
+    return {
+      cpf: medico.cpf ?? '',
+      nome: medico.nome,
+      procedimentos,
+      cirurgias,
+      guias: 0,
+      guiasConsolidado: 0,
+      subtotais: [],
+      totalValor: 0,
+      status: alertas.length > 0 ? 'alerta' : 'sem_dados',
+      alertas: alertas.length > 0 ? alertas : ['Nenhum procedimento encontrado para essa competência.'],
+    };
+  }
+
+  // Tabela padrão (crédito/não credenciado) — mesma classe/faixa que qualquer outro médico
+  // usaria pro lote principal. Angiologista não tem classe/tabela própria (confirmado pelo dono).
+  const classe: Classe = medico.statusHapvida === 'credenciado' ? 'HAPVIDA_CRED' : 'HAPVIDA_NAO_CRED';
+  const tabelaClasse = medico.semExcedentePorGuia ? tabelaSemExcedentePorGuia(tabela[classe]) : tabela[classe];
+  const { valor, faixa } = valorDaFaixa(tabelaClasse, guias);
+  if (valor == null) {
+    alertas.push(`Classe ${classe} com ${guias} guias está FORA DA TABELA: faixa não definida, verificar.`);
+  }
+
+  return {
+    cpf: medico.cpf ?? '',
+    nome: medico.nome,
+    procedimentos,
+    cirurgias,
+    guias,
+    guiasConsolidado,
+    subtotais: [{ classe, guias, valor: valor ?? 0, faixa }],
+    totalValor: valor ?? 0,
     status: alertas.length > 0 ? 'alerta' : 'ok',
     alertas,
   };

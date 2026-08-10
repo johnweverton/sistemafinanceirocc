@@ -10,8 +10,9 @@ import { apiFetch } from '@/lib/api-client';
 
 export interface ExecucaoSelecaoPayload {
   medicoId: string;
-  producaoExternaId: string;
-  producaoNome: string;
+  /** Null pra médico Angiologista (GATE 2026-08-07) — sem lote principal. */
+  producaoExternaId: string | null;
+  producaoNome: string | null;
   /** Produção de consultas de pediatria — opcional. */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
@@ -20,6 +21,13 @@ export interface ExecucaoSelecaoPayload {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
+  /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais. */
+  producaoCateterExternaId?: string | null;
+  producaoCateterNome?: string | null;
+  producaoFistulaExternaId?: string | null;
+  producaoFistulaNome?: string | null;
+  producaoAngiografiaExternaId?: string | null;
+  producaoAngiografiaNome?: string | null;
 }
 
 export interface ApoioData {

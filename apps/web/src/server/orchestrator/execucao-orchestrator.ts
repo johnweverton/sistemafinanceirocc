@@ -60,8 +60,9 @@ export const BATCH_SIZE = 150;
 export interface SelecaoDeps {
   execucaoId: string;
   medicoId: string;
-  producaoExternaId: string;
-  producaoNome: string;
+  /** Null pra médico Angiologista (GATE 2026-08-07) — sem lote principal. */
+  producaoExternaId: string | null;
+  producaoNome: string | null;
   /** Produção de consultas de pediatria (Story 10.2) — opcional. */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
@@ -70,6 +71,13 @@ export interface SelecaoDeps {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
+  /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais. */
+  producaoCateterExternaId?: string | null;
+  producaoCateterNome?: string | null;
+  producaoFistulaExternaId?: string | null;
+  producaoFistulaNome?: string | null;
+  producaoAngiografiaExternaId?: string | null;
+  producaoAngiografiaNome?: string | null;
 }
 
 export interface OrchestratorDeps {
@@ -90,14 +98,20 @@ export interface OrchestratorDeps {
     iniciadoPor: string,
     selecoes: {
       medicoId: string;
-      producaoExternaId: string;
-      producaoNome: string;
+      producaoExternaId: string | null;
+      producaoNome: string | null;
       producaoConsultasExternaId?: string | null;
       producaoConsultasNome?: string | null;
       producaoOutrosHospitaisExternaId?: string | null;
       producaoOutrosHospitaisNome?: string | null;
       producaoImobilizacoesExternaId?: string | null;
       producaoImobilizacoesNome?: string | null;
+      producaoCateterExternaId?: string | null;
+      producaoCateterNome?: string | null;
+      producaoFistulaExternaId?: string | null;
+      producaoFistulaNome?: string | null;
+      producaoAngiografiaExternaId?: string | null;
+      producaoAngiografiaNome?: string | null;
     }[],
     empresaId?: string | null,
     clienteContabilidadeId?: string | null,
@@ -203,14 +217,20 @@ export async function iniciarExecucao(
   competencia: string,
   selecoes: {
     medicoId: string;
-    producaoExternaId: string;
-    producaoNome: string;
+    producaoExternaId: string | null;
+    producaoNome: string | null;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
     producaoOutrosHospitaisExternaId?: string | null;
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
+    producaoCateterExternaId?: string | null;
+    producaoCateterNome?: string | null;
+    producaoFistulaExternaId?: string | null;
+    producaoFistulaNome?: string | null;
+    producaoAngiografiaExternaId?: string | null;
+    producaoAngiografiaNome?: string | null;
   }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
@@ -392,7 +412,9 @@ async function processarUmMedico(
   try {
     if (!medico) throw new Error('Médico não encontrado na base');
 
-    const itens = await deps.buscarItens(selecao.producaoExternaId);
+    // Angiologista não tem lote principal (GATE 2026-08-07) — producaoExternaId fica null pra
+    // ele, `itens` fica vazio (o Engine desvia pro caminho de Cateter/Fístula/Angiografia).
+    const itens = selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : [];
     // Story 10.2: lote separado de consultas ambulatoriais (pediatria) — opcional, produção
     // distinta da de guias. NUNCA reaproveita `itens` (anti-dupla-contagem).
     const itensConsultas = selecao.producaoConsultasExternaId
@@ -408,11 +430,33 @@ async function processarUmMedico(
     const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
       ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
       : undefined;
+    // GATE 2026-08-07: lotes de Cateter/Fístula/Angiografia (médico Angiologista, sem lote
+    // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima.
+    const itensCateter = selecao.producaoCateterExternaId
+      ? await deps.buscarItens(selecao.producaoCateterExternaId)
+      : undefined;
+    const itensFistula = selecao.producaoFistulaExternaId
+      ? await deps.buscarItens(selecao.producaoFistulaExternaId)
+      : undefined;
+    const itensAngiografia = selecao.producaoAngiografiaExternaId
+      ? await deps.buscarItens(selecao.producaoAngiografiaExternaId)
+      : undefined;
 
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
     const resultado = processarMedico(
-      { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes, competencia },
+      {
+        medico,
+        itens,
+        historicoGuias,
+        itensConsultas,
+        itensOutrosHospitais,
+        itensImobilizacoes,
+        itensCateter,
+        itensFistula,
+        itensAngiografia,
+        competencia,
+      },
       undefined,
       valorConsultaPediatria,
     );
@@ -454,7 +498,9 @@ async function processarExecucaoEmpresa(
   const medicos: ProducaoMedico[] = [];
   for (const selecao of selecoes) {
     const medico = await deps.buscarMedico(selecao.medicoId);
-    const itens = await deps.buscarItens(selecao.producaoExternaId);
+    // Angiologista (sem lote principal, GATE 2026-08-07) não faz sentido numa execução
+    // agregada por empresa — guarda defensiva, não um caminho esperado em produção.
+    const itens = selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : [];
     medicos.push({ medicoId: selecao.medicoId, itens, especialidade: medico?.especialidade });
   }
 

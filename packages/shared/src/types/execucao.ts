@@ -124,8 +124,14 @@ export interface ExecucaoResultadoContribuicao {
 export interface ExecucaoSelecao {
   execucaoId: string;
   medicoId: string;
-  producaoExternaId: string;
-  producaoNome: string;
+  /**
+   * Produção principal (guias normais/Hapvida). Nullable a partir do GATE 2026-08-07: médico
+   * Angiologista não tem lote principal — a produção dele vem inteira de
+   * producaoCateter/Fistula/AngiografiaExternaId abaixo. Pra qualquer outra especialidade
+   * continua sendo preenchido sempre (nunca null na prática, só o tipo ficou mais permissivo).
+   */
+  producaoExternaId: string | null;
+  producaoNome: string | null;
   /**
    * Produção separada com as consultas ambulatoriais do pediatra (Story 10.2) — opcional,
    * só relevante para médicos pediatras que têm um lote de consultas distinto do de guias
@@ -147,6 +153,20 @@ export interface ExecucaoSelecao {
   /** Mesmo mecanismo acima, para médicos com `fazImobilizacoes` (Story 10.5). */
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
+  /**
+   * Produção separada com as guias de CATETER (GATE 2026-08-07) — exclusiva de médicos
+   * Angiologista, que não têm lote principal. Mesma semântica de nunca-chuta de
+   * producaoOutrosHospitaisExternaId: null/ausente = lote não selecionado, guias de Cateter NÃO
+   * são cobradas nesta execução.
+   */
+  producaoCateterExternaId?: string | null;
+  producaoCateterNome?: string | null;
+  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07. */
+  producaoFistulaExternaId?: string | null;
+  producaoFistulaNome?: string | null;
+  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07. */
+  producaoAngiografiaExternaId?: string | null;
+  producaoAngiografiaNome?: string | null;
 }
 
 /** Um médico por linha: ocorrência mais recente em qualquer execução (visão "Por médico"). */

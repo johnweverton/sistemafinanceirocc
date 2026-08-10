@@ -10,8 +10,11 @@ export const dispararExecucaoSchema = z
       .array(
         z.object({
           medicoId: z.string().uuid(),
-          producaoExternaId: z.string().min(1),
-          producaoNome: z.string().min(1),
+          // Nullable (mas sempre PRESENTE no payload, nunca omitido) a partir do GATE
+          // 2026-08-07: médico Angiologista não tem lote principal (a produção dele vem
+          // inteira de producaoCateter/Fistula/Angiografia abaixo).
+          producaoExternaId: z.string().min(1).nullable(),
+          producaoNome: z.string().min(1).nullable(),
           // Produção de consultas de pediatria (Story 10.2) — opcional.
           producaoConsultasExternaId: z.string().min(1).nullable().optional(),
           producaoConsultasNome: z.string().min(1).nullable().optional(),
@@ -20,6 +23,13 @@ export const dispararExecucaoSchema = z
           producaoOutrosHospitaisNome: z.string().min(1).nullable().optional(),
           producaoImobilizacoesExternaId: z.string().min(1).nullable().optional(),
           producaoImobilizacoesNome: z.string().min(1).nullable().optional(),
+          // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
+          producaoCateterExternaId: z.string().min(1).nullable().optional(),
+          producaoCateterNome: z.string().min(1).nullable().optional(),
+          producaoFistulaExternaId: z.string().min(1).nullable().optional(),
+          producaoFistulaNome: z.string().min(1).nullable().optional(),
+          producaoAngiografiaExternaId: z.string().min(1).nullable().optional(),
+          producaoAngiografiaNome: z.string().min(1).nullable().optional(),
         }),
       )
       .default([]),

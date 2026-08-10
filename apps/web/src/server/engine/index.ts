@@ -14,6 +14,8 @@ export {
   isUrologista,
   isGinecologista,
   isOrtopedista,
+  isAngiologista,
   usaRegra3x1,
   CODIGOS_EXCECAO_UROLOGISTA,
+  CODIGOS_EXCECAO_ANGIOGRAFIA,
 } from './contagem-producao';

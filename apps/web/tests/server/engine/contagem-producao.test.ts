@@ -10,7 +10,9 @@ import {
   isUrologista,
   isGinecologista,
   isOrtopedista,
+  isAngiologista,
   CODIGOS_EXCECAO_UROLOGISTA,
+  CODIGOS_EXCECAO_ANGIOGRAFIA,
 } from '../../../src/server/engine/contagem-producao';
 
 describe('Engine: Contagem de Produção', () => {
@@ -684,6 +686,77 @@ describe('Engine: Contagem de Produção', () => {
       expect(isOrtopedista(null)).toBe(false);
       expect(isOrtopedista(undefined)).toBe(false);
       expect(isOrtopedista('')).toBe(false);
+    });
+  });
+
+  describe('isAngiologista', () => {
+    it('reconhece "Angiologia" e "Angiologista"', () => {
+      expect(isAngiologista('Angiologia')).toBe(true);
+      expect(isAngiologista('Angiologista')).toBe(true);
+      expect(isAngiologista('angiologista')).toBe(true);
+    });
+
+    it('não reconhece especialidades sem relação, null ou vazio', () => {
+      expect(isAngiologista('Cirurgia Geral')).toBe(false);
+      expect(isAngiologista(null)).toBe(false);
+      expect(isAngiologista(undefined)).toBe(false);
+      expect(isAngiologista('')).toBe(false);
+    });
+  });
+
+  describe('Angiografia — 3x1 + exceção Intra-operatório (GATE 2026-08-07)', () => {
+    // Reusa contarGuiasProducao com especialidade='Angiologista' — é a MESMA função usada por
+    // todo mundo (usaRegra3x1/ehExcecao já incluem angiologista), não uma regra paralela. O
+    // lote de Angiografia do processarAngiologista chama exatamente esse caminho.
+    it('sem exceção, 4 itens normais mesmo paciente/data → teto(4/3) = 2 guias (igual às outras especialidades 3x1)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Angiologista');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('1 Intra-operatório (exceção) + 2 itens normais no mesmo grupo → 1 (exceção) + teto(2/3)=1 = 2 guias', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Angiologista');
+      expect(resultado.guias).toBe(2);
+    });
+
+    it('3 ocorrências de Intra-operatório, mesmo paciente/data → 3 guias (não colapsa, cada uma é individual)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+        { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+        { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Angiologista');
+      expect(resultado.guias).toBe(3);
+    });
+
+    it('código de exceção no formato CRU da API (sem pontuação) ainda é reconhecido', () => {
+      const cru = [...CODIGOS_EXCECAO_ANGIOGRAFIA][0]!.replace(/\D/g, '');
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: cru },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      const resultado = contarGuiasProducao(itens, 'Angiologista').guias;
+      expect(resultado).toBe(2);
+    });
+
+    it('urologista com o mesmo código de Intra-operatório (também é exceção pra ele) → continua reconhecendo (listas coincidem por conteúdo, mas são constantes independentes)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      expect(contarGuiasProducao(itens, 'Urologista').guias).toBe(2);
     });
   });
 

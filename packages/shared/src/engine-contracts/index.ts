@@ -54,6 +54,21 @@ export interface EntradaProcessamentoMedico {
   /** Mesmo mecanismo acima, para o lote de IMOBILIZACOES (Story 10.5). */
   itensImobilizacoes?: ItemProducao[];
   /**
+   * Itens do lote de CATETER (GATE 2026-08-07, especialidade Angiologista) — médico Angiologista
+   * NÃO tem lote principal (`itens` fica vazio pra ele); a produção inteira vem de Cateter +
+   * Fístula + Angiografia, cada um com regra de contagem própria (Cateter/Fístula: 1x1, sem
+   * agrupamento; Angiografia: 3x1 com exceção de Intra-operatório). `undefined` = lote não
+   * selecionado nesta execução (alerta, não cobra — mesmo padrão de Outros Hospitais/
+   * Imobilizações). A soma das 3 guias cai na MESMA faixa HAPVIDA padrão do médico — não são
+   * classes/tabelas de preço próprias.
+   */
+  itensCateter?: ItemProducao[];
+  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07. */
+  itensFistula?: ItemProducao[];
+  /** Mesmo mecanismo do Cateter acima, mas com a regra 3x1 + exceção Intra-operatório em vez de
+   *  1x1 — GATE 2026-08-07. */
+  itensAngiografia?: ItemProducao[];
+  /**
    * Competência da execução (AAAA-MM) — Story 10.6. Usada SÓ para filtrar `itensOutrosHospitais`
    * pelo mês real do item (`item.data`): na origem, "Outros Hospitais" não abre uma produção por
    * mês como o lote principal, um único lote acumula vários meses. Opcional (comportamento

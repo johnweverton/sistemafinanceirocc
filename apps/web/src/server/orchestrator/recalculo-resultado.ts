@@ -89,7 +89,9 @@ export async function recalcularResultado(
   const medico = await deps.buscarMedico(resultado.medicoId);
   if (!medico) throw new ApiError(404, 'Médico não encontrado', 'MEDICO_NAO_ENCONTRADO');
 
-  const itens = await deps.buscarItens(selecao.producaoExternaId);
+  // Angiologista não tem lote principal (GATE 2026-08-07) — producaoExternaId fica null pra
+  // ele, `itens` fica vazio (o Engine desvia pro caminho de Cateter/Fístula/Angiografia).
+  const itens = selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : [];
   const itensConsultas = selecao.producaoConsultasExternaId
     ? await deps.buscarItens(selecao.producaoConsultasExternaId)
     : undefined;
@@ -99,12 +101,32 @@ export async function recalcularResultado(
   const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
     ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
     : undefined;
+  const itensCateter = selecao.producaoCateterExternaId
+    ? await deps.buscarItens(selecao.producaoCateterExternaId)
+    : undefined;
+  const itensFistula = selecao.producaoFistulaExternaId
+    ? await deps.buscarItens(selecao.producaoFistulaExternaId)
+    : undefined;
+  const itensAngiografia = selecao.producaoAngiografiaExternaId
+    ? await deps.buscarItens(selecao.producaoAngiografiaExternaId)
+    : undefined;
 
   const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, execucao.competencia);
   const valorConsultaPediatria = await deps.lerValorConsultaPediatria();
 
   const novoResultado = processarMedico(
-    { medico, itens, historicoGuias, itensConsultas, itensOutrosHospitais, itensImobilizacoes, competencia: execucao.competencia },
+    {
+      medico,
+      itens,
+      historicoGuias,
+      itensConsultas,
+      itensOutrosHospitais,
+      itensImobilizacoes,
+      itensCateter,
+      itensFistula,
+      itensAngiografia,
+      competencia: execucao.competencia,
+    },
     undefined,
     valorConsultaPediatria,
   );

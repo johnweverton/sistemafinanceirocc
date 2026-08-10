@@ -260,8 +260,22 @@ export function isOrtopedista(especialidade?: string | null): boolean {
 }
 
 /**
+ * Detecta angiologista pelo prefixo "angiolog" (Angiologia/Angiologista, case-insensitive) —
+ * mesmo padrão das demais. GATE 2026-08-07: especialidade SEM lote principal — a produção
+ * inteira vem de 3 lotes próprios (Cateter, Fístula, Angiografia — ver `processarMedico`),
+ * cada um com regra de contagem diferente. `isAngiologista` por si só só importa pro lote de
+ * Angiografia, que usa o MESMO teto(n/3) das outras especialidades 3x1 (Cateter/Fístula são
+ * sempre 1x1, contados fora do Engine de agrupamento — ver `processar-medico.ts`).
+ */
+export function isAngiologista(especialidade?: string | null): boolean {
+  if (!especialidade) return false;
+  return especialidade.toLowerCase().includes('angiolog');
+}
+
+/**
  * Especialidades que usam o teto(n/3) por atendimento em vez de 1 guia por procedimento (PRD
- * §12; GATE 2026-08-06 ampliando de pediatra/urologista para ginecologista/ortopedista).
+ * §12; GATE 2026-08-06 ampliando de pediatra/urologista para ginecologista/ortopedista, GATE
+ * 2026-08-07 ampliando pro lote de Angiografia do angiologista).
  * Exportada (não só uso interno) porque `conferencia.ts` reusa o mesmo critério pro alerta de
  * "MODO INCONSISTENTE" — a ambiguidade senha-vs-paciente que esse alerta cobre é do mecanismo
  * de agrupamento 3x1 em si (`chaveAgrupamento3x1`/`detectarModoProducao`), não algo exclusivo
@@ -273,7 +287,8 @@ export function usaRegra3x1(especialidade?: string | null): boolean {
     isPediatra(especialidade) ||
     isUrologista(especialidade) ||
     isGinecologista(especialidade) ||
-    isOrtopedista(especialidade)
+    isOrtopedista(especialidade) ||
+    isAngiologista(especialidade)
   );
 }
 
@@ -307,6 +322,22 @@ function normalizarCodigo(codigo: string): string {
 
 const CODIGOS_EXCECAO_UROLOGISTA_NORM: ReadonlySet<string> = new Set(
   [...CODIGOS_EXCECAO_UROLOGISTA].map(normalizarCodigo),
+);
+
+/**
+ * Código TUSS excluído do pool 3x1 do lote de Angiografia do angiologista (GATE 2026-08-07):
+ * dentro do "pacote angiografia" (3 angiografias = 1 guia), o Intra-operatório nunca entra no
+ * agrupamento — cada ocorrência é 1 guia cheia e individual, mesmo mecanismo do urologista
+ * (aliás o MESMO código — `4.09.02.05-6` já era exceção pro urologista; aqui ganha uma
+ * constante própria, não reaproveita `CODIGOS_EXCECAO_UROLOGISTA`, pra não acoplar as duas
+ * especialidades — se uma lista mudar no futuro, a outra não é afetada por engano). Confirmado
+ * pelo usuário: nenhum outro código além deste é exceção dentro do pacote de angiografia.
+ */
+export const CODIGOS_EXCECAO_ANGIOGRAFIA: ReadonlySet<string> = new Set([
+  '4.09.02.05-6', // Intra-operatório
+]);
+const CODIGOS_EXCECAO_ANGIOGRAFIA_NORM: ReadonlySet<string> = new Set(
+  [...CODIGOS_EXCECAO_ANGIOGRAFIA].map(normalizarCodigo),
 );
 
 /**
@@ -347,6 +378,9 @@ function ehExcecao(item: ItemProducao, especialidade?: string | null): boolean {
   }
   if (isGinecologista(especialidade)) {
     return ehExcecaoGinecologistaPorDescricao(item.descricaoProcedimento);
+  }
+  if (isAngiologista(especialidade)) {
+    return CODIGOS_EXCECAO_ANGIOGRAFIA_NORM.has(normalizarCodigo(item.codigoProcedimento ?? ''));
   }
   return false;
 }
