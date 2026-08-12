@@ -684,6 +684,12 @@ export interface ExecucaoSelecaoRow {
   producao_fistula_nome?: string | null;
   producao_angiografia_externa_id?: string | null;
   producao_angiografia_nome?: string | null;
+  /** Carta de Rede do Angiologista (GATE 2026-08-12, migration 0045) — contagem MANUAL. */
+  producao_carta_rede_externa_id?: string | null;
+  producao_carta_rede_nome?: string | null;
+  carta_rede_guias?: number | null;
+  carta_rede_informado_por?: string | null;
+  carta_rede_informado_em?: string | null;
 }
 
 export function toExecucaoSelecaoRow(selecao: {
@@ -703,6 +709,11 @@ export function toExecucaoSelecaoRow(selecao: {
   producaoFistulaNome?: string | null;
   producaoAngiografiaExternaId?: string | null;
   producaoAngiografiaNome?: string | null;
+  producaoCartaRedeExternaId?: string | null;
+  producaoCartaRedeNome?: string | null;
+  cartaRedeGuias?: number | null;
+  cartaRedeInformadoPor?: string | null;
+  cartaRedeInformadoEm?: string | null;
 }): ExecucaoSelecaoRow {
   return {
     execucao_id: selecao.execucaoId,
@@ -721,6 +732,11 @@ export function toExecucaoSelecaoRow(selecao: {
     producao_fistula_nome: selecao.producaoFistulaNome ?? null,
     producao_angiografia_externa_id: selecao.producaoAngiografiaExternaId ?? null,
     producao_angiografia_nome: selecao.producaoAngiografiaNome ?? null,
+    producao_carta_rede_externa_id: selecao.producaoCartaRedeExternaId ?? null,
+    producao_carta_rede_nome: selecao.producaoCartaRedeNome ?? null,
+    carta_rede_guias: selecao.cartaRedeGuias ?? null,
+    carta_rede_informado_por: selecao.cartaRedeInformadoPor ?? null,
+    carta_rede_informado_em: selecao.cartaRedeInformadoEm ?? null,
   };
 }
 
@@ -742,6 +758,11 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     producaoFistulaNome: row.producao_fistula_nome ?? null,
     producaoAngiografiaExternaId: row.producao_angiografia_externa_id ?? null,
     producaoAngiografiaNome: row.producao_angiografia_nome ?? null,
+    producaoCartaRedeExternaId: row.producao_carta_rede_externa_id ?? null,
+    producaoCartaRedeNome: row.producao_carta_rede_nome ?? null,
+    cartaRedeGuias: row.carta_rede_guias ?? null,
+    cartaRedeInformadoPor: row.carta_rede_informado_por ?? null,
+    cartaRedeInformadoEm: row.carta_rede_informado_em ?? null,
   };
 }
 

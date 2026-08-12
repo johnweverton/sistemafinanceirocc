@@ -28,6 +28,10 @@ export interface ExecucaoSelecaoPayload {
   producaoFistulaNome?: string | null;
   producaoAngiografiaExternaId?: string | null;
   producaoAngiografiaNome?: string | null;
+  /** Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem itens da API. */
+  producaoCartaRedeExternaId?: string | null;
+  producaoCartaRedeNome?: string | null;
+  cartaRedeGuias?: number | null;
 }
 
 export interface ApoioData {

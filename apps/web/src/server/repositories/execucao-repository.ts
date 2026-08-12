@@ -48,6 +48,10 @@ export async function criarExecucao(
     producaoFistulaNome?: string | null;
     producaoAngiografiaExternaId?: string | null;
     producaoAngiografiaNome?: string | null;
+    /** Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem itens da API. */
+    producaoCartaRedeExternaId?: string | null;
+    producaoCartaRedeNome?: string | null;
+    cartaRedeGuias?: number | null;
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
@@ -92,6 +96,13 @@ export async function criarExecucao(
       producao_fistula_nome: s.producaoFistulaNome ?? null,
       producao_angiografia_externa_id: s.producaoAngiografiaExternaId ?? null,
       producao_angiografia_nome: s.producaoAngiografiaNome ?? null,
+      producao_carta_rede_externa_id: s.producaoCartaRedeExternaId ?? null,
+      producao_carta_rede_nome: s.producaoCartaRedeNome ?? null,
+      carta_rede_guias: s.cartaRedeGuias ?? null,
+      // Auditoria de quem digitou (mesmo padrão de clientes_contabilidade_faturamentos) — só
+      // grava quando o operador de fato informou um número nesta seleção.
+      carta_rede_informado_por: s.cartaRedeGuias != null ? iniciadoPor : null,
+      carta_rede_informado_em: s.cartaRedeGuias != null ? new Date().toISOString() : null,
     }))
   );
   if (selecoesError) {

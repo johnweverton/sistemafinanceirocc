@@ -110,6 +110,8 @@ export async function recalcularResultado(
   const itensAngiografia = selecao.producaoAngiografiaExternaId
     ? await deps.buscarItens(selecao.producaoAngiografiaExternaId)
     : undefined;
+  // GATE 2026-08-12: Carta de Rede não busca itens — re-lê o número já gravado na seleção.
+  const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;
 
   const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, execucao.competencia);
   const valorConsultaPediatria = await deps.lerValorConsultaPediatria();
@@ -125,6 +127,7 @@ export async function recalcularResultado(
       itensCateter,
       itensFistula,
       itensAngiografia,
+      guiasCartaRede,
       competencia: execucao.competencia,
     },
     undefined,

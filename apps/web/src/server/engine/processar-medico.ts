@@ -54,14 +54,20 @@ export function processarMedico(
     itensCateter,
     itensFistula,
     itensAngiografia,
+    guiasCartaRede,
     competencia,
   } = entrada;
 
   // Angiologista NÃO tem lote principal (GATE 2026-08-07) — a produção inteira vem de Cateter
-  // (1x1) + Fístula (1x1) + Angiografia (3x1 + exceção Intra-operatório). Desvia ANTES do fluxo
-  // normal baseado em `itens`, que fica sempre vazio pra essa especialidade.
+  // (1x1) + Fístula (1x1) + Angiografia (3x1 + exceção Intra-operatório) + Carta de Rede (manual,
+  // GATE 2026-08-12). Desvia ANTES do fluxo normal baseado em `itens`, que fica sempre vazio pra
+  // essa especialidade.
   if (isAngiologista(medico.especialidade)) {
-    return processarAngiologista(medico, { itensCateter, itensFistula, itensAngiografia }, tabela);
+    return processarAngiologista(
+      medico,
+      { itensCateter, itensFistula, itensAngiografia, guiasCartaRede: guiasCartaRede ?? undefined },
+      tabela,
+    );
   }
 
   const { validos } = itensValidos(itens);
@@ -267,7 +273,7 @@ export function processarMedico(
 
 /**
  * Processa um médico Angiologista (GATE 2026-08-07) — especialidade SEM lote principal, a
- * produção inteira vem de 3 lotes próprios, cada um com regra de contagem diferente:
+ * produção inteira vem de 4 lotes próprios, cada um com regra de contagem diferente:
  *   - Cateter: 1x1 — cada item válido é 1 guia, SEM agrupamento (é um "pacote" por natureza,
  *     não guias hospitalares soltas que fariam sentido bundlar 3x1).
  *   - Fístula: mesmo mecanismo do Cateter.
@@ -275,15 +281,24 @@ export function processarMedico(
  *     nunca entra no pool, cada ocorrência é 1 guia individual. Reusa `contarGuiasProducao`
  *     passando a especialidade do médico (que já ativa esse comportamento via `usaRegra3x1`/
  *     `ehExcecao`) — mesma função usada por todo mundo, não uma regra paralela.
- * As 3 guias SOMADAS caem numa faixa ÚNICA da tabela HAPVIDA padrão do médico (crédito/não
+ *   - Carta de Rede (GATE 2026-08-12): SEM regra de contagem automática — confirmado pela
+ *     coordenadora, a contagem depende de qual procedimento foi realizado naquele mês, "foge de
+ *     um padrão". Por isso não busca itens da API externa: o operador informa `guiasCartaRede`
+ *     manualmente (via `execucao_selecoes.carta_rede_guias`), e o motor só soma o número recebido.
+ * As 4 guias SOMADAS caem numa faixa ÚNICA da tabela HAPVIDA padrão do médico (crédito/não
  * credenciado) — confirmado pelo dono: não são classes/tabelas de preço próprias, só fontes de
- * dados com regra de CONTAGEM diferente. Lote não selecionado nesta execução → alerta explícito
- * (nunca chuta, mesmo padrão de Outros Hospitais/Imobilizações) e 0 guias daquele lote — nunca
- * reaproveita a contagem de outro lote.
+ * dados com regra de CONTAGEM diferente. Lote não selecionado/informado nesta execução → alerta
+ * explícito (nunca chuta, mesmo padrão de Outros Hospitais/Imobilizações) e 0 guias daquele lote —
+ * nunca reaproveita a contagem de outro lote.
  */
 function processarAngiologista(
   medico: EntradaProcessamentoMedico['medico'],
-  lotes: { itensCateter?: ItemProducao[]; itensFistula?: ItemProducao[]; itensAngiografia?: ItemProducao[] },
+  lotes: {
+    itensCateter?: ItemProducao[];
+    itensFistula?: ItemProducao[];
+    itensAngiografia?: ItemProducao[];
+    guiasCartaRede?: number;
+  },
   tabela: TabelaPreco,
 ): ResultadoMedico {
   const alertas: string[] = [];
@@ -326,10 +341,19 @@ function processarAngiologista(
     );
   }
 
-  const guias = guiasCateter + guiasFistula + guiasAngiografia;
+  let guiasCartaRede = 0;
+  if (lotes.guiasCartaRede !== undefined) {
+    guiasCartaRede = lotes.guiasCartaRede; // contagem manual — sem fórmula, informada pelo operador
+  } else {
+    alertas.push(
+      'Médico Angiologista, mas a Carta de Rede não foi informada nesta execução. Guias de Carta de Rede NÃO cobradas, informar a quantidade manualmente.',
+    );
+  }
+
+  const guias = guiasCateter + guiasFistula + guiasAngiografia + guiasCartaRede;
   const cirurgias = guiasCateter + guiasFistula + cirurgiasAngiografia;
-  const guiasConsolidado = guiasCateter + guiasFistula + consolidadoAngiografia;
-  const procedimentos = procedimentosCateter + procedimentosFistula + procedimentosAngiografia;
+  const guiasConsolidado = guiasCateter + guiasFistula + consolidadoAngiografia + guiasCartaRede;
+  const procedimentos = procedimentosCateter + procedimentosFistula + procedimentosAngiografia + guiasCartaRede;
 
   if (guias === 0) {
     return {
@@ -355,6 +379,11 @@ function processarAngiologista(
     alertas.push(`Classe ${classe} com ${guias} guias está FORA DA TABELA: faixa não definida, verificar.`);
   }
 
+  // Anota na memória de cálculo (faixa) quando a soma inclui guias digitadas manualmente — igual
+  // ao princípio de nunca esconder de onde veio um número (GATE 2026-08-12).
+  const faixaAnotada =
+    guiasCartaRede > 0 ? `${faixa} (inclui ${guiasCartaRede} guia(s) de Carta de Rede informada(s) manualmente)` : faixa;
+
   return {
     cpf: medico.cpf ?? '',
     nome: medico.nome,
@@ -362,7 +391,7 @@ function processarAngiologista(
     cirurgias,
     guias,
     guiasConsolidado,
-    subtotais: [{ classe, guias, valor: valor ?? 0, faixa }],
+    subtotais: [{ classe, guias, valor: valor ?? 0, faixa: faixaAnotada }],
     totalValor: valor ?? 0,
     status: alertas.length > 0 ? 'alerta' : 'ok',
     alertas,

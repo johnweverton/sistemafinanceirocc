@@ -1,7 +1,8 @@
 // Casos de ouro do médico Angiologista (GATE 2026-08-07) — especialidade SEM lote principal: a
-// produção inteira vem de Cateter (1x1), Fístula (1x1) e Angiografia (3x1 + exceção
-// Intra-operatório), cuja soma cai na faixa HAPVIDA padrão do médico (crédito/não credenciado),
-// sem classe/tabela de preço própria.
+// produção inteira vem de Cateter (1x1), Fístula (1x1), Angiografia (3x1 + exceção
+// Intra-operatório) e Carta de Rede (GATE 2026-08-12, contagem MANUAL — sem regra fixa), cuja
+// soma cai na faixa HAPVIDA padrão do médico (crédito/não credenciado), sem classe/tabela de
+// preço própria.
 import { describe, it, expect } from 'vitest';
 import type { EntradaProcessamentoMedico, ItemProducao } from '@cobranca/shared';
 import { processarMedico } from '../../../src/server/engine/processar-medico';
@@ -101,6 +102,7 @@ describe('processarMedico — Angiologista (GATE 2026-08-07)', () => {
       itensCateter: itensAvulsos(4, 'Cateter'),
       itensFistula: itensAvulsos(3, 'Fistula'),
       itensAngiografia: itensAgrupados(6, 'Paciente Angio'),
+      guiasCartaRede: 0, // informado explicitamente como zero — não gera alerta
     });
     expect(r.guias).toBe(9);
     // até 30 guias, credenciado = R$263,59 (TABELA_PRECO_PADRAO.HAPVIDA_CRED)
@@ -146,25 +148,52 @@ describe('processarMedico — Angiologista (GATE 2026-08-07)', () => {
     expect(r.alertas.some((a) => a.includes('Cateter'))).toBe(false);
   });
 
-  it('nenhum dos 3 lotes selecionado → alerta (1 por lote não selecionado), nunca chuta valor', () => {
+  it('nenhum dos 4 lotes selecionado/informado → alerta (1 por lote), nunca chuta valor', () => {
     const r = processarMedico({ medico: angiologista(), itens: [] });
     expect(r.status).toBe('alerta');
     expect(r.guias).toBe(0);
     expect(r.totalValor).toBe(0);
     expect(r.subtotais).toEqual([]);
-    expect(r.alertas).toHaveLength(3); // Cateter, Fístula e Angiografia, cada um seu alerta
+    expect(r.alertas).toHaveLength(4); // Cateter, Fístula, Angiografia e Carta de Rede, cada um seu alerta
   });
 
-  it('os 3 lotes selecionados mas todos vazios → sem_dados (selecionado sem produção não é erro)', () => {
+  it('os 4 lotes selecionados/informados mas todos vazios/zero → sem_dados (selecionado sem produção não é erro)', () => {
     const r = processarMedico({
       medico: angiologista(),
       itens: [],
       itensCateter: [],
       itensFistula: [],
       itensAngiografia: [],
+      guiasCartaRede: 0,
     });
     expect(r.status).toBe('sem_dados');
     expect(r.guias).toBe(0);
+  });
+
+  it('Carta de Rede informada manualmente (5) soma com os outros 3 lotes na mesma faixa HAPVIDA', () => {
+    const r = processarMedico({
+      medico: angiologista(),
+      itens: [],
+      itensCateter: itensAvulsos(4, 'Cateter'),
+      itensFistula: itensAvulsos(3, 'Fistula'),
+      itensAngiografia: itensAgrupados(6, 'Paciente Angio'),
+      guiasCartaRede: 5,
+    });
+    expect(r.guias).toBe(14); // 4 + 3 + 2 (teto(6/3)) + 5
+    expect(r.status).toBe('ok');
+    expect(r.subtotais[0]?.faixa).toContain('5 guia(s) de Carta de Rede informada(s) manualmente');
+  });
+
+  it('Carta de Rede não informada (undefined) → alerta explícito, 0 guias daquele lote, NUNCA chuta', () => {
+    const r = processarMedico({
+      medico: angiologista(),
+      itens: [],
+      itensCateter: itensAvulsos(5, 'Cateter'),
+      // guiasCartaRede ausente de propósito
+    });
+    expect(r.guias).toBe(5); // só o cateter
+    expect(r.alertas.some((a) => a.includes('Carta de Rede') && a.includes('não foi informada'))).toBe(true);
+    expect(r.status).toBe('alerta');
   });
 
   it('itens do lote principal (main "itens") são ignorados pro Angiologista — não existe pra essa especialidade', () => {

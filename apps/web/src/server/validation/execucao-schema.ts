@@ -30,6 +30,12 @@ export const dispararExecucaoSchema = z
           producaoFistulaNome: z.string().min(1).nullable().optional(),
           producaoAngiografiaExternaId: z.string().min(1).nullable().optional(),
           producaoAngiografiaNome: z.string().min(1).nullable().optional(),
+          // Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem regra
+          // fixa (depende do procedimento realizado no mês). producaoCartaRede* é só referência
+          // de auditoria; cartaRedeGuias é o número que de fato alimenta o cálculo.
+          producaoCartaRedeExternaId: z.string().min(1).nullable().optional(),
+          producaoCartaRedeNome: z.string().min(1).nullable().optional(),
+          cartaRedeGuias: z.number().int().min(0).nullable().optional(),
         }),
       )
       .default([]),

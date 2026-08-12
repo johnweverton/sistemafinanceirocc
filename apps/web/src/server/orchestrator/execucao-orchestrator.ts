@@ -78,6 +78,10 @@ export interface SelecaoDeps {
   producaoFistulaNome?: string | null;
   producaoAngiografiaExternaId?: string | null;
   producaoAngiografiaNome?: string | null;
+  /** Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem itens da API. */
+  producaoCartaRedeExternaId?: string | null;
+  producaoCartaRedeNome?: string | null;
+  cartaRedeGuias?: number | null;
 }
 
 export interface OrchestratorDeps {
@@ -112,6 +116,9 @@ export interface OrchestratorDeps {
       producaoFistulaNome?: string | null;
       producaoAngiografiaExternaId?: string | null;
       producaoAngiografiaNome?: string | null;
+      producaoCartaRedeExternaId?: string | null;
+      producaoCartaRedeNome?: string | null;
+      cartaRedeGuias?: number | null;
     }[],
     empresaId?: string | null,
     clienteContabilidadeId?: string | null,
@@ -231,6 +238,9 @@ export async function iniciarExecucao(
     producaoFistulaNome?: string | null;
     producaoAngiografiaExternaId?: string | null;
     producaoAngiografiaNome?: string | null;
+    producaoCartaRedeExternaId?: string | null;
+    producaoCartaRedeNome?: string | null;
+    cartaRedeGuias?: number | null;
   }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
@@ -441,6 +451,10 @@ async function processarUmMedico(
     const itensAngiografia = selecao.producaoAngiografiaExternaId
       ? await deps.buscarItens(selecao.producaoAngiografiaExternaId)
       : undefined;
+    // GATE 2026-08-12: Carta de Rede não busca itens da API — a contagem não tem regra fixa
+    // (depende do procedimento realizado no mês), então o operador informa o número diretamente
+    // (`carta_rede_guias`). `producaoCartaRedeExternaId` é só referência/auditoria, nunca lido aqui.
+    const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;
 
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
@@ -455,6 +469,7 @@ async function processarUmMedico(
         itensCateter,
         itensFistula,
         itensAngiografia,
+        guiasCartaRede,
         competencia,
       },
       undefined,

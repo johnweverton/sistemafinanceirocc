@@ -115,6 +115,12 @@ export function NovaExecucao() {
   const [cateterProducaoId, setCateterProducaoId] = useState('');
   const [fistulaProducaoId, setFistulaProducaoId] = useState('');
   const [angiografiaProducaoId, setAngiografiaProducaoId] = useState('');
+  // Carta de Rede (GATE 2026-08-12) — sem regra de contagem fixa (depende do procedimento
+  // realizado no mês), então o operador digita a quantidade de guias manualmente. O select de
+  // produção aqui é só referência/auditoria (qual lote de origem gerou aquele número), NÃO
+  // alimenta o cálculo — só `cartaRedeGuias` conta.
+  const [cartaRedeProducaoId, setCartaRedeProducaoId] = useState('');
+  const [cartaRedeGuias, setCartaRedeGuias] = useState('');
 
   // Seleção do modo "Por empresa" — empresa + produção de guias cardíacas de cada médico
   // vinculado, sempre manual (nunca auto-match).
@@ -316,10 +322,10 @@ export function NovaExecucao() {
     validMedicos.find((m) => m.id === medicoId)?.especialidade,
   );
   // Angiologista não tem "Produção" (lote principal) pra exigir — em troca, exige pelo menos UM
-  // dos 3 lotes próprios selecionado (Cateter/Fístula/Angiografia), senão não haveria nada pra
-  // processar (GATE 2026-08-07).
+  // dos 4 lotes próprios preenchido (Cateter/Fístula/Angiografia/Carta de Rede), senão não
+  // haveria nada pra processar (GATE 2026-08-07, Carta de Rede GATE 2026-08-12).
   const producaoObrigatoriaOk = medicoSelecionadoAngiologista
-    ? Boolean(cateterProducaoId || fistulaProducaoId || angiografiaProducaoId)
+    ? Boolean(cateterProducaoId || fistulaProducaoId || angiografiaProducaoId || cartaRedeGuias !== '')
     : Boolean(producaoSelecionada);
   const canDispararMedico =
     Boolean(medicoId && competenciaValida) && producaoObrigatoriaOk && !medicoJaTemBoleto && !disparar.isPending;
@@ -489,6 +495,8 @@ export function NovaExecucao() {
                     setCateterProducaoId('');
                     setFistulaProducaoId('');
                     setAngiografiaProducaoId('');
+                    setCartaRedeProducaoId('');
+                    setCartaRedeGuias('');
                   }}
                   disabled={isApoioLoading}
                 >
@@ -539,8 +547,46 @@ export function NovaExecucao() {
                       </select>
                     </div>
                   ))}
+                  <div>
+                    <label htmlFor="carta-rede-guias-input" className="field-label mb-1.5">
+                      Carta de Rede — guias{' '}
+                      <span className="font-normal normal-case text-cc-muted">(manual, opcional)</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        id="producao-carta-rede-select"
+                        className="input"
+                        value={cartaRedeProducaoId}
+                        onChange={(e) => {
+                          setCartaRedeProducaoId(e.target.value);
+                          const producao = producoesDoMedicoSelecionado.find((p) => p.id === e.target.value);
+                          if (producao) preencherCompetenciaAuto(producao.nome);
+                        }}
+                        disabled={!medicoId}
+                        aria-label="Lote de Carta de Rede (referência)"
+                      >
+                        <option value="">Sem produção de referência</option>
+                        {producoesDoMedicoSelecionado.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nome}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        id="carta-rede-guias-input"
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="input w-28"
+                        placeholder="Guias"
+                        value={cartaRedeGuias}
+                        onChange={(e) => setCartaRedeGuias(e.target.value)}
+                        disabled={!medicoId}
+                      />
+                    </div>
+                  </div>
                   <p className="text-xs text-cc-muted">
-                    Médico Angiologista: sem lote principal — a produção vem de Cateter (1x1), Fístula (1x1) e Angiografia (3x1 + exceção Intra-operatório). Lote sem seleção NÃO é cobrado (o motor gera alerta em vez de chutar).
+                    Médico Angiologista: sem lote principal — a produção vem de Cateter (1x1), Fístula (1x1), Angiografia (3x1 + exceção Intra-operatório) e Carta de Rede (quantidade de guias digitada manualmente — sem regra fixa de contagem). Lote sem seleção/informação NÃO é cobrado (o motor gera alerta em vez de chutar). O select de Carta de Rede é só referência de qual produção de origem gerou o número — não é contado automaticamente.
                   </p>
                 </>
               ) : (
@@ -685,6 +731,7 @@ export function NovaExecucao() {
                   const cateterProd = producoesDoMedicoSelecionado.find((p) => p.id === cateterProducaoId);
                   const fistulaProd = producoesDoMedicoSelecionado.find((p) => p.id === fistulaProducaoId);
                   const angiografiaProd = producoesDoMedicoSelecionado.find((p) => p.id === angiografiaProducaoId);
+                  const cartaRedeProd = producoesDoMedicoSelecionado.find((p) => p.id === cartaRedeProducaoId);
                   disparar.mutate({
                     competencia,
                     selecoes: [
@@ -720,6 +767,13 @@ export function NovaExecucao() {
                               producaoAngiografiaNome: angiografiaProd.nome,
                             }
                           : {}),
+                        ...(cartaRedeProd
+                          ? {
+                              producaoCartaRedeExternaId: cartaRedeProd.id,
+                              producaoCartaRedeNome: cartaRedeProd.nome,
+                            }
+                          : {}),
+                        ...(cartaRedeGuias !== '' ? { cartaRedeGuias: Number(cartaRedeGuias) } : {}),
                       },
                     ],
                   });

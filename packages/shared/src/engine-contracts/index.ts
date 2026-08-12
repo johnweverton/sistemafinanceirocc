@@ -69,6 +69,13 @@ export interface EntradaProcessamentoMedico {
    *  1x1 — GATE 2026-08-07. */
   itensAngiografia?: ItemProducao[];
   /**
+   * Quantidade de guias de Carta de Rede — GATE 2026-08-12. Diferente dos 3 lotes acima, NÃO vem
+   * de itens buscados na API externa: a contagem não tem regra fixa (depende do procedimento
+   * realizado no mês), então o operador informa o número diretamente. `undefined` = lote não
+   * informado nesta execução (gera alerta, nunca chuta); um número (inclusive 0) = informado.
+   */
+  guiasCartaRede?: number | null;
+  /**
    * Competência da execução (AAAA-MM) — Story 10.6. Usada SÓ para filtrar `itensOutrosHospitais`
    * pelo mês real do item (`item.data`): na origem, "Outros Hospitais" não abre uma produção por
    * mês como o lote principal, um único lote acumula vários meses. Opcional (comportamento
