@@ -509,7 +509,7 @@ export function NovaExecucao() {
                 </select>
                 {medicoJaTemBoleto && (
                   <p role="alert" className="mt-1.5 text-xs text-cc-danger">
-                    Este médico já tem boleto emitido para a competência {competencia || 'informada'}. Emitir de novo geraria um boleto duplicado — selecione outra competência ou outro médico.
+                    Este médico já tem boleto emitido para a competência {competencia || 'informada'}. Selecione outra competência ou outro médico.
                   </p>
                 )}
               </div>
@@ -585,9 +585,6 @@ export function NovaExecucao() {
                       />
                     </div>
                   </div>
-                  <p className="text-xs text-cc-muted">
-                    Médico Angiologista: sem lote principal — a produção vem de Cateter (1x1), Fístula (1x1), Angiografia (3x1 + exceção Intra-operatório) e Carta de Rede (quantidade de guias digitada manualmente — sem regra fixa de contagem). Lote sem seleção/informação NÃO é cobrado (o motor gera alerta em vez de chutar). O select de Carta de Rede é só referência de qual produção de origem gerou o número — não é contado automaticamente.
-                  </p>
                 </>
               ) : (
                 <div>
@@ -976,7 +973,7 @@ export function NovaExecucao() {
                         Já emitido nesta competência ({selecoesInfo.jaEmitidos.length})
                       </h3>
                       <p className="text-xs text-cc-muted mb-3">
-                        Estes médicos já têm boleto emitido/pago para {competencia} (de uma execução anterior) — excluídos automaticamente desta emissão pra não duplicar.
+                        Estes médicos já têm boleto emitido/pago para {competencia} (de uma execução anterior) e foram excluídos da seleção.
                       </p>
                       <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                         {selecoesInfo.jaEmitidos.map((medico: any) => (
