@@ -141,10 +141,11 @@ export function NovaExecucao() {
   // Sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede) da produção mensal do Angiologista —
   // busca sob demanda (GATE 2026-08-13), só quando o operador escolheu a produção mensal.
   // Nunca faz parte de `apoio` (custaria uma chamada extra por médico/produção à toa).
-  const { data: lotesData, isLoading: isLotesLoading } = useQuery({
+  const { data: lotesData, isLoading: isLotesLoading, isError: isLotesError, error: lotesError } = useQuery({
     queryKey: execucaoQueryKeys.lotes(angiologistaProducaoMensalId),
     queryFn: () => execucoesService.lotes(angiologistaProducaoMensalId),
     enabled: Boolean(angiologistaProducaoMensalId),
+    retry: false,
   });
   const lotesDaProducaoMensal = lotesData?.lotes ?? [];
 
@@ -595,7 +596,13 @@ export function NovaExecucao() {
                       </select>
                     </div>
                   ))}
-                  {angiologistaProducaoMensalId && !isLotesLoading && lotesDaProducaoMensal.length === 0 && (
+                  {isLotesError && (
+                    <p role="alert" className="alert-error">
+                      Falha ao buscar os sub-lotes na origem:{' '}
+                      {lotesError instanceof ApiClientError ? lotesError.message : String(lotesError)}
+                    </p>
+                  )}
+                  {angiologistaProducaoMensalId && !isLotesLoading && !isLotesError && lotesDaProducaoMensal.length === 0 && (
                     <p className="text-xs text-cc-muted">
                       Nenhum sub-lote encontrado nesta produção na origem.
                     </p>

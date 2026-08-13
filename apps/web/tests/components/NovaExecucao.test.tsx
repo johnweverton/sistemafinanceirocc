@@ -9,7 +9,7 @@ import { ToastProvider } from '../../src/components/ui/Toast';
 const mockApoio = vi.fn();
 const mockDisparar = vi.fn();
 const mockMedicosComBoleto = vi.fn();
-const mockLotes = vi.fn(async () => ({ lotes: [] }));
+const mockLotes = vi.fn(async (..._args: unknown[]) => ({ lotes: [] }));
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     apoio: (...a: unknown[]) => mockApoio(...a),
