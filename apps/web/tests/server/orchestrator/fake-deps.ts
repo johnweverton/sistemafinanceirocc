@@ -59,12 +59,12 @@ export interface FakeState {
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
-    producaoCateterExternaId?: string | null;
-    producaoCateterNome?: string | null;
-    producaoFistulaExternaId?: string | null;
-    producaoFistulaNome?: string | null;
-    producaoAngiografiaExternaId?: string | null;
-    producaoAngiografiaNome?: string | null;
+    producaoCateterExternaIds?: string[] | null;
+    producaoCateterNomes?: string[] | null;
+    producaoFistulaExternaIds?: string[] | null;
+    producaoFistulaNomes?: string[] | null;
+    producaoAngiografiaExternaIds?: string[] | null;
+    producaoAngiografiaNomes?: string[] | null;
   }[];
   itensPorProducao: Record<string, ItemProducao[]>;
   /** Itens por LOTE (Cateter/Fístula/Angiografia do Angiologista) — namespace separado de

@@ -154,19 +154,22 @@ export interface ExecucaoSelecao {
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
   /**
-   * Produção separada com as guias de CATETER (GATE 2026-08-07) — exclusiva de médicos
-   * Angiologista, que não têm lote principal. Mesma semântica de nunca-chuta de
-   * producaoOutrosHospitaisExternaId: null/ausente = lote não selecionado, guias de Cateter NÃO
-   * são cobradas nesta execução.
+   * Sub-lotes (fin-lotes.id) com as guias de CATETER (GATE 2026-08-07) — exclusiva de médicos
+   * Angiologista, que não têm lote principal. ARRAY (migration 0046, achado 2026-08-13): a
+   * origem divide cada categoria em quinzenas (1Q/2Q) como sub-lotes SEPARADOS — todos os ids
+   * selecionados aqui têm seus itens somados antes de contar 1x1. Mesma semântica de
+   * nunca-chuta de producaoOutrosHospitaisExternaId: array vazio/ausente = nenhum lote
+   * selecionado, guias de Cateter NÃO são cobradas nesta execução.
    */
-  producaoCateterExternaId?: string | null;
-  producaoCateterNome?: string | null;
-  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07. */
-  producaoFistulaExternaId?: string | null;
-  producaoFistulaNome?: string | null;
-  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07. */
-  producaoAngiografiaExternaId?: string | null;
-  producaoAngiografiaNome?: string | null;
+  producaoCateterExternaIds?: string[] | null;
+  /** Snapshot dos nomes, mesma ordem de producaoCateterExternaIds. */
+  producaoCateterNomes?: string[] | null;
+  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07, array desde a migration 0046. */
+  producaoFistulaExternaIds?: string[] | null;
+  producaoFistulaNomes?: string[] | null;
+  /** Mesmo mecanismo do Cateter acima — GATE 2026-08-07, array desde a migration 0046. */
+  producaoAngiografiaExternaIds?: string[] | null;
+  producaoAngiografiaNomes?: string[] | null;
 }
 
 /** Um médico por linha: ocorrência mais recente em qualquer execução (visão "Por médico"). */

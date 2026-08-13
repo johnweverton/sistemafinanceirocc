@@ -677,13 +677,14 @@ export interface ExecucaoSelecaoRow {
   producao_outros_hospitais_nome?: string | null;
   producao_imobilizacoes_externa_id?: string | null;
   producao_imobilizacoes_nome?: string | null;
-  /** Lotes de Cateter/Fístula/Angiografia do Angiologista (GATE 2026-08-07, migration 0044). */
-  producao_cateter_externa_id?: string | null;
-  producao_cateter_nome?: string | null;
-  producao_fistula_externa_id?: string | null;
-  producao_fistula_nome?: string | null;
-  producao_angiografia_externa_id?: string | null;
-  producao_angiografia_nome?: string | null;
+  /** Lotes de Cateter/Fístula/Angiografia do Angiologista (GATE 2026-08-07). Arrays desde a
+   * migration 0046 (achado 2026-08-13): a origem divide cada categoria em quinzenas (1Q/2Q). */
+  producao_cateter_externa_ids?: string[] | null;
+  producao_cateter_nomes?: string[] | null;
+  producao_fistula_externa_ids?: string[] | null;
+  producao_fistula_nomes?: string[] | null;
+  producao_angiografia_externa_ids?: string[] | null;
+  producao_angiografia_nomes?: string[] | null;
   /** Carta de Rede do Angiologista (GATE 2026-08-12, migration 0045) — contagem MANUAL. */
   producao_carta_rede_externa_id?: string | null;
   producao_carta_rede_nome?: string | null;
@@ -703,12 +704,12 @@ export function toExecucaoSelecaoRow(selecao: {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
-  producaoCateterExternaId?: string | null;
-  producaoCateterNome?: string | null;
-  producaoFistulaExternaId?: string | null;
-  producaoFistulaNome?: string | null;
-  producaoAngiografiaExternaId?: string | null;
-  producaoAngiografiaNome?: string | null;
+  producaoCateterExternaIds?: string[] | null;
+  producaoCateterNomes?: string[] | null;
+  producaoFistulaExternaIds?: string[] | null;
+  producaoFistulaNomes?: string[] | null;
+  producaoAngiografiaExternaIds?: string[] | null;
+  producaoAngiografiaNomes?: string[] | null;
   producaoCartaRedeExternaId?: string | null;
   producaoCartaRedeNome?: string | null;
   cartaRedeGuias?: number | null;
@@ -726,12 +727,12 @@ export function toExecucaoSelecaoRow(selecao: {
     producao_outros_hospitais_nome: selecao.producaoOutrosHospitaisNome ?? null,
     producao_imobilizacoes_externa_id: selecao.producaoImobilizacoesExternaId ?? null,
     producao_imobilizacoes_nome: selecao.producaoImobilizacoesNome ?? null,
-    producao_cateter_externa_id: selecao.producaoCateterExternaId ?? null,
-    producao_cateter_nome: selecao.producaoCateterNome ?? null,
-    producao_fistula_externa_id: selecao.producaoFistulaExternaId ?? null,
-    producao_fistula_nome: selecao.producaoFistulaNome ?? null,
-    producao_angiografia_externa_id: selecao.producaoAngiografiaExternaId ?? null,
-    producao_angiografia_nome: selecao.producaoAngiografiaNome ?? null,
+    producao_cateter_externa_ids: selecao.producaoCateterExternaIds ?? null,
+    producao_cateter_nomes: selecao.producaoCateterNomes ?? null,
+    producao_fistula_externa_ids: selecao.producaoFistulaExternaIds ?? null,
+    producao_fistula_nomes: selecao.producaoFistulaNomes ?? null,
+    producao_angiografia_externa_ids: selecao.producaoAngiografiaExternaIds ?? null,
+    producao_angiografia_nomes: selecao.producaoAngiografiaNomes ?? null,
     producao_carta_rede_externa_id: selecao.producaoCartaRedeExternaId ?? null,
     producao_carta_rede_nome: selecao.producaoCartaRedeNome ?? null,
     carta_rede_guias: selecao.cartaRedeGuias ?? null,
@@ -752,12 +753,12 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     producaoOutrosHospitaisNome: row.producao_outros_hospitais_nome ?? null,
     producaoImobilizacoesExternaId: row.producao_imobilizacoes_externa_id ?? null,
     producaoImobilizacoesNome: row.producao_imobilizacoes_nome ?? null,
-    producaoCateterExternaId: row.producao_cateter_externa_id ?? null,
-    producaoCateterNome: row.producao_cateter_nome ?? null,
-    producaoFistulaExternaId: row.producao_fistula_externa_id ?? null,
-    producaoFistulaNome: row.producao_fistula_nome ?? null,
-    producaoAngiografiaExternaId: row.producao_angiografia_externa_id ?? null,
-    producaoAngiografiaNome: row.producao_angiografia_nome ?? null,
+    producaoCateterExternaIds: row.producao_cateter_externa_ids ?? null,
+    producaoCateterNomes: row.producao_cateter_nomes ?? null,
+    producaoFistulaExternaIds: row.producao_fistula_externa_ids ?? null,
+    producaoFistulaNomes: row.producao_fistula_nomes ?? null,
+    producaoAngiografiaExternaIds: row.producao_angiografia_externa_ids ?? null,
+    producaoAngiografiaNomes: row.producao_angiografia_nomes ?? null,
     producaoCartaRedeExternaId: row.producao_carta_rede_externa_id ?? null,
     producaoCartaRedeNome: row.producao_carta_rede_nome ?? null,
     cartaRedeGuias: row.carta_rede_guias ?? null,

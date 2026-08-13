@@ -22,13 +22,15 @@ export interface ExecucaoSelecaoPayload {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
-  /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais. */
-  producaoCateterExternaId?: string | null;
-  producaoCateterNome?: string | null;
-  producaoFistulaExternaId?: string | null;
-  producaoFistulaNome?: string | null;
-  producaoAngiografiaExternaId?: string | null;
-  producaoAngiografiaNome?: string | null;
+  /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
+   * Arrays desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
+   * quinzenas (1Q/2Q) como sub-lotes separados — todos os selecionados são somados. */
+  producaoCateterExternaIds?: string[] | null;
+  producaoCateterNomes?: string[] | null;
+  producaoFistulaExternaIds?: string[] | null;
+  producaoFistulaNomes?: string[] | null;
+  producaoAngiografiaExternaIds?: string[] | null;
+  producaoAngiografiaNomes?: string[] | null;
   /** Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem itens da API. */
   producaoCartaRedeExternaId?: string | null;
   producaoCartaRedeNome?: string | null;

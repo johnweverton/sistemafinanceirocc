@@ -19,7 +19,7 @@ import {
 import { buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { lerValorConsultaPediatria } from '@/server/repositories/config-cobranca-repository';
 import { ApiError } from '@/lib/api-error';
-import type { SelecaoDeps } from './execucao-orchestrator';
+import { buscarItensDeVariosLotes, type SelecaoDeps } from './execucao-orchestrator';
 
 export interface RecalculoDeps {
   buscarResultado: (id: string) => Promise<ExecucaoResultado | null>;
@@ -105,16 +105,11 @@ export async function recalcularResultado(
   const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
     ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
     : undefined;
-  // Sub-lotes vêm de fin-lotes, não fin-producoes — busca via loteId (GATE 2026-08-13).
-  const itensCateter = selecao.producaoCateterExternaId
-    ? await deps.buscarItensPorLote(selecao.producaoCateterExternaId)
-    : undefined;
-  const itensFistula = selecao.producaoFistulaExternaId
-    ? await deps.buscarItensPorLote(selecao.producaoFistulaExternaId)
-    : undefined;
-  const itensAngiografia = selecao.producaoAngiografiaExternaId
-    ? await deps.buscarItensPorLote(selecao.producaoAngiografiaExternaId)
-    : undefined;
+  // Sub-lotes vêm de fin-lotes, não fin-producoes — busca via loteId (GATE 2026-08-13). ARRAY
+  // (migration 0046): soma todas as quinzenas (1Q/2Q) selecionadas de cada categoria.
+  const itensCateter = await buscarItensDeVariosLotes(deps, selecao.producaoCateterExternaIds);
+  const itensFistula = await buscarItensDeVariosLotes(deps, selecao.producaoFistulaExternaIds);
+  const itensAngiografia = await buscarItensDeVariosLotes(deps, selecao.producaoAngiografiaExternaIds);
   // GATE 2026-08-12: Carta de Rede não busca itens — re-lê o número já gravado na seleção.
   const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;
 

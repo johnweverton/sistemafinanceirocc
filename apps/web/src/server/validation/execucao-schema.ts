@@ -24,12 +24,14 @@ export const dispararExecucaoSchema = z
           producaoImobilizacoesExternaId: z.string().min(1).nullable().optional(),
           producaoImobilizacoesNome: z.string().min(1).nullable().optional(),
           // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
-          producaoCateterExternaId: z.string().min(1).nullable().optional(),
-          producaoCateterNome: z.string().min(1).nullable().optional(),
-          producaoFistulaExternaId: z.string().min(1).nullable().optional(),
-          producaoFistulaNome: z.string().min(1).nullable().optional(),
-          producaoAngiografiaExternaId: z.string().min(1).nullable().optional(),
-          producaoAngiografiaNome: z.string().min(1).nullable().optional(),
+          // Arrays desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
+          // quinzenas (1Q/2Q) como sub-lotes separados, todos somados na mesma execução.
+          producaoCateterExternaIds: z.array(z.string().min(1)).nullable().optional(),
+          producaoCateterNomes: z.array(z.string().min(1)).nullable().optional(),
+          producaoFistulaExternaIds: z.array(z.string().min(1)).nullable().optional(),
+          producaoFistulaNomes: z.array(z.string().min(1)).nullable().optional(),
+          producaoAngiografiaExternaIds: z.array(z.string().min(1)).nullable().optional(),
+          producaoAngiografiaNomes: z.array(z.string().min(1)).nullable().optional(),
           // Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem regra
           // fixa (depende do procedimento realizado no mês). producaoCartaRede* é só referência
           // de auditoria; cartaRedeGuias é o número que de fato alimenta o cálculo.

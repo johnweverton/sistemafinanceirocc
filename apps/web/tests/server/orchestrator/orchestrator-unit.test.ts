@@ -6,9 +6,52 @@ import {
   calcularProgresso,
   iniciarExecucao,
   processarProximoLote,
+  buscarItensDeVariosLotes,
   BATCH_SIZE,
 } from '../../../src/server/orchestrator/execucao-orchestrator';
 import { novoEstado, medicoFake, fakeDeps } from './fake-deps';
+import type { ItemProducao } from '@cobranca/shared';
+
+function itemFake(over: Partial<ItemProducao> = {}): ItemProducao {
+  return {
+    data: '2026-07-15',
+    pacienteNome: 'Paciente Teste',
+    atendimentoExternoId: null,
+    codigoProcedimento: '30721033',
+    descricaoProcedimento: null,
+    statusOrigem: 'Devidamente Pago',
+    viaAcesso: false,
+    tipoAto: null,
+    valorCobradoOrigem: null,
+    valorPagoOrigem: null,
+    ...over,
+  };
+}
+
+describe('buscarItensDeVariosLotes (soma de sub-lotes por categoria — achado 2026-08-13)', () => {
+  it('busca e SOMA os itens de todos os ids informados (1Q + 2Q)', async () => {
+    const item1Q = itemFake({ pacienteNome: 'Paciente 1Q' });
+    const item2Q = itemFake({ pacienteNome: 'Paciente 2Q' });
+    const buscarItensPorLote = async (loteId: string) => (loteId === 'lote-1q' ? [item1Q] : [item2Q]);
+
+    const r = await buscarItensDeVariosLotes({ buscarItensPorLote }, ['lote-1q', 'lote-2q']);
+
+    expect(r).toEqual([item1Q, item2Q]);
+  });
+
+  it('null/undefined/array vazio → undefined (nunca chuta "0 itens buscados")', async () => {
+    const buscarItensPorLote = async () => [itemFake()];
+    expect(await buscarItensDeVariosLotes({ buscarItensPorLote }, null)).toBeUndefined();
+    expect(await buscarItensDeVariosLotes({ buscarItensPorLote }, undefined)).toBeUndefined();
+    expect(await buscarItensDeVariosLotes({ buscarItensPorLote }, [])).toBeUndefined();
+  });
+
+  it('1 único id selecionado ainda funciona (não exige sempre 2 quinzenas)', async () => {
+    const item = itemFake();
+    const buscarItensPorLote = async () => [item];
+    expect(await buscarItensDeVariosLotes({ buscarItensPorLote }, ['lote-1q'])).toEqual([item]);
+  });
+});
 
 describe('numeroDeLotes (lógica pura de divisão)', () => {
   it('120 médicos / lote 20 = 6 lotes (calibração da arquitetura)', () => {

@@ -71,13 +71,15 @@ export interface SelecaoDeps {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
-  /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais. */
-  producaoCateterExternaId?: string | null;
-  producaoCateterNome?: string | null;
-  producaoFistulaExternaId?: string | null;
-  producaoFistulaNome?: string | null;
-  producaoAngiografiaExternaId?: string | null;
-  producaoAngiografiaNome?: string | null;
+  /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
+   * ARRAYS desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
+   * quinzenas (1Q/2Q) como sub-lotes separados — todos os selecionados são somados. */
+  producaoCateterExternaIds?: string[] | null;
+  producaoCateterNomes?: string[] | null;
+  producaoFistulaExternaIds?: string[] | null;
+  producaoFistulaNomes?: string[] | null;
+  producaoAngiografiaExternaIds?: string[] | null;
+  producaoAngiografiaNomes?: string[] | null;
   /** Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem itens da API. */
   producaoCartaRedeExternaId?: string | null;
   producaoCartaRedeNome?: string | null;
@@ -110,12 +112,12 @@ export interface OrchestratorDeps {
       producaoOutrosHospitaisNome?: string | null;
       producaoImobilizacoesExternaId?: string | null;
       producaoImobilizacoesNome?: string | null;
-      producaoCateterExternaId?: string | null;
-      producaoCateterNome?: string | null;
-      producaoFistulaExternaId?: string | null;
-      producaoFistulaNome?: string | null;
-      producaoAngiografiaExternaId?: string | null;
-      producaoAngiografiaNome?: string | null;
+      producaoCateterExternaIds?: string[] | null;
+      producaoCateterNomes?: string[] | null;
+      producaoFistulaExternaIds?: string[] | null;
+      producaoFistulaNomes?: string[] | null;
+      producaoAngiografiaExternaIds?: string[] | null;
+      producaoAngiografiaNomes?: string[] | null;
       producaoCartaRedeExternaId?: string | null;
       producaoCartaRedeNome?: string | null;
       cartaRedeGuias?: number | null;
@@ -209,6 +211,23 @@ export function depsPadrao(): OrchestratorDeps {
 }
 
 /**
+ * Busca e SOMA os itens de vários sub-lotes de uma mesma categoria do Angiologista (Cateter/
+ * Fístula/Angiografia) — migration 0046, achado 2026-08-13: a origem divide cada categoria em
+ * quinzenas (1Q/2Q) como sub-lotes separados, e todas as quinzenas selecionadas entram na mesma
+ * contagem (nunca uma-ou-outra). `undefined` (não array vazio) quando nenhum id foi selecionado —
+ * mesma semântica de nunca-chuta das demais produções opcionais (o Engine trata `undefined` como
+ * "lote não informado" e `[]` seria indistinguível de "0 itens buscados com sucesso").
+ */
+export async function buscarItensDeVariosLotes(
+  deps: Pick<OrchestratorDeps, 'buscarItensPorLote'>,
+  loteExternoIds: string[] | null | undefined,
+): Promise<ItemProducao[] | undefined> {
+  if (!loteExternoIds || loteExternoIds.length === 0) return undefined;
+  const porLote = await Promise.all(loteExternoIds.map((id) => deps.buscarItensPorLote(id)));
+  return porLote.flat();
+}
+
+/**
  * Lógica pura de divisão em lotes: quantos lotes para um total dado um tamanho de lote.
  * Exportada para teste unitário direto (sem I/O).
  */
@@ -239,12 +258,12 @@ export async function iniciarExecucao(
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
-    producaoCateterExternaId?: string | null;
-    producaoCateterNome?: string | null;
-    producaoFistulaExternaId?: string | null;
-    producaoFistulaNome?: string | null;
-    producaoAngiografiaExternaId?: string | null;
-    producaoAngiografiaNome?: string | null;
+    producaoCateterExternaIds?: string[] | null;
+    producaoCateterNomes?: string[] | null;
+    producaoFistulaExternaIds?: string[] | null;
+    producaoFistulaNomes?: string[] | null;
+    producaoAngiografiaExternaIds?: string[] | null;
+    producaoAngiografiaNomes?: string[] | null;
     producaoCartaRedeExternaId?: string | null;
     producaoCartaRedeNome?: string | null;
     cartaRedeGuias?: number | null;
@@ -451,15 +470,11 @@ async function processarUmMedico(
     // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima. Esses
     // ids vêm de `listarLotes` (fin-lotes), NÃO de fin-producoes — busca via `buscarItensPorLote`
     // (loteId), não `buscarItens` (producaoId). Ver devolutiva do desenvolvedor, GATE 2026-08-13.
-    const itensCateter = selecao.producaoCateterExternaId
-      ? await deps.buscarItensPorLote(selecao.producaoCateterExternaId)
-      : undefined;
-    const itensFistula = selecao.producaoFistulaExternaId
-      ? await deps.buscarItensPorLote(selecao.producaoFistulaExternaId)
-      : undefined;
-    const itensAngiografia = selecao.producaoAngiografiaExternaId
-      ? await deps.buscarItensPorLote(selecao.producaoAngiografiaExternaId)
-      : undefined;
+    // ARRAY (migration 0046, achado 2026-08-13): a origem divide cada categoria em quinzenas
+    // (1Q/2Q) como sub-lotes separados — busca TODOS os selecionados e soma os itens.
+    const itensCateter = await buscarItensDeVariosLotes(deps, selecao.producaoCateterExternaIds);
+    const itensFistula = await buscarItensDeVariosLotes(deps, selecao.producaoFistulaExternaIds);
+    const itensAngiografia = await buscarItensDeVariosLotes(deps, selecao.producaoAngiografiaExternaIds);
     // GATE 2026-08-12: Carta de Rede não busca itens da API — a contagem não tem regra fixa
     // (depende do procedimento realizado no mês), então o operador informa o número diretamente
     // (`carta_rede_guias`). `producaoCartaRedeExternaId` é só referência/auditoria, nunca lido aqui.

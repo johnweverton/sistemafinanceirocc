@@ -42,12 +42,12 @@ export async function criarExecucao(
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
-    producaoCateterExternaId?: string | null;
-    producaoCateterNome?: string | null;
-    producaoFistulaExternaId?: string | null;
-    producaoFistulaNome?: string | null;
-    producaoAngiografiaExternaId?: string | null;
-    producaoAngiografiaNome?: string | null;
+    producaoCateterExternaIds?: string[] | null;
+    producaoCateterNomes?: string[] | null;
+    producaoFistulaExternaIds?: string[] | null;
+    producaoFistulaNomes?: string[] | null;
+    producaoAngiografiaExternaIds?: string[] | null;
+    producaoAngiografiaNomes?: string[] | null;
     /** Carta de Rede (médico Angiologista, GATE 2026-08-12) — contagem MANUAL, sem itens da API. */
     producaoCartaRedeExternaId?: string | null;
     producaoCartaRedeNome?: string | null;
@@ -90,12 +90,12 @@ export async function criarExecucao(
       producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
       producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,
       producao_imobilizacoes_nome: s.producaoImobilizacoesNome ?? null,
-      producao_cateter_externa_id: s.producaoCateterExternaId ?? null,
-      producao_cateter_nome: s.producaoCateterNome ?? null,
-      producao_fistula_externa_id: s.producaoFistulaExternaId ?? null,
-      producao_fistula_nome: s.producaoFistulaNome ?? null,
-      producao_angiografia_externa_id: s.producaoAngiografiaExternaId ?? null,
-      producao_angiografia_nome: s.producaoAngiografiaNome ?? null,
+      producao_cateter_externa_ids: s.producaoCateterExternaIds ?? null,
+      producao_cateter_nomes: s.producaoCateterNomes ?? null,
+      producao_fistula_externa_ids: s.producaoFistulaExternaIds ?? null,
+      producao_fistula_nomes: s.producaoFistulaNomes ?? null,
+      producao_angiografia_externa_ids: s.producaoAngiografiaExternaIds ?? null,
+      producao_angiografia_nomes: s.producaoAngiografiaNomes ?? null,
       producao_carta_rede_externa_id: s.producaoCartaRedeExternaId ?? null,
       producao_carta_rede_nome: s.producaoCartaRedeNome ?? null,
       carta_rede_guias: s.cartaRedeGuias ?? null,

@@ -118,9 +118,12 @@ export function NovaExecucao() {
   const [angiologistaProducaoMensalId, setAngiologistaProducaoMensalId] = useState('');
   // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — substituem o
   // seletor de "Produção" normal, que não existe pra essa especialidade (sem lote principal).
-  const [cateterProducaoId, setCateterProducaoId] = useState('');
-  const [fistulaProducaoId, setFistulaProducaoId] = useState('');
-  const [angiografiaProducaoId, setAngiografiaProducaoId] = useState('');
+  // ARRAYS (achado 2026-08-13): a origem divide cada categoria em quinzenas (1Q/2Q) como
+  // sub-lotes separados — o operador marca TODOS os que valem pra esta execução (checkboxes),
+  // nunca um-ou-outro, senão a 2ª quinzena fica de fora da cobrança.
+  const [cateterProducaoIds, setCateterProducaoIds] = useState<string[]>([]);
+  const [fistulaProducaoIds, setFistulaProducaoIds] = useState<string[]>([]);
+  const [angiografiaProducaoIds, setAngiografiaProducaoIds] = useState<string[]>([]);
   // Carta de Rede (GATE 2026-08-12) — sem regra de contagem fixa (depende do procedimento
   // realizado no mês), então o operador digita a quantidade de guias manualmente. O select de
   // produção aqui é só referência/auditoria (qual lote de origem gerou aquele número), NÃO
@@ -342,7 +345,7 @@ export function NovaExecucao() {
   // dos 4 lotes próprios preenchido (Cateter/Fístula/Angiografia/Carta de Rede), senão não
   // haveria nada pra processar (GATE 2026-08-07, Carta de Rede GATE 2026-08-12).
   const producaoObrigatoriaOk = medicoSelecionadoAngiologista
-    ? Boolean(cateterProducaoId || fistulaProducaoId || angiografiaProducaoId || cartaRedeGuias !== '')
+    ? Boolean(cateterProducaoIds.length || fistulaProducaoIds.length || angiografiaProducaoIds.length || cartaRedeGuias !== '')
     : Boolean(producaoSelecionada);
   const canDispararMedico =
     Boolean(medicoId && competenciaValida) && producaoObrigatoriaOk && !medicoJaTemBoleto && !disparar.isPending;
@@ -510,9 +513,9 @@ export function NovaExecucao() {
                     setOutrosHospitaisProducaoId('');
                     setImobilizacoesProducaoId('');
                     setAngiologistaProducaoMensalId('');
-                    setCateterProducaoId('');
-                    setFistulaProducaoId('');
-                    setAngiografiaProducaoId('');
+                    setCateterProducaoIds([]);
+                    setFistulaProducaoIds([]);
+                    setAngiografiaProducaoIds([]);
                     setCartaRedeProducaoId('');
                     setCartaRedeGuias('');
                   }}
@@ -547,9 +550,9 @@ export function NovaExecucao() {
                         setAngiologistaProducaoMensalId(novoId);
                         // Sub-lotes de outra produção deixam de fazer sentido — evita enviar um
                         // loteId que pertence à produção mensal anterior.
-                        setCateterProducaoId('');
-                        setFistulaProducaoId('');
-                        setAngiografiaProducaoId('');
+                        setCateterProducaoIds([]);
+                        setFistulaProducaoIds([]);
+                        setAngiografiaProducaoIds([]);
                         setCartaRedeProducaoId('');
                         const producao = producoesDoMedicoSelecionado.find((p) => p.id === novoId);
                         if (producao) preencherCompetenciaAuto(producao.nome);
@@ -571,29 +574,35 @@ export function NovaExecucao() {
                   </div>
                   {(
                     [
-                      { label: 'Lote de Cateter', valor: cateterProducaoId, set: setCateterProducaoId, id: 'producao-cateter-select' },
-                      { label: 'Lote de Fístula', valor: fistulaProducaoId, set: setFistulaProducaoId, id: 'producao-fistula-select' },
-                      { label: 'Lote de Angiografia', valor: angiografiaProducaoId, set: setAngiografiaProducaoId, id: 'producao-angiografia-select' },
+                      { label: 'Lote de Cateter', valores: cateterProducaoIds, set: setCateterProducaoIds, id: 'producao-cateter' },
+                      { label: 'Lote de Fístula', valores: fistulaProducaoIds, set: setFistulaProducaoIds, id: 'producao-fistula' },
+                      { label: 'Lote de Angiografia', valores: angiografiaProducaoIds, set: setAngiografiaProducaoIds, id: 'producao-angiografia' },
                     ] as const
-                  ).map(({ label, valor, set, id }) => (
+                  ).map(({ label, valores, set, id }) => (
                     <div key={id}>
-                      <label htmlFor={id} className="field-label mb-1.5">
-                        {label} <span className="font-normal normal-case text-cc-muted">(opcional)</span>
-                      </label>
-                      <select
-                        id={id}
-                        className="input"
-                        value={valor}
-                        onChange={(e) => set(e.target.value)}
-                        disabled={!angiologistaProducaoMensalId || isLotesLoading}
-                      >
-                        <option value="">Sem esse lote nesta execução</option>
+                      <span className="field-label mb-1.5 block">
+                        {label}{' '}
+                        <span className="font-normal normal-case text-cc-muted">
+                          (opcional — marque mais de um se houver quinzenas separadas, ex.: 1Q e 2Q)
+                        </span>
+                      </span>
+                      <div className="space-y-1.5">
                         {lotesDaProducaoMensal.map((l) => (
-                          <option key={l.id} value={l.id}>
+                          <label key={l.id} htmlFor={`${id}-${l.id}`} className="flex cursor-pointer items-center gap-2.5 text-sm">
+                            <input
+                              id={`${id}-${l.id}`}
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-cc-hairline accent-cc-accent"
+                              checked={valores.includes(l.id)}
+                              onChange={(e) =>
+                                set(e.target.checked ? [...valores, l.id] : valores.filter((v) => v !== l.id))
+                              }
+                              disabled={!angiologistaProducaoMensalId || isLotesLoading}
+                            />
                             {l.nome}
-                          </option>
+                          </label>
                         ))}
-                      </select>
+                      </div>
                     </div>
                   ))}
                   {isLotesError && (
@@ -782,10 +791,11 @@ export function NovaExecucao() {
                     (p) => p.id === imobilizacoesProducaoId,
                   );
                   // Sub-lotes vêm de fin-lotes (lotesDaProducaoMensal), não da lista flat de
-                  // produções do médico — namespace de ids diferente (GATE 2026-08-13).
-                  const cateterProd = lotesDaProducaoMensal.find((l) => l.id === cateterProducaoId);
-                  const fistulaProd = lotesDaProducaoMensal.find((l) => l.id === fistulaProducaoId);
-                  const angiografiaProd = lotesDaProducaoMensal.find((l) => l.id === angiografiaProducaoId);
+                  // produções do médico — namespace de ids diferente (GATE 2026-08-13). Cada
+                  // categoria pode ter mais de um lote marcado (1Q + 2Q, achado 2026-08-13).
+                  const cateterProds = lotesDaProducaoMensal.filter((l) => cateterProducaoIds.includes(l.id));
+                  const fistulaProds = lotesDaProducaoMensal.filter((l) => fistulaProducaoIds.includes(l.id));
+                  const angiografiaProds = lotesDaProducaoMensal.filter((l) => angiografiaProducaoIds.includes(l.id));
                   const cartaRedeProd = lotesDaProducaoMensal.find((l) => l.id === cartaRedeProducaoId);
                   disparar.mutate({
                     competencia,
@@ -810,16 +820,22 @@ export function NovaExecucao() {
                               producaoImobilizacoesNome: imobilizacoesProd.nome,
                             }
                           : {}),
-                        ...(cateterProd
-                          ? { producaoCateterExternaId: cateterProd.id, producaoCateterNome: cateterProd.nome }
-                          : {}),
-                        ...(fistulaProd
-                          ? { producaoFistulaExternaId: fistulaProd.id, producaoFistulaNome: fistulaProd.nome }
-                          : {}),
-                        ...(angiografiaProd
+                        ...(cateterProds.length
                           ? {
-                              producaoAngiografiaExternaId: angiografiaProd.id,
-                              producaoAngiografiaNome: angiografiaProd.nome,
+                              producaoCateterExternaIds: cateterProds.map((l) => l.id),
+                              producaoCateterNomes: cateterProds.map((l) => l.nome),
+                            }
+                          : {}),
+                        ...(fistulaProds.length
+                          ? {
+                              producaoFistulaExternaIds: fistulaProds.map((l) => l.id),
+                              producaoFistulaNomes: fistulaProds.map((l) => l.nome),
+                            }
+                          : {}),
+                        ...(angiografiaProds.length
+                          ? {
+                              producaoAngiografiaExternaIds: angiografiaProds.map((l) => l.id),
+                              producaoAngiografiaNomes: angiografiaProds.map((l) => l.nome),
                             }
                           : {}),
                         ...(cartaRedeProd
