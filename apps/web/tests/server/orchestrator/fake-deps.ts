@@ -67,6 +67,9 @@ export interface FakeState {
     producaoAngiografiaNome?: string | null;
   }[];
   itensPorProducao: Record<string, ItemProducao[]>;
+  /** Itens por LOTE (Cateter/Fístula/Angiografia do Angiologista) — namespace separado de
+   * itensPorProducao, espelhando fin-lotes (loteId) vs fin-producoes (producaoId) na origem. */
+  itensPorLote: Record<string, ItemProducao[]>;
   guiasAnterioresPorMedicoId: Record<string, number | null>;
   chamadasProximoLote: number;
   /** Se setado, buscarItens lança para essas producoes (simula falha de rede). */
@@ -97,6 +100,7 @@ export function novoEstado(
     resultadosClienteContabilidade: new Map(),
     selecoes: [],
     itensPorProducao: {},
+    itensPorLote: {},
     guiasAnterioresPorMedicoId: {},
     chamadasProximoLote: 0,
     producoesComFalha: new Set(),
@@ -255,6 +259,10 @@ export function fakeDeps(
     buscarItens: async (producaoExternaId) => {
       if (state.producoesComFalha.has(producaoExternaId)) throw new Error('falha de rede simulada');
       return state.itensPorProducao[producaoExternaId] ?? [];
+    },
+    buscarItensPorLote: async (loteExternoId) => {
+      if (state.producoesComFalha.has(loteExternoId)) throw new Error('falha de rede simulada');
+      return state.itensPorLote[loteExternoId] ?? [];
     },
     listarResultados: async (id) => (state.resultados.get(id) ?? []).map((x) => x.r),
     agendarProximoLote: async (id) => {

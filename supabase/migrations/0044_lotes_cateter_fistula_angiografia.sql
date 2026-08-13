@@ -31,17 +31,17 @@ alter table execucao_selecoes
 comment on column execucao_selecoes.producao_externa_id is
   'Produção principal (guias normais/Hapvida). Null = médico Angiologista, que não tem lote principal (GATE 2026-08-07) — pra qualquer outra especialidade continua sempre preenchido.';
 comment on column execucao_selecoes.producao_cateter_externa_id is
-  'Produção separada (fin-producoes.id) com as guias de CATETER do médico Angiologista (GATE 2026-08-07) — contadas 1x1 (sem agrupamento 3x1), cada item válido é 1 guia. Null = lote não selecionado nesta execução — o motor gera alerta e NÃO cobra (nunca reaproveita outro lote).';
+  'Id de SUB-LOTE (fin-lotes.id, não fin-producoes.id — devolutiva do desenvolvedor, GATE 2026-08-13) com as guias de CATETER do médico Angiologista (GATE 2026-08-07) — contadas 1x1 (sem agrupamento 3x1), cada item válido é 1 guia. Busca de itens usa loteId, nunca producaoId. Null = lote não selecionado nesta execução — o motor gera alerta e NÃO cobra (nunca reaproveita outro lote).';
 comment on column execucao_selecoes.producao_cateter_nome is
-  'Snapshot do nome da produção de cateter exibido na escolha (mesmo padrão de producao_nome).';
+  'Snapshot do nome do sub-lote de cateter exibido na escolha (mesmo padrão de producao_nome).';
 comment on column execucao_selecoes.producao_fistula_externa_id is
-  'Produção separada (fin-producoes.id) com as guias de FÍSTULA do médico Angiologista (GATE 2026-08-07). Mesma semântica de producao_cateter_externa_id (1x1, sem agrupamento).';
+  'Id de SUB-LOTE (fin-lotes.id, não fin-producoes.id — GATE 2026-08-13) com as guias de FÍSTULA do médico Angiologista (GATE 2026-08-07). Mesma semântica de producao_cateter_externa_id (1x1, sem agrupamento; busca via loteId).';
 comment on column execucao_selecoes.producao_fistula_nome is
-  'Snapshot do nome da produção de fístula exibido na escolha (mesmo padrão de producao_nome).';
+  'Snapshot do nome do sub-lote de fístula exibido na escolha (mesmo padrão de producao_nome).';
 comment on column execucao_selecoes.producao_angiografia_externa_id is
-  'Produção separada (fin-producoes.id) com as guias de ANGIOGRAFIA do médico Angiologista (GATE 2026-08-07) — contadas 3x1 (teto(n/3)) com exceção de Intra-operatório (1 guia individual, fora do pool). Null = lote não selecionado nesta execução — mesma semântica de nunca-chuta de producao_cateter_externa_id.';
+  'Id de SUB-LOTE (fin-lotes.id, não fin-producoes.id — GATE 2026-08-13) com as guias de ANGIOGRAFIA do médico Angiologista (GATE 2026-08-07) — contadas 3x1 (teto(n/3)) com exceção de Intra-operatório (1 guia individual, fora do pool). Busca de itens usa loteId, nunca producaoId. Null = lote não selecionado nesta execução — mesma semântica de nunca-chuta de producao_cateter_externa_id.';
 comment on column execucao_selecoes.producao_angiografia_nome is
-  'Snapshot do nome da produção de angiografia exibido na escolha (mesmo padrão de producao_nome).';
+  'Snapshot do nome do sub-lote de angiografia exibido na escolha (mesmo padrão de producao_nome).';
 
 -- ============================================================================
 -- ROLLBACK (executar manualmente se necessário)

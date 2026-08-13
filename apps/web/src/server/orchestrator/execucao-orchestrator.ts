@@ -25,7 +25,7 @@ import type {
 import { processarMedico } from '@/server/engine';
 import { processarEmpresa, type ProducaoMedico } from '@/server/engine/processar-empresa';
 import { aplicarRegraPreco } from '@/server/engine/regra-preco';
-import { buscarItens } from '@/server/integration/fin-api-client';
+import { buscarItens, buscarItensPorLote } from '@/server/integration/fin-api-client';
 import { buscarMedico, listarMedicosPorIds } from '@/server/repositories/medico-repository';
 import { buscarEmpresa } from '@/server/repositories/empresa-repository';
 import { buscarClienteContabilidade } from '@/server/repositories/cliente-contabilidade-repository';
@@ -152,6 +152,12 @@ export interface OrchestratorDeps {
   marcarErro: (execucaoId: string) => Promise<void>;
   guiasExecucaoAnterior: (medicoId: string, competenciaAtual: string) => Promise<number | null>;
   buscarItens: (producaoExternaId: string) => Promise<ItemProducao[]>;
+  /**
+   * Busca itens de um SUB-LOTE do Angiologista (Cateter/Fístula/Angiografia — devolutiva do
+   * desenvolvedor, GATE 2026-08-13). Id de lote não é id de produção — usa `loteId=`, nunca
+   * `producaoId=` (ver fin-api-client.ts).
+   */
+  buscarItensPorLote: (loteExternoId: string) => Promise<ItemProducao[]>;
   /** Valor unitário global da consulta pediátrica (Story 10.2), lido de config_cobranca. */
   lerValorConsultaPediatria: () => Promise<number>;
   /** Resultados já gravados — usado para agregar os totais ao concluir. */
@@ -182,6 +188,7 @@ export function depsPadrao(): OrchestratorDeps {
     marcarErro,
     guiasExecucaoAnterior,
     buscarItens,
+    buscarItensPorLote,
     lerValorConsultaPediatria,
     listarResultados: async (id) =>
       (await listarResultados(id)).map((r) => ({
@@ -441,15 +448,17 @@ async function processarUmMedico(
       ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
       : undefined;
     // GATE 2026-08-07: lotes de Cateter/Fístula/Angiografia (médico Angiologista, sem lote
-    // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima.
+    // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima. Esses
+    // ids vêm de `listarLotes` (fin-lotes), NÃO de fin-producoes — busca via `buscarItensPorLote`
+    // (loteId), não `buscarItens` (producaoId). Ver devolutiva do desenvolvedor, GATE 2026-08-13.
     const itensCateter = selecao.producaoCateterExternaId
-      ? await deps.buscarItens(selecao.producaoCateterExternaId)
+      ? await deps.buscarItensPorLote(selecao.producaoCateterExternaId)
       : undefined;
     const itensFistula = selecao.producaoFistulaExternaId
-      ? await deps.buscarItens(selecao.producaoFistulaExternaId)
+      ? await deps.buscarItensPorLote(selecao.producaoFistulaExternaId)
       : undefined;
     const itensAngiografia = selecao.producaoAngiografiaExternaId
-      ? await deps.buscarItens(selecao.producaoAngiografiaExternaId)
+      ? await deps.buscarItensPorLote(selecao.producaoAngiografiaExternaId)
       : undefined;
     // GATE 2026-08-12: Carta de Rede não busca itens da API — a contagem não tem regra fixa
     // (depende do procedimento realizado no mês), então o operador informa o número diretamente

@@ -17,6 +17,18 @@ export interface ProducaoExterna {
 }
 
 /**
+ * Sub-lote dentro de uma produção mensal (GET /api/fin-lotes?producaoId=<id da produção
+ * mensal>). Usado pelo médico Angiologista, que não tem produção própria por tipo — Cateter/
+ * Fístula/Angiografia/Carta de Rede são sub-grupos aninhados dentro da produção do mês no painel
+ * de origem (devolutiva do desenvolvedor, GATE 2026-08-13). Id de lote NÃO é um id de produção —
+ * itens de um lote só são consultáveis via `GET /api/fin-itens?loteId=`, nunca `producaoId=`.
+ */
+export interface LoteExterna {
+  id: string; // id do sub-lote na origem
+  nome: string; // name — texto livre, digitado manualmente (sem grafia garantida entre competências)
+}
+
+/**
  * Item (procedimento) de uma produção (GET /api/fin-itens?producaoId=).
  * `statusOrigem` é informativo — NUNCA filtra contagem (Épico 5, decisão 5).
  * `valorCobradoOrigem`/`valorPagoOrigem`: informativos no modo faixas (decisão 8 do Épico 5).

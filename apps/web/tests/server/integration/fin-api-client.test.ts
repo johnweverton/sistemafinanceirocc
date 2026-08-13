@@ -34,6 +34,11 @@ const producaoBruta = {
   name: 'Janeiro 2026',
 };
 
+const loteBruto = {
+  id: 'lote-991',
+  name: 'SAMANTA CETETER 1Q',
+};
+
 const itemBruto = {
   date: '2026-01-15',
   patient_name: 'Ana Paula Ferreira',
@@ -128,6 +133,11 @@ describe('normalização defensiva — contrato real → tipos do domínio', () 
     });
   });
 
+  it('toLoteExterna mapeia id e name do sub-lote', async () => {
+    const { toLoteExterna } = await client();
+    expect(toLoteExterna(loteBruto)).toEqual({ id: 'lote-991', nome: 'SAMANTA CETETER 1Q' });
+  });
+
   it('cpf: normaliza mesmo quando a origem entrega formatado (ex.: "010.508.863-30")', async () => {
     const { toClienteExterno } = await client();
     expect(toClienteExterno({ ...clienteBruto, cpf: '010.508.863-30' }).cpf).toBe('01050886330');
@@ -172,6 +182,31 @@ describe('endpoints http — URLs, header e parâmetros do contrato', () => {
     const [urlArg] = fetchMock.mock.calls[0] as unknown as [URL];
     expect(urlArg.toString()).toContain('/api/fin-itens');
     expect(urlArg.searchParams.get('producaoId')).toBe('producao-1');
+  });
+
+  it('listarLotes: GET /api/fin-lotes com producaoId (sub-lotes do Angiologista)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify([loteBruto]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { listarLotes } = await client();
+    const r = await listarLotes('producao-mensal-1');
+    expect(r[0]?.nome).toBe('SAMANTA CETETER 1Q');
+
+    const [urlArg] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(urlArg.toString()).toContain('/api/fin-lotes');
+    expect(urlArg.searchParams.get('producaoId')).toBe('producao-mensal-1');
+  });
+
+  it('buscarItensPorLote: envia loteId (não producaoId) na query', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify([itemBruto]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { buscarItensPorLote } = await client();
+    const r = await buscarItensPorLote('lote-991');
+    expect(r).toHaveLength(1);
+
+    const [urlArg] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(urlArg.toString()).toContain('/api/fin-itens');
+    expect(urlArg.searchParams.get('loteId')).toBe('lote-991');
+    expect(urlArg.searchParams.get('producaoId')).toBeNull();
   });
 
   it('preserva path-base já presente em API_FINANCEIRO_URL', async () => {
@@ -276,5 +311,22 @@ describe('modo local (FIN_API_SOURCE=local) — fixtures', () => {
     expect((await listarClientes())[0]?.nome).toBe('Dra. Maria Souza');
     expect((await listarProducoes('c1'))[0]?.nome).toBe('Fevereiro 2026');
     expect((await buscarItens('p1'))[0]?.pacienteNome).toBe('Ana Paula Ferreira');
+  });
+
+  it('serve lotes/itens-por-lote registrados (sub-lotes do Angiologista); vazio por padrão', async () => {
+    resetEnv(); // FIN_API_SOURCE=local
+    const { listarLotes, buscarItensPorLote, buscarItens, toItemProducao } = await client();
+    const fixtures = await import('../../../src/server/integration/fixtures-local');
+
+    expect(await listarLotes('p1')).toEqual([]);
+    expect(await buscarItensPorLote('lote-1')).toEqual([]);
+
+    fixtures.registrarFixtureLotes('p1', [{ id: 'lote-1', nome: 'SAMANTA CETETER 1Q' }]);
+    fixtures.registrarFixtureItensPorLote('lote-1', [toItemProducao(itemBruto)]);
+
+    expect((await listarLotes('p1'))[0]?.nome).toBe('SAMANTA CETETER 1Q');
+    expect((await buscarItensPorLote('lote-1'))[0]?.pacienteNome).toBe('Ana Paula Ferreira');
+    // Namespace separado de produções: um item registrado só por loteId não vaza pra buscarItens.
+    expect(await buscarItens('lote-1')).toEqual([]);
   });
 });

@@ -28,9 +28,9 @@ alter table execucao_selecoes add constraint chk_execucao_selecoes_carta_rede_gu
   check (carta_rede_guias is null or carta_rede_guias >= 0);
 
 comment on column execucao_selecoes.producao_carta_rede_externa_id is
-  'Produção de origem (fin-producoes.id) usada só como REFERÊNCIA/AUDITORIA de qual lote (ex.: "SAMANTA CARTA DE REDE") gerou o número digitado em carta_rede_guias — o Engine NUNCA busca itens dela nem calcula a partir dela.';
+  'Id de SUB-LOTE (fin-lotes.id, não fin-producoes.id — devolutiva do desenvolvedor, GATE 2026-08-13) usado só como REFERÊNCIA/AUDITORIA de qual lote (ex.: "SAMANTA CARTA DE REDE") gerou o número digitado em carta_rede_guias — o Engine NUNCA busca itens dela nem calcula a partir dela.';
 comment on column execucao_selecoes.producao_carta_rede_nome is
-  'Snapshot do nome da produção de referência exibido na escolha (mesmo padrão de producao_nome).';
+  'Snapshot do nome do sub-lote de referência exibido na escolha (mesmo padrão de producao_nome).';
 comment on column execucao_selecoes.carta_rede_guias is
   'Quantidade de guias de Carta de Rede informada MANUALMENTE pelo operador (sem fórmula — GATE 2026-08-12). Null = lote não informado nesta execução — o motor gera alerta e NÃO cobra (nunca reaproveita outro lote). Soma com Cateter+Fístula+Angiografia na mesma faixa HAPVIDA do médico.';
 comment on column execucao_selecoes.carta_rede_informado_por is

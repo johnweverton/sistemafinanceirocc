@@ -9,16 +9,19 @@ import { ToastProvider } from '../../src/components/ui/Toast';
 const mockApoio = vi.fn();
 const mockDisparar = vi.fn();
 const mockMedicosComBoleto = vi.fn();
+const mockLotes = vi.fn(async () => ({ lotes: [] }));
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     apoio: (...a: unknown[]) => mockApoio(...a),
     disparar: (...a: unknown[]) => mockDisparar(...a),
     medicosComBoleto: (...a: unknown[]) => mockMedicosComBoleto(...a),
+    lotes: (...a: unknown[]) => mockLotes(...a),
   },
   execucaoQueryKeys: {
     apoio: () => ['execucoes', 'apoio'],
     execucoes: () => ['execucoes'],
     medicosComBoleto: (c: string) => ['execucoes', 'medicos-com-boleto', c],
+    lotes: (p: string) => ['execucoes', 'lotes', p],
   },
 }));
 

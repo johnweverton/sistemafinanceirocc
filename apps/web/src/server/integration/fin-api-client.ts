@@ -3,18 +3,26 @@
 //   GET /api/fin-clientes                → médicos da origem (sem especialidade)
 //   GET /api/fin-producoes?clienteId=    → produções nomeadas de um médico
 //   GET /api/fin-itens?producaoId=       → itens de uma produção
+// Sub-lotes do Angiologista (devolutiva do desenvolvedor, GATE 2026-08-13) — endpoint aditivo,
+// não altera o contrato acima:
+//   GET /api/fin-lotes?producaoId=       → sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede)
+//                                           dentro da produção MENSAL do médico
+//   GET /api/fin-itens?loteId=           → itens de um sub-lote (mutuamente exclusivo com
+//                                           producaoId — nunca passar id de lote como producaoId)
 // Dois modos via FIN_API_SOURCE (espelha o desenho do procedimentos-client):
 //   - 'local': fixtures em memória (dev/teste)
 //   - 'http' : API real com header x-api-key
 // Isto NÃO é o Engine — pode fazer I/O. Padrões de resiliência herdados do client
 // anterior (calibrados): timeout 30s, retry ×3 com backoff SÓ para 5xx/rede.
-import type { ClienteExterno, ProducaoExterna, ItemProducao } from '@cobranca/shared';
+import type { ClienteExterno, ProducaoExterna, LoteExterna, ItemProducao } from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
 import { ApiError } from '@/lib/api-error';
 import {
   listarClientesLocal,
   listarProducoesLocal,
   buscarItensLocal,
+  listarLotesLocal,
+  buscarItensPorLoteLocal,
 } from './fixtures-local';
 
 const RETRY_MAX = 3;
@@ -54,6 +62,13 @@ export function toClienteExterno(obj: Record<string, unknown>): ClienteExterno {
 }
 
 export function toProducaoExterna(obj: Record<string, unknown>): ProducaoExterna {
+  return {
+    id: s(obj.id),
+    nome: s(obj.name),
+  };
+}
+
+export function toLoteExterna(obj: Record<string, unknown>): LoteExterna {
   return {
     id: s(obj.id),
     nome: s(obj.name),
@@ -190,5 +205,28 @@ export async function listarProducoes(clienteExternoId: string): Promise<Produca
 export async function buscarItens(producaoExternaId: string): Promise<ItemProducao[]> {
   if (getServerEnv().FIN_API_SOURCE !== 'http') return buscarItensLocal(producaoExternaId);
   const rows = await fetchArray('/api/fin-itens', { producaoId: producaoExternaId });
+  return rows.map(toItemProducao);
+}
+
+/**
+ * Lista os sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede) dentro da produção MENSAL de
+ * um médico Angiologista (GET /api/fin-lotes?producaoId=<id da produção mensal>). Devolutiva do
+ * desenvolvedor, GATE 2026-08-13 — endpoint aditivo, não substitui `listarProducoes`.
+ */
+export async function listarLotes(producaoExternaId: string): Promise<LoteExterna[]> {
+  if (getServerEnv().FIN_API_SOURCE !== 'http') return listarLotesLocal(producaoExternaId);
+  const rows = await fetchArray('/api/fin-lotes', { producaoId: producaoExternaId });
+  return rows.map(toLoteExterna);
+}
+
+/**
+ * Busca os itens de um SUB-LOTE (GET /api/fin-itens?loteId=). Diferente de `buscarItens`: o id
+ * aqui vem de `listarLotes`, um namespace diferente do de produção — passar esse id como
+ * `producaoId` não funciona (mutuamente exclusivos no contrato da origem). Array vazio é caminho
+ * válido.
+ */
+export async function buscarItensPorLote(loteExternoId: string): Promise<ItemProducao[]> {
+  if (getServerEnv().FIN_API_SOURCE !== 'http') return buscarItensPorLoteLocal(loteExternoId);
+  const rows = await fetchArray('/api/fin-itens', { loteId: loteExternoId });
   return rows.map(toItemProducao);
 }

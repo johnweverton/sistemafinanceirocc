@@ -110,6 +110,12 @@ export function NovaExecucao() {
   const [consultaProducaoId, setConsultaProducaoId] = useState('');
   const [outrosHospitaisProducaoId, setOutrosHospitaisProducaoId] = useState('');
   const [imobilizacoesProducaoId, setImobilizacoesProducaoId] = useState('');
+  // Produção MENSAL do médico Angiologista (ex.: "JULHO - 2026") — os sub-lotes de Cateter/
+  // Fístula/Angiografia/Carta de Rede vivem DENTRO dela no painel de origem, mas fin-producoes
+  // não os expõe: precisa de uma busca separada em fin-lotes (devolutiva do desenvolvedor, GATE
+  // 2026-08-13). Esta produção NUNCA vai no payload como producaoExternaId (Angiologista não tem
+  // lote principal) — serve só pra alimentar a busca de lotes abaixo.
+  const [angiologistaProducaoMensalId, setAngiologistaProducaoMensalId] = useState('');
   // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — substituem o
   // seletor de "Produção" normal, que não existe pra essa especialidade (sem lote principal).
   const [cateterProducaoId, setCateterProducaoId] = useState('');
@@ -131,6 +137,16 @@ export function NovaExecucao() {
     queryKey: execucaoQueryKeys.apoio(),
     queryFn: execucoesService.apoio,
   });
+
+  // Sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede) da produção mensal do Angiologista —
+  // busca sob demanda (GATE 2026-08-13), só quando o operador escolheu a produção mensal.
+  // Nunca faz parte de `apoio` (custaria uma chamada extra por médico/produção à toa).
+  const { data: lotesData, isLoading: isLotesLoading } = useQuery({
+    queryKey: execucaoQueryKeys.lotes(angiologistaProducaoMensalId),
+    queryFn: () => execucoesService.lotes(angiologistaProducaoMensalId),
+    enabled: Boolean(angiologistaProducaoMensalId),
+  });
+  const lotesDaProducaoMensal = lotesData?.lotes ?? [];
 
   const { data: empresas, isLoading: isEmpresasLoading } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
@@ -492,6 +508,7 @@ export function NovaExecucao() {
                     setConsultaProducaoId('');
                     setOutrosHospitaisProducaoId('');
                     setImobilizacoesProducaoId('');
+                    setAngiologistaProducaoMensalId('');
                     setCateterProducaoId('');
                     setFistulaProducaoId('');
                     setAngiografiaProducaoId('');
@@ -516,6 +533,41 @@ export function NovaExecucao() {
 
               {medicoSelecionadoAngiologista ? (
                 <>
+                  <div>
+                    <label htmlFor="producao-mensal-angiologista-select" className="field-label mb-1.5">
+                      Produção mensal
+                    </label>
+                    <select
+                      id="producao-mensal-angiologista-select"
+                      className="input"
+                      value={angiologistaProducaoMensalId}
+                      onChange={(e) => {
+                        const novoId = e.target.value;
+                        setAngiologistaProducaoMensalId(novoId);
+                        // Sub-lotes de outra produção deixam de fazer sentido — evita enviar um
+                        // loteId que pertence à produção mensal anterior.
+                        setCateterProducaoId('');
+                        setFistulaProducaoId('');
+                        setAngiografiaProducaoId('');
+                        setCartaRedeProducaoId('');
+                        const producao = producoesDoMedicoSelecionado.find((p) => p.id === novoId);
+                        if (producao) preencherCompetenciaAuto(producao.nome);
+                      }}
+                      disabled={!medicoId}
+                    >
+                      <option value="">
+                        {medicoId ? 'Selecione a produção mensal…' : 'Selecione um médico primeiro'}
+                      </option>
+                      {producoesDoMedicoSelecionado.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1.5 text-xs text-cc-muted">
+                      Os lotes de Cateter/Fístula/Angiografia/Carta de Rede vivem dentro desta produção no painel de origem — selecione-a para listá-los abaixo.
+                    </p>
+                  </div>
                   {(
                     [
                       { label: 'Lote de Cateter', valor: cateterProducaoId, set: setCateterProducaoId, id: 'producao-cateter-select' },
@@ -531,22 +583,23 @@ export function NovaExecucao() {
                         id={id}
                         className="input"
                         value={valor}
-                        onChange={(e) => {
-                          set(e.target.value);
-                          const producao = producoesDoMedicoSelecionado.find((p) => p.id === e.target.value);
-                          if (producao) preencherCompetenciaAuto(producao.nome);
-                        }}
-                        disabled={!medicoId}
+                        onChange={(e) => set(e.target.value)}
+                        disabled={!angiologistaProducaoMensalId || isLotesLoading}
                       >
                         <option value="">Sem esse lote nesta execução</option>
-                        {producoesDoMedicoSelecionado.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.nome}
+                        {lotesDaProducaoMensal.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.nome}
                           </option>
                         ))}
                       </select>
                     </div>
                   ))}
+                  {angiologistaProducaoMensalId && !isLotesLoading && lotesDaProducaoMensal.length === 0 && (
+                    <p className="text-xs text-cc-muted">
+                      Nenhum sub-lote encontrado nesta produção na origem.
+                    </p>
+                  )}
                   <div>
                     <label htmlFor="carta-rede-guias-input" className="field-label mb-1.5">
                       Carta de Rede — guias{' '}
@@ -557,18 +610,14 @@ export function NovaExecucao() {
                         id="producao-carta-rede-select"
                         className="input"
                         value={cartaRedeProducaoId}
-                        onChange={(e) => {
-                          setCartaRedeProducaoId(e.target.value);
-                          const producao = producoesDoMedicoSelecionado.find((p) => p.id === e.target.value);
-                          if (producao) preencherCompetenciaAuto(producao.nome);
-                        }}
-                        disabled={!medicoId}
+                        onChange={(e) => setCartaRedeProducaoId(e.target.value)}
+                        disabled={!angiologistaProducaoMensalId || isLotesLoading}
                         aria-label="Lote de Carta de Rede (referência)"
                       >
                         <option value="">Sem produção de referência</option>
-                        {producoesDoMedicoSelecionado.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.nome}
+                        {lotesDaProducaoMensal.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.nome}
                           </option>
                         ))}
                       </select>
@@ -725,10 +774,12 @@ export function NovaExecucao() {
                   const imobilizacoesProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === imobilizacoesProducaoId,
                   );
-                  const cateterProd = producoesDoMedicoSelecionado.find((p) => p.id === cateterProducaoId);
-                  const fistulaProd = producoesDoMedicoSelecionado.find((p) => p.id === fistulaProducaoId);
-                  const angiografiaProd = producoesDoMedicoSelecionado.find((p) => p.id === angiografiaProducaoId);
-                  const cartaRedeProd = producoesDoMedicoSelecionado.find((p) => p.id === cartaRedeProducaoId);
+                  // Sub-lotes vêm de fin-lotes (lotesDaProducaoMensal), não da lista flat de
+                  // produções do médico — namespace de ids diferente (GATE 2026-08-13).
+                  const cateterProd = lotesDaProducaoMensal.find((l) => l.id === cateterProducaoId);
+                  const fistulaProd = lotesDaProducaoMensal.find((l) => l.id === fistulaProducaoId);
+                  const angiografiaProd = lotesDaProducaoMensal.find((l) => l.id === angiografiaProducaoId);
+                  const cartaRedeProd = lotesDaProducaoMensal.find((l) => l.id === cartaRedeProducaoId);
                   disparar.mutate({
                     competencia,
                     selecoes: [

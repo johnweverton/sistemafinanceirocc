@@ -79,6 +79,7 @@ function baseDeps(over: Partial<RecalculoDeps> = {}): RecalculoDeps {
     listarSelecoes: vi.fn(async () => [selecaoFake({ execucaoId: 'exec-1', medicoId: 'med-1' })]),
     buscarMedico: vi.fn(async () => medicoFake({ id: 'med-1', nome: 'JOSE NEIAS ARAUJO RIBEIRO' })),
     buscarItens: vi.fn(async () => [] as ItemProducao[]),
+    buscarItensPorLote: vi.fn(async () => [] as ItemProducao[]),
     guiasExecucaoAnterior: vi.fn(async () => null),
     lerValorConsultaPediatria: vi.fn(async () => 3),
     buscarBoletoEmitido: vi.fn(async () => null),

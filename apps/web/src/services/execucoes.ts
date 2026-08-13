@@ -5,6 +5,7 @@ import type {
   ExecucaoResumoMedico,
   ExecucaoHistoricoMedicoItem,
   Medico,
+  LoteExterna,
 } from '@cobranca/shared';
 import { apiFetch } from '@/lib/api-client';
 
@@ -45,6 +46,13 @@ export interface ApoioData {
 
 export const execucoesService = {
   apoio: () => apiFetch<ApoioData>('/execucoes/apoio'),
+  /**
+   * Sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede) dentro da produção MENSAL de um médico
+   * Angiologista — endpoint aditivo da origem, buscado sob demanda (GATE 2026-08-13), nunca
+   * pré-carregado em `apoio`.
+   */
+  lotes: (producaoId: string) =>
+    apiFetch<{ lotes: LoteExterna[] }>(`/execucoes/lotes?producaoId=${producaoId}`),
   /**
    * `empresaId` marca a execução como agregada por empresa; `clienteContabilidadeId` marca como
    * execução de cliente contábil; `ehAdicional` marca como o boleto avulso do adicional
@@ -108,6 +116,7 @@ export const execucaoQueryKeys = {
   resultados: (id: string) => ['execucoes', id, 'resultados'] as const,
   contribuicoes: (resultadoId: string) => ['execucoes', 'resultados', resultadoId, 'contribuicoes'] as const,
   apoio: () => ['execucoes', 'apoio'] as const,
+  lotes: (producaoId: string) => ['execucoes', 'lotes', producaoId] as const,
   medicosComBoleto: (competencia: string) => ['execucoes', 'medicos-com-boleto', competencia] as const,
   resumoPorMedico: () => ['execucoes', 'por-medico'] as const,
   historicoMedico: (chave: string) => ['execucoes', 'por-medico', 'historico', chave] as const,

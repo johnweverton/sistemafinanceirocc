@@ -7,7 +7,7 @@
 // tocar Supabase nem a API da Carmem.
 import type { ExecucaoResultado, Execucao, Medico, ItemProducao, ResultadoMedico, Boleto } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
-import { buscarItens } from '@/server/integration/fin-api-client';
+import { buscarItens, buscarItensPorLote } from '@/server/integration/fin-api-client';
 import { buscarMedico } from '@/server/repositories/medico-repository';
 import {
   buscarResultadoPorId,
@@ -27,6 +27,9 @@ export interface RecalculoDeps {
   listarSelecoes: (execucaoId: string) => Promise<SelecaoDeps[]>;
   buscarMedico: (id: string) => Promise<Medico | null>;
   buscarItens: (producaoExternaId: string) => Promise<ItemProducao[]>;
+  /** Sub-lotes do Angiologista (Cateter/Fístula/Angiografia) — busca via `loteId`, não `producaoId`
+   * (devolutiva do desenvolvedor, GATE 2026-08-13). */
+  buscarItensPorLote: (loteExternoId: string) => Promise<ItemProducao[]>;
   guiasExecucaoAnterior: (medicoId: string, competenciaAtual: string) => Promise<number | null>;
   lerValorConsultaPediatria: () => Promise<number>;
   buscarBoletoEmitido: (resultadoId: string) => Promise<Boleto | null>;
@@ -40,6 +43,7 @@ export function depsPadrao(): RecalculoDeps {
     listarSelecoes,
     buscarMedico,
     buscarItens,
+    buscarItensPorLote,
     guiasExecucaoAnterior,
     lerValorConsultaPediatria,
     buscarBoletoEmitido,
@@ -101,14 +105,15 @@ export async function recalcularResultado(
   const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
     ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
     : undefined;
+  // Sub-lotes vêm de fin-lotes, não fin-producoes — busca via loteId (GATE 2026-08-13).
   const itensCateter = selecao.producaoCateterExternaId
-    ? await deps.buscarItens(selecao.producaoCateterExternaId)
+    ? await deps.buscarItensPorLote(selecao.producaoCateterExternaId)
     : undefined;
   const itensFistula = selecao.producaoFistulaExternaId
-    ? await deps.buscarItens(selecao.producaoFistulaExternaId)
+    ? await deps.buscarItensPorLote(selecao.producaoFistulaExternaId)
     : undefined;
   const itensAngiografia = selecao.producaoAngiografiaExternaId
-    ? await deps.buscarItens(selecao.producaoAngiografiaExternaId)
+    ? await deps.buscarItensPorLote(selecao.producaoAngiografiaExternaId)
     : undefined;
   // GATE 2026-08-12: Carta de Rede não busca itens — re-lê o número já gravado na seleção.
   const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;

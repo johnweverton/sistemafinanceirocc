@@ -4,6 +4,7 @@
 import type {
   ClienteExterno,
   ProducaoExterna,
+  LoteExterna,
   ItemProducao,
 } from '@cobranca/shared';
 import type { MedicoDescoberto } from '@/server/repositories/medico-repository';
@@ -21,6 +22,16 @@ const FIXTURE_PRODUCOES: Record<string, ProducaoExterna[]> = {};
 
 /** Mapa producaoExternaId → itens simulados. */
 const FIXTURE_ITENS: Record<string, ItemProducao[]> = {};
+
+/**
+ * Mapa producaoExternaId (produção MENSAL) → sub-lotes simulados (Cateter/Fístula/Angiografia/
+ * Carta de Rede do Angiologista — devolutiva do desenvolvedor, GATE 2026-08-13).
+ */
+const FIXTURE_LOTES: Record<string, LoteExterna[]> = {};
+
+/** Mapa loteExternoId → itens simulados desse sub-lote. Namespace SEPARADO de FIXTURE_ITENS
+ * (ids de lote e de produção não se misturam no contrato real). */
+const FIXTURE_ITENS_POR_LOTE: Record<string, ItemProducao[]> = {};
 
 export function registrarFixtureClientes(clientes: ClienteExterno[]): void {
   FIXTURE_CLIENTES = clientes;
@@ -54,4 +65,30 @@ export async function buscarItensLocal(
   producaoExternaId: string,
 ): Promise<ItemProducao[]> {
   return FIXTURE_ITENS[producaoExternaId] ?? [];
+}
+
+export function registrarFixtureLotes(
+  producaoExternaId: string,
+  lotes: LoteExterna[],
+): void {
+  FIXTURE_LOTES[producaoExternaId] = lotes;
+}
+
+export function registrarFixtureItensPorLote(
+  loteExternoId: string,
+  itens: ItemProducao[],
+): void {
+  FIXTURE_ITENS_POR_LOTE[loteExternoId] = itens;
+}
+
+export async function listarLotesLocal(
+  producaoExternaId: string,
+): Promise<LoteExterna[]> {
+  return FIXTURE_LOTES[producaoExternaId] ?? [];
+}
+
+export async function buscarItensPorLoteLocal(
+  loteExternoId: string,
+): Promise<ItemProducao[]> {
+  return FIXTURE_ITENS_POR_LOTE[loteExternoId] ?? [];
 }
