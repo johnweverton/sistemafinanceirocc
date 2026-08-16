@@ -22,6 +22,7 @@ import type {
   StatusRecebivel,
   ResumoCompetencia,
   ResumoMedico,
+  ResumoPorEmpresa,
   AgingFaixa,
   ExtratoTransacao,
   PlanoContas,
@@ -29,6 +30,7 @@ import type {
   LancamentoManual,
   LoteEmissao,
   LoteEmissaoItem,
+  RelatorioLink,
 } from '@cobranca/shared';
 
 /** Colunas de cobrança compartilhadas por `medicos` e `empresas` (mesmo formato, migration 0006/0028). */
@@ -1050,6 +1052,24 @@ export function toResumoMedico(row: ResumoMedicoRow): ResumoMedico {
   };
 }
 
+export interface ResumoPorEmpresaRow extends Omit<ResumoCompetenciaRow, 'competencia'> {
+  conta_emissora: ResumoPorEmpresa['contaEmissora'];
+  competencia: string | null;
+}
+
+export function toResumoPorEmpresa(row: ResumoPorEmpresaRow): ResumoPorEmpresa {
+  return {
+    contaEmissora: row.conta_emissora,
+    competencia: row.competencia,
+    qtdBoletos: num(row.qtd_boletos),
+    totalEmitido: num(row.total_emitido),
+    totalRecebido: num(row.total_recebido),
+    totalEmAberto: num(row.total_em_aberto),
+    totalVencido: num(row.total_vencido),
+    taxaInadimplencia: num(row.taxa_inadimplencia),
+  };
+}
+
 export interface AgingFaixaRow {
   faixa: string;
   qtd: number | null;
@@ -1261,5 +1281,35 @@ export function toLoteEmissaoItem(row: LoteEmissaoItemRow): LoteEmissaoItem {
     mensagemErro: row.mensagem_erro,
     boletoId: row.boleto_id,
     processadoEm: row.processado_em,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Relatórios — link público do BI (migration 0047)
+// ---------------------------------------------------------------------------
+
+export interface RelatorioLinkRow {
+  id: string;
+  token: string;
+  nome: string;
+  escopo_conta_emissora: RelatorioLink['escopoContaEmissora'];
+  criado_por: string;
+  criado_em: string;
+  expira_em: string | null;
+  revogado_em: string | null;
+  ultimo_acesso_em: string | null;
+}
+
+export function toRelatorioLink(row: RelatorioLinkRow): RelatorioLink {
+  return {
+    id: row.id,
+    token: row.token,
+    nome: row.nome,
+    escopoContaEmissora: row.escopo_conta_emissora,
+    criadoPor: row.criado_por,
+    criadoEm: row.criado_em,
+    expiraEm: row.expira_em,
+    revogadoEm: row.revogado_em,
+    ultimoAcessoEm: row.ultimo_acesso_em,
   };
 }

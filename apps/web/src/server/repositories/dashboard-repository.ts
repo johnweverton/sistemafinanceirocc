@@ -1,14 +1,16 @@
 // Dashboard Repository — leitura das views de agregação (Story 4.5). Via service role.
 // As agregações reusam vw_recebiveis (0009) → status derivado único (não diverge).
-import type { ResumoCompetencia, ResumoMedico, AgingFaixa, ContaEmissora } from '@cobranca/shared';
+import type { ResumoCompetencia, ResumoMedico, ResumoPorEmpresa, AgingFaixa, ContaEmissora } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 import {
   toResumoCompetencia,
   toResumoMedico,
+  toResumoPorEmpresa,
   toAgingFaixa,
   type ResumoCompetenciaRow,
   type ResumoMedicoRow,
+  type ResumoPorEmpresaRow,
   type AgingFaixaRow,
 } from './mappers';
 
@@ -56,6 +58,25 @@ export async function resumoPorMedico(
  * aging daquela competência. (GROUPING SETS na view 0010.) `contaEmissora` (migration 0042) segue o
  * mesmo padrão independente: sem ela → rollup (IS NULL); com ela → eq.
  */
+/**
+ * Resumo por empresa (conta emissora) — Módulo de Relatórios. Consulta o mesmo grouping set
+ * (competencia, conta_emissora) de `vw_dashboard_competencia` (0010/0042), mas isolado por
+ * conta_emissora (nunca NULL) — o eixo inverso de `resumoPorCompetencia`, que sempre isola
+ * por competência. Sem `competencia` → rollup por empresa (todas as competências).
+ */
+export async function resumoPorEmpresa(
+  competencia?: string,
+  contaEmissora?: ContaEmissora,
+): Promise<ResumoPorEmpresa[]> {
+  const db = getSupabaseAdmin();
+  let query = db.from('vw_dashboard_competencia').select('*').not('conta_emissora', 'is', null);
+  query = competencia ? query.eq('competencia', competencia) : query.is('competencia', null);
+  if (contaEmissora) query = query.eq('conta_emissora', contaEmissora);
+  const { data, error } = await query;
+  if (error) throw new ApiError(500, 'Falha ao carregar resumo por empresa', 'DB_ERROR', { error: error.message });
+  return (data as ResumoPorEmpresaRow[]).map(toResumoPorEmpresa);
+}
+
 export async function aging(competencia?: string, contaEmissora?: ContaEmissora): Promise<AgingFaixa[]> {
   const db = getSupabaseAdmin();
   let query = db.from('vw_dashboard_aging').select('*');

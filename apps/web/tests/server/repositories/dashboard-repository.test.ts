@@ -6,7 +6,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   getSupabaseAdmin: () => ({ from: mockFrom }),
 }));
 
-import { resumoPorCompetencia, resumoPorMedico, aging } from '@/server/repositories/dashboard-repository';
+import { resumoPorCompetencia, resumoPorMedico, resumoPorEmpresa, aging } from '@/server/repositories/dashboard-repository';
 
 function makeBuilder(result: { data: unknown; error: unknown }) {
   const builder: any = {
@@ -14,6 +14,7 @@ function makeBuilder(result: { data: unknown; error: unknown }) {
     order: vi.fn(() => builder),
     eq: vi.fn(() => builder),
     is: vi.fn(() => builder),
+    not: vi.fn(() => builder),
     then: (resolve: (v: unknown) => void) => resolve(result),
   };
   return builder;
@@ -104,6 +105,46 @@ describe('resumoPorMedico', () => {
     mockFrom.mockReturnValue(builder);
     await resumoPorMedico();
     expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
+  });
+});
+
+describe('resumoPorEmpresa', () => {
+  it('mapeia snake→camel incluindo contaEmissora', async () => {
+    mockFrom.mockReturnValue(makeBuilder({
+      data: [{ conta_emissora: 'mc', competencia: '2026-06', qtd_boletos: 5, total_emitido: 2000,
+        total_recebido: 1500, total_em_aberto: 300, total_vencido: 200, taxa_inadimplencia: 0.1 }],
+      error: null,
+    }));
+    const res = await resumoPorEmpresa();
+    expect(res[0]).toMatchObject({ contaEmissora: 'mc', competencia: '2026-06', totalEmitido: 2000 });
+  });
+
+  it('exclui rollup sem empresa via .not(conta_emissora, is, null)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorEmpresa();
+    expect(builder.not).toHaveBeenCalledWith('conta_emissora', 'is', null);
+  });
+
+  it('sem competência filtra o rollup por empresa (competencia IS NULL)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorEmpresa();
+    expect(builder.is).toHaveBeenCalledWith('competencia', null);
+  });
+
+  it('com competência filtra por .eq', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorEmpresa('2026-06');
+    expect(builder.eq).toHaveBeenCalledWith('competencia', '2026-06');
+  });
+
+  it('aplica .eq de conta_emissora quando contaEmissora é passada', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorEmpresa(undefined, 'mc');
+    expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'mc');
   });
 });
 

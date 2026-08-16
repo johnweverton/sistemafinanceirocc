@@ -4,6 +4,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { createRateLimiter, checkLimit } from '@/lib/rate-limit';
+import { extractIp } from '@/lib/security-logger';
 
 // Rate limit GLOBAL para todas as rotas /api/*, por usuário autenticado — defesa em
 // profundidade complementar aos limiters pontuais (rate-limit.ts) das rotas de maior custo.
@@ -12,6 +13,11 @@ import { createRateLimiter, checkLimit } from '@/lib/rate-limit';
 // 300 req/min é generoso o bastante para não afetar o uso normal do dashboard (várias
 // chamadas paralelas por tela) mas barra varredura sistemática em poucos segundos.
 const apiGlobalLimiter = createRateLimiter('api-global', { limit: 300, windowMs: 60_000 });
+
+// Rate limit do BI público de Relatórios (link com token, sem sessão) — por IP, não por
+// usuário (não há usuário). 60 req/min é generoso para uso humano normal (troca de
+// competência no seletor) mas barra scraping/força-bruta de token via a própria rota.
+const relatorioPublicoLimiter = createRateLimiter('relatorio-publico', { limit: 60, windowMs: 60_000 });
 
 export async function middleware(req: NextRequest) {
   // 1. Gerar nonce criptográfico para esta request (Achado A-4).
@@ -58,6 +64,32 @@ export async function middleware(req: NextRequest) {
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.headers.set('X-DNS-Prefetch-Control', 'off');
   res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+
+  // BI público de Relatórios (link com token, Módulo de Relatórios): bypass do gate de sessão
+  // — ao contrário do webhook Cora (fora do matcher deste middleware), esta rota serve uma
+  // PÁGINA HTML e precisa dos headers de segurança já setados acima (CSP/HSTS/nonce), por isso
+  // fica DENTRO do matcher com um desvio explícito, em vez de excluída dele. O token em si não
+  // é validado aqui (isso é responsabilidade do route handler, que tem acesso ao service role)
+  // — o middleware só aplica um rate limit por IP contra scraping/força-bruta de token.
+  const isRelatorioPublico =
+    req.nextUrl.pathname.startsWith('/relatorios/publico/') ||
+    req.nextUrl.pathname.startsWith('/api/relatorios/publico/');
+  if (isRelatorioPublico) {
+    const { allowed, resetAt } = checkLimit(relatorioPublicoLimiter, extractIp(req) ?? 'sem-ip');
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'RATE_LIMITED',
+            message: 'Limite de requisições excedido. Tente novamente em instantes.',
+            timestamp: new Date().toISOString(),
+          },
+        },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((resetAt - Date.now()) / 1000)) } },
+      );
+    }
+    return res;
+  }
 
   // Exceção deliberada ao "só lib/env.ts lê process.env": o middleware roda no Edge
   // runtime e só precisa das duas chaves públicas; importar o env.ts (que valida com

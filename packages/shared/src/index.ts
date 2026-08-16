@@ -12,4 +12,5 @@ export * from './types/recebivel';
 export * from './types/extrato';
 export * from './types/dre';
 export * from './types/dashboard';
+export * from './types/relatorio';
 export * from './engine-contracts';
