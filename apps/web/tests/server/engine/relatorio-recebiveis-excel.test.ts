@@ -68,6 +68,30 @@ describe('gerarRelatorioRecebiveisExcel', () => {
     expect(sheet.getRow(5).getCell(5).value).toBe(1500);
   });
 
+  it('vencimento e pago em são células de data real (dd/mm/yyyy), não texto', async () => {
+    const recebiveis = [
+      recebivel({ boletoId: 'b1', vencimento: '2026-08-16', pagoEm: '2026-08-20', statusDerivado: 'pago', valorPago: 1000 }),
+    ];
+    const relatorio = agruparRecebiveisPorEmpresa(recebiveis, {});
+    const buffer = await gerarRelatorioRecebiveisExcel(relatorio);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.worksheets[0]!;
+
+    // 4=vencimento, 7=pagoEm (ver mapa de colunas acima).
+    const vencimento = sheet.getRow(2).getCell(4).value as Date;
+    const pagoEm = sheet.getRow(2).getCell(7).value as Date;
+    expect(vencimento).toBeInstanceOf(Date);
+    expect(vencimento.getFullYear()).toBe(2026);
+    expect(vencimento.getMonth()).toBe(7); // agosto = índice 7
+    expect(vencimento.getDate()).toBe(16); // sem deslocamento de fuso (não vira 15)
+    expect(pagoEm).toBeInstanceOf(Date);
+    expect(pagoEm.getDate()).toBe(20);
+    expect(sheet.getColumn(4).numFmt).toBe('dd/mm/yyyy');
+    expect(sheet.getColumn(7).numFmt).toBe('dd/mm/yyyy');
+  });
+
   it('lista vazia gera arquivo só com cabeçalho e total geral zerado', async () => {
     const relatorio = agruparRecebiveisPorEmpresa([], {});
     const buffer = await gerarRelatorioRecebiveisExcel(relatorio);

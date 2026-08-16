@@ -28,6 +28,13 @@ function formatarMoeda(v: number): string {
   return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** AAAA-MM-DD (ou timestamp ISO) → DD/MM/AAAA. String pura (sem passar por Date) para não
+ *  sofrer deslocamento de fuso horário — mesmo padrão de formatarDataBR em gateway/mensagem-boleto.ts. */
+function formatarDataBr(iso: string): string {
+  const [ano, mes, dia] = iso.slice(0, 10).split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
 function descreverFiltro(filtro: RelatorioRecebiveis['filtro'], labelEmpresa: string | null): string {
   const partes: string[] = [];
   partes.push(filtro.competencia ? `Competência: ${filtro.competencia}` : 'Todas as competências');
@@ -94,10 +101,10 @@ export async function gerarRelatorioRecebiveisPdf(
       desenharLinha([
         r.nome,
         r.competencia,
-        r.vencimento ?? '—',
+        r.vencimento ? formatarDataBr(r.vencimento) : '—',
         formatarMoeda(r.valor ?? 0),
         STATUS_LABEL[r.statusDerivado],
-        r.pagoEm ?? '—',
+        r.pagoEm ? formatarDataBr(r.pagoEm) : '—',
         r.valorPago != null ? formatarMoeda(r.valorPago) : '—',
       ]);
     }

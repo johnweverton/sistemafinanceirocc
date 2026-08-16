@@ -17,6 +17,13 @@ function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/** AAAA-MM-DD (ou timestamp ISO) → DD/MM/AAAA. String pura (sem passar por Date) para não
+ *  sofrer deslocamento de fuso horário — mesmo padrão de formatarDataBR em gateway/mensagem-boleto.ts. */
+function dataBr(iso: string): string {
+  const [ano, mes, dia] = iso.slice(0, 10).split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
 const STATUS_LABEL: Record<string, string> = {
   pago: 'Pago',
   cancelado: 'Cancelado',
@@ -147,10 +154,10 @@ export function RelatoriosManager() {
                     {grupo.linhas.map((r) => (
                       <tr key={r.boletoId}>
                         <td>{r.nome}</td>
-                        <td>{r.vencimento ?? '—'}</td>
+                        <td>{r.vencimento ? dataBr(r.vencimento) : '—'}</td>
                         <td className="text-right tabular">{brl(r.valor ?? 0)}</td>
                         <td>{STATUS_LABEL[r.statusDerivado] ?? r.statusDerivado}</td>
-                        <td>{r.pagoEm ?? '—'}</td>
+                        <td>{r.pagoEm ? dataBr(r.pagoEm) : '—'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -12,6 +12,17 @@ const STATUS_LABEL: Record<StatusRecebivel, string> = {
   em_aberto: 'Em aberto',
 };
 
+/**
+ * AAAA-MM-DD (ou timestamp ISO) → Date local à meia-noite, construída a partir das partes da
+ * string (nunca via `new Date(iso)` direto) — evita o deslocamento de um dia que o parser ISO
+ * do JS introduz em fusos negativos (Brasil, UTC-3) para datas sem hora. A célula recebe um
+ * Date real (não texto) com numFmt 'dd/mm/yyyy', pra ficar ordenável/filtrável no Excel.
+ */
+function paraDataExcel(iso: string): Date {
+  const [ano, mes, dia] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(ano!, mes! - 1, dia!);
+}
+
 const COLUNAS = [
   { header: 'Empresa', key: 'empresa', width: 22 },
   { header: 'Médico/Cliente', key: 'nome', width: 28 },
@@ -36,10 +47,10 @@ export async function gerarRelatorioRecebiveisExcel(relatorio: RelatorioRecebive
         empresa: grupo.contaEmissoraLabel,
         nome: r.nome,
         competencia: r.competencia,
-        vencimento: r.vencimento ?? '',
+        vencimento: r.vencimento ? paraDataExcel(r.vencimento) : '',
         valor: r.valor ?? 0,
         status: STATUS_LABEL[r.statusDerivado],
-        pagoEm: r.pagoEm ?? '',
+        pagoEm: r.pagoEm ? paraDataExcel(r.pagoEm) : '',
         valorPago: r.valorPago ?? '',
       });
     }
@@ -60,6 +71,8 @@ export async function gerarRelatorioRecebiveisExcel(relatorio: RelatorioRecebive
 
   sheet.getColumn('valor').numFmt = '#,##0.00';
   sheet.getColumn('valorPago').numFmt = '#,##0.00';
+  sheet.getColumn('vencimento').numFmt = 'dd/mm/yyyy';
+  sheet.getColumn('pagoEm').numFmt = 'dd/mm/yyyy';
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

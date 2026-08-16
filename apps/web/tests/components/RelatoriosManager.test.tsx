@@ -84,6 +84,8 @@ describe('RelatoriosManager', () => {
     // "MC" aparece como título do grupo e dentro de "Subtotal MC" (dois nós de texto) → ≥ 2.
     expect(screen.getAllByText('MC').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('Total geral')).toBeInTheDocument();
+    // Vencimento (fixture: '2026-06-10') exibido como DD/MM/AAAA, não a string ISO crua.
+    expect(screen.getByText('10/06/2026')).toBeInTheDocument();
   });
 
   it('mostra empty state sem recebíveis no período', async () => {
