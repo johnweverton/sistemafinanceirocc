@@ -10,7 +10,11 @@ function fakeQueryBuilder() {
   const builder = {
     insert: vi.fn((payload: unknown) => {
       capturado.inserts.push(payload);
-      return Promise.resolve({ error: null });
+      return {
+        select: vi.fn(() => ({
+          single: vi.fn(() => Promise.resolve({ data: { id: 'resultado-fake-1' }, error: null })),
+        })),
+      };
     }),
     update: vi.fn((payload: unknown) => {
       capturado.updates.push(payload);
@@ -66,6 +70,7 @@ describe('concluirExecucao', () => {
       totalOk: 5,
       totalAlerta: 2,
       totalSemDados: 1,
+      totalAcumulado: 3,
       totalGeralValor: 1234.56,
     });
     expect(capturado.updates).toHaveLength(1);
@@ -73,6 +78,7 @@ describe('concluirExecucao', () => {
     expect(payload.status).toBe('concluido');
     expect(payload.progresso).toBe(100);
     expect(payload.total_ok).toBe(5);
+    expect(payload.total_acumulado).toBe(3);
     expect(payload.total_geral_valor).toBe(1234.56);
   });
 });

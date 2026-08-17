@@ -231,6 +231,10 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
   const ok = filtrados.filter((r) => r.status === 'ok');
   const alerta = filtrados.filter((r) => r.status === 'alerta');
   const semDados = filtrados.filter((r) => r.status === 'sem_dados');
+  // Achado 2026-08-13: produção retida abaixo do mínimo de guias (regra da coordenadora
+  // financeira) — precisa de grupo próprio, senão o médico fica invisível na tela (nenhum boleto
+  // este mês, mas HÁ produção real represada, diferente de "sem dados").
+  const acumulado = filtrados.filter((r) => r.status === 'acumulado');
 
   return (
     <div className="space-y-8">
@@ -284,6 +288,13 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
       />
       <Grupo titulo="Sem dados no sistema" count={semDados.length} cor="gray" resultados={semDados} resumido />
+      <Grupo
+        titulo="Acumulado — aguardando o próximo mês"
+        count={acumulado.length}
+        cor="blue"
+        resultados={acumulado}
+        resumido
+      />
       <div className="flex items-center justify-between border-t border-cc-hairline pt-4">
         <span className="font-mono text-2xs uppercase tracking-wider text-cc-muted">Total geral</span>
         <span className="tabular text-lg font-semibold text-cc-ink">{brl(totalGeral)}</span>
@@ -390,7 +401,7 @@ function Grupo({
 }: {
   titulo: string;
   count: number;
-  cor: 'green' | 'amber' | 'gray';
+  cor: 'green' | 'amber' | 'gray' | 'blue';
   resultados: ExecucaoResultado[];
   mostrarAlertas?: boolean;
   resumido?: boolean;
@@ -410,7 +421,7 @@ function Grupo({
   acaoEmLote?: React.ReactNode;
 }) {
   const barra =
-    cor === 'green' ? 'bg-cc-success' : cor === 'amber' ? 'bg-cc-warning' : 'bg-cc-muted';
+    cor === 'green' ? 'bg-cc-success' : cor === 'amber' ? 'bg-cc-warning' : cor === 'blue' ? 'bg-cc-accent' : 'bg-cc-muted';
   const badge =
     cor === 'green' ? 'badge-green' : cor === 'amber' ? 'badge-amber' : 'badge-slate';
 

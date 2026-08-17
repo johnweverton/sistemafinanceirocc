@@ -61,11 +61,13 @@ describe('processarMedico — modo preco_proprio, forma por_guia (Story 10.1, Dr
   });
 
   it('linear desde a 1ª guia — sem limiar, diferente de base_excedente', () => {
+    // 5 guias (mínimo, GATE 2026-08-13) — ainda testa a linearidade desde a 1ª (sem limiar),
+    // só não pode ser 1 guia isolada porque cairia abaixo do mínimo pra gerar boleto.
     const r = processarMedico({
       medico: medicoPrecoProprio({ forma: 'por_guia', base: null, limiar: null, taxa: 4.0, valorFixo: null }),
-      itens: itens(1),
+      itens: itens(5),
     });
-    expect(r.totalValor).toBe(4);
+    expect(r.totalValor).toBe(20);
   });
 
   it('regra incompleta (sem taxa) → alerta, valor zerado, nunca chuta (PRD §2)', () => {

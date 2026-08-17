@@ -71,6 +71,17 @@ export async function recalcularResultado(
       'RECALCULO_NAO_SUPORTADO',
     );
   }
+  // Achado 2026-08-13: resultado 'acumulado' nunca foi cobrado (produção retida abaixo do
+  // limiar mínimo de guias) — recalcular não faz sentido aqui, o ciclo de acumulação já roda
+  // sozinho a cada nova execução do médico. Bloqueia explicitamente em vez de deixar o Engine
+  // reprocessar sem saldo (perderia o vínculo com `medicos_saldo_acumulado`).
+  if (resultado.status === 'acumulado') {
+    throw new ApiError(
+      422,
+      'Resultado com produção acumulada (abaixo do mínimo de guias) não pode ser recalculado — rode uma nova execução deste médico na competência seguinte.',
+      'RECALCULO_NAO_SUPORTADO',
+    );
+  }
 
   const boletoAtivo = await deps.buscarBoletoEmitido(resultadoId);
   if (boletoAtivo) {
@@ -116,6 +127,10 @@ export async function recalcularResultado(
   const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, execucao.competencia);
   const valorConsultaPediatria = await deps.lerValorConsultaPediatria();
 
+  // `saldoAcumulado` deliberadamente OMITIDO (achado 2026-08-13): este resultado já era
+  // 'ok'/'alerta' (bloqueio acima descarta 'acumulado'), ou seja, qualquer saldo que ele tenha
+  // consumido da primeira vez já foi limpo de `medicos_saldo_acumulado` — não há o que reinjetar
+  // aqui, e o ciclo de acumulação do médico continua rodando normalmente nas próximas execuções.
   const novoResultado = processarMedico(
     {
       medico,

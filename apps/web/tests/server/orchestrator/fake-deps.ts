@@ -9,6 +9,7 @@ import type {
   ClienteContabilidadeFaturamento,
 } from '@cobranca/shared';
 import type { OrchestratorDeps } from '../../../src/server/orchestrator/execucao-orchestrator';
+import type { SaldoAcumuladoPersistido } from '../../../src/server/repositories/saldo-acumulado-repository';
 
 export interface ResultadoEmpresaFake {
   id: string;
@@ -74,6 +75,8 @@ export interface FakeState {
   chamadasProximoLote: number;
   /** Se setado, buscarItens lança para essas producoes (simula falha de rede). */
   producoesComFalha: Set<string>;
+  /** Saldo acumulado por médico (achado 2026-08-13) — mesma semântica de `medicos_saldo_acumulado`. */
+  saldosAcumulados: Map<string, SaldoAcumuladoPersistido>;
 }
 
 export function novoEstado(
@@ -104,6 +107,7 @@ export function novoEstado(
     guiasAnterioresPorMedicoId: {},
     chamadasProximoLote: 0,
     producoesComFalha: new Set(),
+    saldosAcumulados: new Map(),
   };
 }
 
@@ -201,6 +205,7 @@ export function fakeDeps(
         totalOk: null,
         totalAlerta: null,
         totalSemDados: null,
+        totalAcumulado: null,
         totalGeralValor: null,
         empresaId: empresaId ?? null,
         clienteContabilidadeId: clienteContabilidadeId ?? null,
@@ -220,6 +225,7 @@ export function fakeDeps(
     contarResultados: async (id) => state.resultados.get(id)?.length ?? 0,
     gravarResultado: async (id, medicoId, r) => {
       state.resultados.get(id)!.push({ medicoId, r });
+      return `resultado-${proximoId++}`;
     },
     gravarResultadoEmpresa: async (execucaoId, empresaId, r) => {
       const resultadoId = `resultado-empresa-${proximoId++}`;
@@ -248,6 +254,7 @@ export function fakeDeps(
         totalOk: totais.totalOk,
         totalAlerta: totais.totalAlerta,
         totalSemDados: totais.totalSemDados,
+        totalAcumulado: totais.totalAcumulado,
         totalGeralValor: totais.totalGeralValor,
       });
     },
@@ -263,6 +270,13 @@ export function fakeDeps(
     buscarItensPorLote: async (loteExternoId) => {
       if (state.producoesComFalha.has(loteExternoId)) throw new Error('falha de rede simulada');
       return state.itensPorLote[loteExternoId] ?? [];
+    },
+    buscarSaldoAcumulado: async (medicoId) => state.saldosAcumulados.get(medicoId) ?? null,
+    gravarSaldoAcumulado: async (medicoId, saldo, competenciaOrigem) => {
+      state.saldosAcumulados.set(medicoId, { ...saldo, competenciaOrigem });
+    },
+    limparSaldoAcumulado: async (medicoId) => {
+      state.saldosAcumulados.delete(medicoId);
     },
     listarResultados: async (id) => (state.resultados.get(id) ?? []).map((x) => x.r),
     agendarProximoLote: async (id) => {

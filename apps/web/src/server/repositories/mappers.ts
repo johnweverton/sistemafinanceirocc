@@ -636,6 +636,8 @@ export interface ExecucaoRow {
   total_ok: number | null;
   total_alerta: number | null;
   total_sem_dados: number | null;
+  /** Médicos com status 'acumulado' (migration 0048) — opcional em bancos sem a migration. */
+  total_acumulado?: number | null;
   total_geral_valor: number | null;
   /** Execução agregada por empresa (migration 0029) — opcional em bancos sem a migration. */
   empresa_id?: string | null;
@@ -658,6 +660,7 @@ export function toExecucao(row: ExecucaoRow): Execucao {
     totalOk: row.total_ok,
     totalAlerta: row.total_alerta,
     totalSemDados: row.total_sem_dados,
+    totalAcumulado: row.total_acumulado ?? null,
     totalGeralValor: row.total_geral_valor,
     empresaId: row.empresa_id ?? null,
     clienteContabilidadeId: row.cliente_contabilidade_id ?? null,

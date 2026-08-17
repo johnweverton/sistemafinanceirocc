@@ -58,6 +58,7 @@ function execucaoFake(over: Partial<Execucao> & { id: string; competencia: strin
     totalOk: 0,
     totalAlerta: 1,
     totalSemDados: 0,
+    totalAcumulado: 0,
     totalGeralValor: 465.07,
     ...over,
   };

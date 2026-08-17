@@ -21,6 +21,7 @@ import type {
   ExecucaoResultado,
   ClienteContabilidade,
   ClienteContabilidadeFaturamento,
+  SaldoAcumulado,
 } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
 import { processarEmpresa, type ProducaoMedico } from '@/server/engine/processar-empresa';
@@ -45,6 +46,12 @@ import {
   listarResultados,
   listarSelecoes,
 } from '@/server/repositories/execucao-repository';
+import {
+  buscarSaldoAcumulado,
+  gravarSaldoAcumulado,
+  limparSaldoAcumulado,
+  type SaldoAcumuladoPersistido,
+} from '@/server/repositories/saldo-acumulado-repository';
 import { lerValorConsultaPediatria } from '@/server/repositories/config-cobranca-repository';
 import { getServerEnv } from '@/lib/env';
 import { ApiError } from '@/lib/api-error';
@@ -128,7 +135,8 @@ export interface OrchestratorDeps {
   ) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
-  gravarResultado: (execucaoId: string, medicoId: string | null, r: ResultadoMedico) => Promise<void>;
+  /** Devolve o id do resultado criado (rastreabilidade em `medicos_saldo_acumulado`). */
+  gravarResultado: (execucaoId: string, medicoId: string | null, r: ResultadoMedico) => Promise<string>;
   /** Grava o resultado AGREGADO de uma empresa (Story 10.4b) — devolve o id do resultado. */
   gravarResultadoEmpresa: (
     execucaoId: string,
@@ -149,11 +157,28 @@ export interface OrchestratorDeps {
   atualizarProgresso: (execucaoId: string, progresso: number) => Promise<void>;
   concluirExecucao: (
     execucaoId: string,
-    totais: { totalOk: number; totalAlerta: number; totalSemDados: number; totalGeralValor: number },
+    totais: {
+      totalOk: number;
+      totalAlerta: number;
+      totalSemDados: number;
+      totalAcumulado: number;
+      totalGeralValor: number;
+    },
   ) => Promise<void>;
   marcarErro: (execucaoId: string) => Promise<void>;
   guiasExecucaoAnterior: (medicoId: string, competenciaAtual: string) => Promise<number | null>;
   buscarItens: (producaoExternaId: string) => Promise<ItemProducao[]>;
+  /** Saldo de produção retida do médico (achado 2026-08-13) — busca ANTES de chamar o Engine. */
+  buscarSaldoAcumulado: (medicoId: string) => Promise<SaldoAcumuladoPersistido | null>;
+  /** Grava (upsert) o saldo resultante — chamado quando `resultado.status === 'acumulado'`. */
+  gravarSaldoAcumulado: (
+    medicoId: string,
+    saldo: SaldoAcumulado,
+    competenciaOrigem: string,
+    execucaoResultadoId: string,
+  ) => Promise<void>;
+  /** Limpa o saldo — consumido num boleto, ou nunca existiu (no-op nesse caso). */
+  limparSaldoAcumulado: (medicoId: string) => Promise<void>;
   /**
    * Busca itens de um SUB-LOTE do Angiologista (Cateter/Fístula/Angiografia — devolutiva do
    * desenvolvedor, GATE 2026-08-13). Id de lote não é id de produção — usa `loteId=`, nunca
@@ -191,6 +216,9 @@ export function depsPadrao(): OrchestratorDeps {
     guiasExecucaoAnterior,
     buscarItens,
     buscarItensPorLote,
+    buscarSaldoAcumulado,
+    gravarSaldoAcumulado,
+    limparSaldoAcumulado,
     lerValorConsultaPediatria,
     listarResultados: async (id) =>
       (await listarResultados(id)).map((r) => ({
@@ -482,6 +510,10 @@ async function processarUmMedico(
 
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
+    // Achado real 2026-08-13 (regra da coordenadora financeira): produção retida de
+    // competências anteriores por estar abaixo do limiar mínimo de guias — busca ANTES de
+    // processar, o Engine soma com a produção desta competência e decide se bate o limiar.
+    const saldoExistente = await deps.buscarSaldoAcumulado(medico.id);
     const resultado = processarMedico(
       {
         medico,
@@ -495,11 +527,31 @@ async function processarUmMedico(
         itensAngiografia,
         guiasCartaRede,
         competencia,
+        saldoAcumulado: saldoExistente,
+        saldoAcumuladoDesde: saldoExistente?.competenciaOrigem ?? null,
       },
       undefined,
       valorConsultaPediatria,
     );
-    await deps.gravarResultado(execucaoId, medico.id, resultado);
+    const resultadoId = await deps.gravarResultado(execucaoId, medico.id, resultado);
+
+    // Persiste o saldo resultante: todos os buckets em 0 → limpa a linha (consumido/nunca
+    // existiu); algum bucket > 0 → grava, preservando a competência de origem se já havia saldo
+    // (a mesma desde quando começou a acumular) ou começando agora se é a primeira vez.
+    const saldoNovo = resultado.saldoParaProximaCompetencia;
+    if (saldoNovo) {
+      const zerado =
+        saldoNovo.guiasPrincipal === 0 &&
+        saldoNovo.guiasOutrosHospitais === 0 &&
+        saldoNovo.guiasImobilizacoes === 0 &&
+        saldoNovo.valorBasePercentual === 0;
+      if (zerado) {
+        if (saldoExistente) await deps.limparSaldoAcumulado(medico.id);
+      } else {
+        const competenciaOrigem = saldoExistente?.competenciaOrigem ?? competencia;
+        await deps.gravarSaldoAcumulado(medico.id, saldoNovo, competenciaOrigem, resultadoId);
+      }
+    }
   } catch (e) {
     // Falha de infraestrutura ao buscar dados — médico vira alerta, competência segue.
     await deps.gravarResultado(execucaoId, selecao.medicoId, {
@@ -560,6 +612,9 @@ async function processarExecucaoEmpresa(
     totalOk: resultado.status === 'ok' ? 1 : 0,
     totalAlerta: resultado.status === 'alerta' ? 1 : 0,
     totalSemDados: 0,
+    // Acúmulo (GATE 2026-08-13) é escopo de médico individual — execução agregada por empresa
+    // nunca fica 'acumulado' (fora de escopo, ver Dev Notes da feature).
+    totalAcumulado: 0,
     totalGeralValor: resultado.totalValor,
   });
 
@@ -625,6 +680,9 @@ async function processarExecucaoClienteContabilidade(
     totalOk: status === 'ok' ? 1 : 0,
     totalAlerta: status === 'alerta' ? 1 : 0,
     totalSemDados: 0,
+    // Acúmulo (GATE 2026-08-13) é escopo de médico individual — cliente contábil nunca fica
+    // 'acumulado' (fora de escopo, ver Dev Notes da feature).
+    totalAcumulado: 0,
     totalGeralValor: resultado.valor,
   });
 
@@ -637,11 +695,12 @@ async function finalizar(execucaoId: string, deps: OrchestratorDeps): Promise<vo
     (acc, r) => {
       if (r.status === 'ok') acc.totalOk += 1;
       else if (r.status === 'alerta') acc.totalAlerta += 1;
+      else if (r.status === 'acumulado') acc.totalAcumulado += 1;
       else acc.totalSemDados += 1;
       acc.totalGeralValor += r.totalValor;
       return acc;
     },
-    { totalOk: 0, totalAlerta: 0, totalSemDados: 0, totalGeralValor: 0 },
+    { totalOk: 0, totalAlerta: 0, totalSemDados: 0, totalAcumulado: 0, totalGeralValor: 0 },
   );
   await deps.concluirExecucao(execucaoId, totais);
 }

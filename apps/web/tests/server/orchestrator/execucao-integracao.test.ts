@@ -11,46 +11,21 @@ import {
 import { novoEstado, medicoFake, empresaFake, fakeDeps, type FakeState } from './fake-deps';
 import { procedimentosDraA } from '../engine/fixtures';
 
-// Médico OK: poucos procedimentos, modo bate, todos com valor → status ok.
+// Médico OK: poucos procedimentos, modo bate, todos com valor → status ok. 5 atendimentos
+// DISTINTOS (não 3) desde o GATE 2026-08-13 — mínimo de guias combinadas pra gerar boleto.
 function procedimentosOk(): ItemProducao[] {
-  return [
-    {
-      data: '2026-06-10',
-      pacienteNome: 'Paciente 1',
-      atendimentoExternoId: 'AT-1',
-      codigoProcedimento: '1',
-      descricaoProcedimento: 'Proc',
-      statusOrigem: 'Devidamente Pago',
-      viaAcesso: false,
-      tipoAto: 'Eletivo',
-      valorCobradoOrigem: 100,
-      valorPagoOrigem: 100,
-    },
-    {
-      data: '2026-06-10',
-      pacienteNome: 'Paciente 1',
-      atendimentoExternoId: 'AT-1',
-      codigoProcedimento: '2',
-      descricaoProcedimento: 'Proc',
-      statusOrigem: 'Devidamente Pago',
-      viaAcesso: false,
-      tipoAto: 'Eletivo',
-      valorCobradoOrigem: 100,
-      valorPagoOrigem: 100,
-    },
-    {
-      data: '2026-06-10',
-      pacienteNome: 'Paciente 1',
-      atendimentoExternoId: 'AT-1',
-      codigoProcedimento: '3',
-      descricaoProcedimento: 'Proc',
-      statusOrigem: 'Devidamente Pago',
-      viaAcesso: false,
-      tipoAto: 'Eletivo',
-      valorCobradoOrigem: 100,
-      valorPagoOrigem: 100,
-    },
-  ];
+  return Array.from({ length: 5 }, (_, i) => ({
+    data: '2026-06-10',
+    pacienteNome: `Paciente ${i + 1}`,
+    atendimentoExternoId: `AT-${i + 1}`,
+    codigoProcedimento: '1',
+    descricaoProcedimento: 'Proc',
+    statusOrigem: 'Devidamente Pago',
+    viaAcesso: false,
+    tipoAto: 'Eletivo',
+    valorCobradoOrigem: 100,
+    valorPagoOrigem: 100,
+  }));
 }
 
 function montarCenario(): { state: FakeState; selecoes: any[] } {
@@ -145,11 +120,14 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
       statusHapvida: 'credenciado',
     });
     const state = novoEstado([pediatra]);
-    // 3 guias credenciado (até 30 → R$263,59) em produção separada da de consultas.
+    // 5 guias credenciado (mínimo, GATE 2026-08-13; até 30 → R$263,59) em produção separada da
+    // de consultas.
     state.itensPorProducao['p-guias'] = [
       { data: '2026-06-01', pacienteNome: 'G1', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
       { data: '2026-06-02', pacienteNome: 'G2', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
       { data: '2026-06-03', pacienteNome: 'G3', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+      { data: '2026-06-04', pacienteNome: 'G4', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+      { data: '2026-06-05', pacienteNome: 'G5', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
     ];
     // 10 consultas × R$3,00 (default) = R$30,00 — lote SEPARADO, nunca somado às guias.
     state.itensPorProducao['p-consultas'] = Array.from({ length: 10 }, (_, i) => ({
@@ -174,13 +152,65 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     await processarProximoLote(exec.id, deps);
 
     const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
-    expect(resultado.guias).toBe(3);
+    expect(resultado.guias).toBe(5);
     expect(resultado.totalValor).toBeCloseTo(263.59 + 30, 2);
     expect(resultado.subtotais.find((s) => s.classe === 'CONSULTA_PEDIATRIA')).toMatchObject({
       guias: 10,
       valor: 30,
     });
     expect(resultado.status).toBe('ok');
+  });
+
+  // Achado 2026-08-13 (regra da coordenadora financeira): guias abaixo do mínimo NÃO travam as
+  // consultas — elas são um componente independente (unidade "consulta", não "guia") e sempre
+  // bilham quando existirem, mesmo com as guias hospitalares sendo retidas em paralelo. Senão um
+  // pediatra que só faz consultas ambulatoriais (guias sempre 0) nunca mais seria cobrado.
+  it('Story 10.2 + GATE 2026-08-13 — guias abaixo do mínimo ficam retidas, mas consultas bilham mesmo assim', async () => {
+    const pediatra = medicoFake({
+      id: 'm-pediatra-2',
+      cpf: '77788899900',
+      nome: 'Dr. Retido',
+      especialidade: 'Pediatria',
+      statusHapvida: 'credenciado',
+    });
+    const state = novoEstado([pediatra]);
+    // Só 3 guias — abaixo do mínimo de 5 (GATE 2026-08-13).
+    state.itensPorProducao['p-guias'] = [
+      { data: '2026-06-01', pacienteNome: 'G1', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+      { data: '2026-06-02', pacienteNome: 'G2', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+      { data: '2026-06-03', pacienteNome: 'G3', atendimentoExternoId: null, codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar', statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo', valorCobradoOrigem: 100, valorPagoOrigem: 100 },
+    ];
+    state.itensPorProducao['p-consultas'] = Array.from({ length: 10 }, (_, i) => ({
+      data: '2026-06-10', pacienteNome: `Consulta ${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30721033', descricaoProcedimento: 'Consulta em consultório',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 150, valorPagoOrigem: 130,
+    }));
+
+    const selecoes = [
+      {
+        medicoId: 'm-pediatra-2',
+        producaoExternaId: 'p-guias',
+        producaoNome: 'Junho 2026',
+        producaoConsultasExternaId: 'p-consultas',
+        producaoConsultasNome: 'Consultas Junho 2026',
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    // Só as consultas bilham este mês — as 3 guias ficam retidas (não aparecem em subtotais/valor).
+    expect(resultado.totalValor).toBe(30);
+    expect(resultado.status).toBe('ok');
+    expect(resultado.subtotais).toEqual([{ classe: 'CONSULTA_PEDIATRIA', guias: 10, valor: 30, faixa: expect.any(String) }]);
+    expect(resultado.alertas.some((a) => a.includes('abaixo do mínimo'))).toBe(true);
+
+    // O saldo fica retido pro médico, pronto pra somar na próxima competência processada.
+    const saldo = state.saldosAcumulados.get('m-pediatra-2');
+    expect(saldo?.guiasPrincipal).toBe(3);
   });
 });
 

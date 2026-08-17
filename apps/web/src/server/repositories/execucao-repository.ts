@@ -236,27 +236,34 @@ export async function contarResultados(execucaoId: string): Promise<number> {
 }
 
 /** Grava o resultado de um médico (resultado puro do Engine + ids). */
+/** Devolve o id do resultado criado — usado pra rastreabilidade em `medicos_saldo_acumulado`
+ *  (`execucao_resultado_id_origem`, migration 0048) quando o resultado fica 'acumulado'. */
 export async function gravarResultado(
   execucaoId: string,
   medicoId: string | null,
   r: ResultadoMedico,
-): Promise<void> {
+): Promise<string> {
   const db = getSupabaseAdmin();
-  const { error } = await db.from('execucao_resultados').insert({
-    execucao_id: execucaoId,
-    medico_id: medicoId,
-    cpf: r.cpf,
-    nome: r.nome,
-    procedimentos: r.procedimentos,
-    cirurgias: r.cirurgias,
-    guias: r.guias,
-    guias_consolidado: r.guiasConsolidado,
-    subtotais: r.subtotais,
-    total_valor: r.totalValor,
-    status: r.status,
-    alertas: r.alertas,
-  });
+  const { data, error } = await db
+    .from('execucao_resultados')
+    .insert({
+      execucao_id: execucaoId,
+      medico_id: medicoId,
+      cpf: r.cpf,
+      nome: r.nome,
+      procedimentos: r.procedimentos,
+      cirurgias: r.cirurgias,
+      guias: r.guias,
+      guias_consolidado: r.guiasConsolidado,
+      subtotais: r.subtotais,
+      total_valor: r.totalValor,
+      status: r.status,
+      alertas: r.alertas,
+    })
+    .select('id')
+    .single();
   if (error) throw new ApiError(500, 'Falha ao gravar resultado', 'DB_ERROR', { error: error.message });
+  return (data as { id: string }).id;
 }
 
 /**
@@ -471,6 +478,8 @@ export interface TotaisExecucao {
   totalOk: number;
   totalAlerta: number;
   totalSemDados: number;
+  /** Médicos com status 'acumulado' (migration 0048) — produção retida, sem boleto. */
+  totalAcumulado: number;
   totalGeralValor: number;
 }
 
@@ -485,6 +494,7 @@ export async function concluirExecucao(execucaoId: string, totais: TotaisExecuca
       total_ok: totais.totalOk,
       total_alerta: totais.totalAlerta,
       total_sem_dados: totais.totalSemDados,
+      total_acumulado: totais.totalAcumulado,
       total_geral_valor: totais.totalGeralValor,
     })
     .eq('id', execucaoId);
@@ -503,6 +513,11 @@ export async function marcarErro(execucaoId: string): Promise<void> {
 /**
  * Guias do médico na execução CONCLUÍDA imediatamente anterior (competência < atual),
  * para alimentar a detecção de variação anômala (PRD §8.5). null se não houver.
+ *
+ * Exclui resultados 'acumulado' (migration 0048, achado 2026-08-13): produção retida abaixo do
+ * limiar não é um número comparável a uma competência normal — usaria pra detectar variação
+ * anômala compararia, ex., 3 guias retidas contra a média real do médico, disparando alerta
+ * falso. Pega a última competência com resultado REALMENTE processado (ok/alerta/sem_dados).
  */
 export async function guiasExecucaoAnterior(
   medicoId: string,
@@ -515,6 +530,7 @@ export async function guiasExecucaoAnterior(
     .select('guias, execucoes!inner(competencia, status)')
     .eq('medico_id', medicoId)
     .eq('execucoes.status', 'concluido')
+    .neq('status', 'acumulado')
     .lt('execucoes.competencia', competenciaAtual)
     .order('execucoes(competencia)', { ascending: false })
     .limit(1)

@@ -18,6 +18,35 @@ export interface ResultadoFaixa {
 
 import type { ItemProducao } from '../types/integracao';
 
+/**
+ * Saldo de produção retida abaixo do limiar mínimo de guias (achado real 2026-08-13, regra da
+ * coordenadora financeira): quando o total combinado de guias do médico numa competência é menor
+ * que 5, o motor NÃO gera boleto — devolve este saldo pro orquestrador persistir
+ * (`medicos_saldo_acumulado`), e ele volta como ENTRADA na competência seguinte, somado à
+ * produção nova, até o total bater 5+ (aí sim gera 1 boleto só, com a soma).
+ *
+ * `guiasPrincipal` cobre tanto a classe HAPVIDA_CRED/NAO_CRED de um médico normal quanto o total
+ * combinado (Cateter+Fístula+Angiografia+Carta de Rede) do Angiologista — os dois casos convergem
+ * pra UMA classe/tabela de preço só, então um campo serve pros dois sem caso especial.
+ * `valorBasePercentual` só é relevante no modo `percentual_producao`: soma de `valorCobradoOrigem`
+ * retida, pra manter `base × percentual` correto ao somar com o mês que bate o limiar — não dá
+ * pra somar dois VALORES FINAIS já calculados de meses diferentes (tabela por faixa e
+ * base+excedente não são lineares, só a base bruta é).
+ *
+ * SEM campo de consultas de pediatria de propósito: consultas NUNCA ficam retidas — continuam
+ * sendo cobradas todo mês em que existirem, independente do limiar de guias (mesmo
+ * comportamento pré-existente de "sem guias hospitalares mas com consultas → cobra só as
+ * consultas", `processarMedico`). Se o limiar de guias também retivesse consultas, um pediatra
+ * que só faz consultas ambulatoriais (guias sempre 0) NUNCA mais seria cobrado — regressão real,
+ * não um caso hipotético.
+ */
+export interface SaldoAcumulado {
+  guiasPrincipal: number;
+  guiasOutrosHospitais: number;
+  guiasImobilizacoes: number;
+  valorBasePercentual: number;
+}
+
 /** Entrada do processamento de um médico — dados já buscados (sem I/O no Engine). */
 export interface EntradaProcessamentoMedico {
   medico: Pick<
@@ -83,6 +112,20 @@ export interface EntradaProcessamentoMedico {
    * unidade do Engine que não exercitam este filtro podem omitir.
    */
   competencia?: string;
+  /**
+   * Saldo de produção retida da(s) competência(s) anterior(es) (achado 2026-08-13) — o
+   * orquestrador busca em `medicos_saldo_acumulado` e injeta aqui ANTES de chamar o Engine.
+   * `undefined`/`null` = médico sem saldo pendente (caso comum). O Engine soma com a produção
+   * desta competência e decide se bate o limiar de 5 guias ou se continua acumulando.
+   */
+  saldoAcumulado?: SaldoAcumulado | null;
+  /**
+   * Competência (AAAA-MM) em que `saldoAcumulado` começou a acumular — só pra compor o texto do
+   * alerta informativo ("inclui guias acumuladas desde ..."). O Engine NUNCA decide/atualiza essa
+   * competência (é o orquestrador quem sabe se está mantendo a origem antiga ou começando uma
+   * nova) — por isso não faz parte de `SaldoAcumulado` nem volta em `saldoParaProximaCompetencia`.
+   */
+  saldoAcumuladoDesde?: string | null;
 }
 
 /** Resultado puro do Engine — sem ids de banco (preenchidos pelo orquestrador ao persistir). */
@@ -97,4 +140,13 @@ export interface ResultadoMedico {
   totalValor: number;
   status: ExecucaoResultado['status'];
   alertas: string[];
+  /**
+   * Estado FINAL do saldo retido após este processamento — presente sempre que havia
+   * `saldoAcumulado` de entrada OU o resultado ficou `'acumulado'`. Cada bucket é 0 se foi
+   * consumido/cobrado agora, mantém o valor anterior se o lote correspondente não foi
+   * selecionado nesta execução (nunca chuta — não mexe em saldo que não foi reconfirmado), ou
+   * soma se ainda está abaixo do limiar. O orquestrador decide: todos os buckets em 0 → limpa a
+   * linha (`limparSaldoAcumulado`); algum bucket > 0 → grava (`gravarSaldoAcumulado`).
+   */
+  saldoParaProximaCompetencia?: SaldoAcumulado | null;
 }

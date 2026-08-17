@@ -8,13 +8,13 @@ import type {
   Subtotal,
   Classe,
   ItemProducao,
+  SaldoAcumulado,
 } from '@cobranca/shared';
 import {
   itensValidos,
   contarGuiasProducao,
   consolidarProducao,
   detectarModoProducao,
-  contarConsultasProducao,
   isPediatra,
   isAngiologista,
   filtrarPorCompetencia,
@@ -30,14 +30,31 @@ import {
 import { aplicarRegraPreco } from './regra-preco';
 
 /**
+ * Limiar mínimo de guias combinadas pra gerar boleto (achado real 2026-08-13, regra da
+ * coordenadora financeira) — abaixo disso, a produção fica retida em vez de virar boleto. Ver
+ * `SaldoAcumulado` (engine-contracts) pro desenho completo de como o saldo atravessa competências.
+ */
+const LIMIAR_MINIMO_GUIAS = 5;
+
+/** Saldo "vazio" — usado quando `entrada.saldoAcumulado` é null/undefined (médico sem retenção). */
+const SALDO_VAZIO: SaldoAcumulado = {
+  guiasPrincipal: 0,
+  guiasOutrosHospitais: 0,
+  guiasImobilizacoes: 0,
+  valorBasePercentual: 0,
+};
+
+/**
  * Processa um médico de ponta a ponta (PRD §8.3):
  *   1. valida linhas (PRD §5.6)
  *   2. conta guias e cirurgias (PRD §5.2)
  *   3. roda a trava de conferência (PRD §5.3, §5.6, §8.5)
- *   4. aplica a tabela de preço por classe e soma (PRD §5.1, §5.5)
+ *   4. combina com saldo retido de competências anteriores (achado 2026-08-13) e decide se bate o
+ *      limiar mínimo de guias — se não bater, retém tudo de novo em vez de gerar boleto
+ *   5. aplica a tabela de preço por classe e soma (PRD §5.1, §5.5)
  *
- * Sem procedimentos válidos → status 'sem_dados' (PRD §5.6).
- * Alertas de negócio são VALORES retornados, não exceções (Coding Standard).
+ * Sem procedimentos válidos E sem saldo retido → status 'sem_dados' (PRD §5.6). Alertas de
+ * negócio são VALORES retornados, não exceções (Coding Standard).
  */
 export function processarMedico(
   entrada: EntradaProcessamentoMedico,
@@ -56,6 +73,8 @@ export function processarMedico(
     itensAngiografia,
     guiasCartaRede,
     competencia,
+    saldoAcumulado,
+    saldoAcumuladoDesde,
   } = entrada;
 
   // Angiologista NÃO tem lote principal (GATE 2026-08-07) — a produção inteira vem de Cateter
@@ -67,19 +86,36 @@ export function processarMedico(
       medico,
       { itensCateter, itensFistula, itensAngiografia, guiasCartaRede: guiasCartaRede ?? undefined },
       tabela,
+      saldoAcumulado,
+      saldoAcumuladoDesde,
     );
   }
 
   const { validos } = itensValidos(itens);
   const consultasValidas = itensConsultas ? itensValidos(itensConsultas).validos : [];
+  const nConsultas = consultasValidas.length;
+  const valorConsultas = nConsultas * valorConsultaPediatria;
+  // Consultas NUNCA ficam retidas pelo limiar de guias (ver doc de `SaldoAcumulado`) — sempre que
+  // existirem, bilham no mesmo mês, mesmo que as guias hospitalares estejam sendo acumuladas.
+  const subtotalConsultas: Subtotal | null =
+    isPediatra(medico.especialidade) && nConsultas > 0
+      ? {
+          classe: 'CONSULTA_PEDIATRIA',
+          guias: nConsultas,
+          valor: valorConsultas,
+          faixa: `${nConsultas} consultas × R$${valorConsultaPediatria.toFixed(2)}`,
+        }
+      : null;
 
-  if (validos.length === 0) {
+  const s = saldoAcumulado ?? SALDO_VAZIO;
+  const temSaldoAnterior =
+    s.guiasPrincipal > 0 || s.guiasOutrosHospitais > 0 || s.guiasImobilizacoes > 0 || s.valorBasePercentual > 0;
+
+  if (validos.length === 0 && !temSaldoAnterior) {
     // Story 10.2: pediatra sem guias hospitalares na competência, mas COM consultas
     // ambulatoriais (lote separado) — cobra só o componente de consultas, em vez de cair em
     // 'sem_dados' e perder o valor silenciosamente (PRD §2, nunca chuta E nunca perde valor).
-    if (isPediatra(medico.especialidade) && consultasValidas.length > 0) {
-      const nConsultas = consultasValidas.length;
-      const valorConsultas = nConsultas * valorConsultaPediatria;
+    if (subtotalConsultas) {
       return {
         cpf: medico.cpf ?? '',
         nome: medico.nome,
@@ -87,14 +123,7 @@ export function processarMedico(
         cirurgias: 0,
         guias: 0,
         guiasConsolidado: 0,
-        subtotais: [
-          {
-            classe: 'CONSULTA_PEDIATRIA',
-            guias: nConsultas,
-            valor: valorConsultas,
-            faixa: `${nConsultas} consultas × R$${valorConsultaPediatria.toFixed(2)}`,
-          },
-        ],
+        subtotais: [subtotalConsultas],
         totalValor: valorConsultas,
         status: 'ok',
         alertas: [],
@@ -103,7 +132,7 @@ export function processarMedico(
     return {
       cpf: medico.cpf ?? '', // snapshot informativo — médico importado pode não ter CPF (Épico 5 §3.4)
       nome: medico.nome,
-      procedimentos: 0, // mapeia itens totais? PRD original usava length validos, let's keep it 0.
+      procedimentos: 0,
       cirurgias: 0,
       guias: 0,
       guiasConsolidado: 0,
@@ -117,68 +146,19 @@ export function processarMedico(
   const { guias, cirurgias } = contarGuiasProducao(validos, medico.especialidade);
   const guiasConsolidado = consolidarProducao(validos, medico.especialidade);
   const modoObservado = detectarModoProducao(validos);
+  // Compara SEMPRE a produção BRUTA deste mês (não o total combinado com saldo) contra o
+  // histórico — é o número comparável a uma competência normal. `historicoGuias` (guiasExecucaoAnterior)
+  // já exclui resultados 'acumulado' (não é produção real comparável), mas pode refletir um total
+  // JÁ COMBINADO de um mês que consumiu saldo — limitação conhecida, aceitável (é só um alerta
+  // informativo, nunca bloqueia).
   const alertas = checar(validos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade, modoObservado);
 
-  const subtotais: Subtotal[] = [];
-  let totalValor = 0;
-
-  if (medico.modoCobranca === 'percentual_producao') {
-    // Story 6.2 — percentual × valor COBRADO da produção (GATE do dono 2026-07-08):
-    // base = Σ valorCobradoOrigem dos itens VÁLIDOS (glosados ENTRAM — status nunca filtra,
-    // decisão 5 do Épico 5). Contagem e trava de conferência acima seguem rodando: são
-    // diagnóstico, não preço. O sistema NUNCA chuta (PRD §2) — base incompleta vira alerta.
-    const percentual = medico.percentualProducao ?? 0;
-    let base = 0;
-    let itensSemValor = 0;
-    for (const item of validos) {
-      if (item.valorCobradoOrigem != null) base += item.valorCobradoOrigem;
-      else itensSemValor++;
-    }
-
-    if (percentual <= 0) {
-      alertas.push(
-        'Modo percentual sem percentual configurado: valor zerado, corrigir cadastro do médico.',
-      );
-    }
-    if (itensSemValor > 0) {
-      alertas.push(
-        `${itensSemValor} item(ns) sem valor cobrado na origem: base do percentual SUBCONTADA, verificar.`,
-      );
-    }
-    if (base <= 0) {
-      alertas.push('Base de produção zerada: nenhum valor cobrado na origem, verificar.');
-    }
-
-    // Arredonda para centavos: base × (percentual/100) com 2 casas.
-    totalValor = Math.round(base * percentual) / 100;
-    subtotais.push({
-      classe: 'PERCENTUAL_PRODUCAO',
-      guias,
-      valor: totalValor,
-      faixa: `${percentual}% × R$${base.toFixed(2)} (produção cobrada)`,
-    });
-  } else if (medico.modoCobranca === 'preco_proprio') {
-    // Story 10.1 — GATE do dono (2026-07-20): preço negociado fora da tabela de faixas
-    // (Dr. Ezequiel, Jansen, Nelson, Carlos Batista, Jefferson). Contagem e trava de
-    // conferência acima seguem rodando: são diagnóstico, não preço. `aplicarRegraPreco`
-    // (extraída na Story 10.4b) nunca chuta valor — regra ausente/incompleta vira alerta.
-    const resultado = aplicarRegraPreco(medico.regraPreco, guias);
-    totalValor = resultado.valor;
-    alertas.push(...resultado.alertas);
-    if (resultado.alertas.length === 0) {
-      subtotais.push({ classe: 'PRECO_PROPRIO', guias, valor: resultado.valor, faixa: resultado.subtotalFaixa });
-    }
-  } else {
-    // Story 10.5 — OUTROS_HOSPITAIS/IMOBILIZACOES vêm de um LOTE SEPARADO (produção distinta na
-    // origem, mesmo padrão do lote de consultas do pediatra — Story 10.2), com contagem e tabela
-    // de preço PRÓPRIAS. Antes desta story o motor reaproveitava a MESMA `guias` (do lote
-    // principal) para TODAS as classes do médico — cobrando a mesma produção 2x em tabelas
-    // diferentes (bug real: Dr. Marcel Rolim Queiroz — 50 guias do lote principal aplicadas
-    // tanto em HAPVIDA_CRED quanto em OUTROS_HOSPITAIS, em vez de 42 Hapvida + 19 Outros
-    // Hospitais, cada um na sua própria tabela). Nunca chuta (PRD §2): se o médico está
-    // configurado para a classe mas o lote separado não foi selecionado nesta execução, vira
-    // alerta explícito em vez de reaproveitar a contagem do lote principal.
-    const guiasPorLoteSecundario: Partial<Record<Classe, number>> = {};
+  // Lotes secundários (Outros Hospitais/Imobilizações) — só no modo faixa_guias (mesmo escopo de
+  // sempre: percentual_producao/preco_proprio nunca cruzaram com essas classes, Story 10.5).
+  const ehFaixaGuias = medico.modoCobranca !== 'percentual_producao' && medico.modoCobranca !== 'preco_proprio';
+  let guiasOutrosHospitaisEsteMes: number | undefined;
+  let guiasImobilizacoesEsteMes: number | undefined;
+  if (ehFaixaGuias) {
     if (medico.fazOutrosHospitais) {
       if (itensOutrosHospitais !== undefined) {
         // Story 10.6: na origem, o lote de Outros Hospitais não abre uma produção por mês como
@@ -189,10 +169,7 @@ export function processarMedico(
         const { itensDaCompetencia, ignoradosPorCompetencia } = competencia
           ? filtrarPorCompetencia(itensOutrosHospitais, competencia)
           : { itensDaCompetencia: itensOutrosHospitais, ignoradosPorCompetencia: 0 };
-        guiasPorLoteSecundario.OUTROS_HOSPITAIS = contarGuiasProducao(
-          itensDaCompetencia,
-          medico.especialidade,
-        ).guias;
+        guiasOutrosHospitaisEsteMes = contarGuiasProducao(itensDaCompetencia, medico.especialidade).guias;
         if (ignoradosPorCompetencia > 0) {
           alertas.push(
             `${ignoradosPorCompetencia} item(ns) do lote de Outros Hospitais são de outra ` +
@@ -207,20 +184,149 @@ export function processarMedico(
     }
     if (medico.fazImobilizacoes) {
       if (itensImobilizacoes !== undefined) {
-        guiasPorLoteSecundario.IMOBILIZACOES = contarGuiasProducao(
-          itensImobilizacoes,
-          medico.especialidade,
-        ).guias;
+        guiasImobilizacoesEsteMes = contarGuiasProducao(itensImobilizacoes, medico.especialidade).guias;
       } else {
         alertas.push(
           'Médico faz Imobilizações mas o lote separado de produção não foi selecionado nesta execução. Guias de Imobilizações NÃO cobradas, selecionar a produção correspondente.',
         );
       }
     }
+  }
+
+  // Base do percentual (este mês) — Story 6.2, GATE do dono 2026-07-08: percentual × valor
+  // COBRADO da produção. Base = Σ valorCobradoOrigem dos itens VÁLIDOS (glosados ENTRAM — status
+  // nunca filtra, decisão 5 do Épico 5).
+  let baseEsteMes = 0;
+  let itensSemValor = 0;
+  if (medico.modoCobranca === 'percentual_producao') {
+    for (const item of validos) {
+      if (item.valorCobradoOrigem != null) baseEsteMes += item.valorCobradoOrigem;
+      else itensSemValor++;
+    }
+  }
+
+  // --- Combina com o saldo retido (achado 2026-08-13) ---
+  // "Ativo" = o lote foi de fato selecionado/computado nesta execução. Se não foi (undefined),
+  // qualquer saldo daquele bucket fica INTOCADO — nunca chuta um número que não foi reconfirmado
+  // nesta competência, mesmo que o resto do médico esteja sendo cobrado agora.
+  const guiasPrincipalTotal = guias + s.guiasPrincipal;
+  const outrosHospitaisAtivo = guiasOutrosHospitaisEsteMes !== undefined;
+  const guiasOutrosHospitaisTotal = outrosHospitaisAtivo ? guiasOutrosHospitaisEsteMes! + s.guiasOutrosHospitais : undefined;
+  const imobilizacoesAtivo = guiasImobilizacoesEsteMes !== undefined;
+  const guiasImobilizacoesTotal = imobilizacoesAtivo ? guiasImobilizacoesEsteMes! + s.guiasImobilizacoes : undefined;
+  const valorBasePercentualTotal = baseEsteMes + s.valorBasePercentual;
+
+  // Limiar considera só os buckets ATIVOS desta execução — um saldo intocado de um lote não
+  // selecionado não conta pra decidir SE cobra os demais buckets agora.
+  const guiasParaLimiar = guiasPrincipalTotal + (guiasOutrosHospitaisTotal ?? 0) + (guiasImobilizacoesTotal ?? 0);
+  const guiasAcumuladasAntes =
+    s.guiasPrincipal + (outrosHospitaisAtivo ? s.guiasOutrosHospitais : 0) + (imobilizacoesAtivo ? s.guiasImobilizacoes : 0);
+
+  if (guiasParaLimiar < LIMIAR_MINIMO_GUIAS) {
+    const saldoNovo: SaldoAcumulado = {
+      guiasPrincipal: guiasPrincipalTotal,
+      guiasOutrosHospitais: outrosHospitaisAtivo ? guiasOutrosHospitaisTotal! : s.guiasOutrosHospitais,
+      guiasImobilizacoes: imobilizacoesAtivo ? guiasImobilizacoesTotal! : s.guiasImobilizacoes,
+      valorBasePercentual: medico.modoCobranca === 'percentual_producao' ? valorBasePercentualTotal : s.valorBasePercentual,
+    };
+    const alertaAcumulo =
+      `${guiasParaLimiar} guia(s) combinada(s) abaixo do mínimo de ${LIMIAR_MINIMO_GUIAS} — produção acumulada, ` +
+      `aguardando o próximo mês em que o médico for processado` +
+      (saldoAcumuladoDesde ? ` (acumulando desde ${saldoAcumuladoDesde})` : '') +
+      '.';
+
+    if (subtotalConsultas) {
+      return {
+        cpf: medico.cpf ?? '',
+        nome: medico.nome,
+        procedimentos: validos.length,
+        cirurgias,
+        guias: guiasParaLimiar,
+        guiasConsolidado,
+        subtotais: [subtotalConsultas],
+        totalValor: valorConsultas,
+        status: 'ok',
+        alertas: [...alertas, alertaAcumulo],
+        saldoParaProximaCompetencia: saldoNovo,
+      };
+    }
+    return {
+      cpf: medico.cpf ?? '',
+      nome: medico.nome,
+      procedimentos: validos.length,
+      cirurgias,
+      guias: guiasParaLimiar,
+      guiasConsolidado,
+      subtotais: [],
+      totalValor: 0,
+      status: 'acumulado',
+      alertas: [...alertas, alertaAcumulo],
+      saldoParaProximaCompetencia: saldoNovo,
+    };
+  }
+
+  // --- Bate o limiar: cobra normalmente, com os totais COMBINADOS (este mês + saldo) ---
+  const notaAcumulo =
+    guiasAcumuladasAntes > 0
+      ? ` — inclui ${guiasAcumuladasAntes} guia(s) acumulada(s)${saldoAcumuladoDesde ? ` desde ${saldoAcumuladoDesde}` : ''}`
+      : '';
+
+  const subtotais: Subtotal[] = [];
+  let totalValor = 0;
+
+  if (medico.modoCobranca === 'percentual_producao') {
+    const percentual = medico.percentualProducao ?? 0;
+    if (percentual <= 0) {
+      alertas.push(
+        'Modo percentual sem percentual configurado: valor zerado, corrigir cadastro do médico.',
+      );
+    }
+    if (itensSemValor > 0) {
+      alertas.push(
+        `${itensSemValor} item(ns) sem valor cobrado na origem: base do percentual SUBCONTADA, verificar.`,
+      );
+    }
+    if (valorBasePercentualTotal <= 0) {
+      alertas.push('Base de produção zerada: nenhum valor cobrado na origem, verificar.');
+    }
+
+    // Arredonda para centavos: base × (percentual/100) com 2 casas.
+    totalValor = Math.round(valorBasePercentualTotal * percentual) / 100;
+    subtotais.push({
+      classe: 'PERCENTUAL_PRODUCAO',
+      guias: guiasPrincipalTotal,
+      valor: totalValor,
+      faixa: `${percentual}% × R$${valorBasePercentualTotal.toFixed(2)} (produção cobrada)${notaAcumulo}`,
+    });
+  } else if (medico.modoCobranca === 'preco_proprio') {
+    // Story 10.1 — GATE do dono (2026-07-20): preço negociado fora da tabela de faixas
+    // (Dr. Ezequiel, Jansen, Nelson, Carlos Batista, Jefferson). `aplicarRegraPreco` nunca chuta
+    // valor — regra ausente/incompleta vira alerta. Forma 'fixo': o valor não muda com o
+    // acúmulo, só o MOMENTO de cobrar (GATE 2026-08-13) — `aplicarRegraPreco` já ignora
+    // `quantidade` nessa forma, então basta ter chegado até aqui (limiar batido).
+    const resultado = aplicarRegraPreco(medico.regraPreco, guiasPrincipalTotal);
+    totalValor = resultado.valor;
+    alertas.push(...resultado.alertas);
+    if (resultado.alertas.length === 0) {
+      subtotais.push({
+        classe: 'PRECO_PROPRIO',
+        guias: guiasPrincipalTotal,
+        valor: resultado.valor,
+        faixa: `${resultado.subtotalFaixa}${notaAcumulo}`,
+      });
+    }
+  } else {
+    // Story 10.5 — OUTROS_HOSPITAIS/IMOBILIZACOES vêm de um LOTE SEPARADO, com contagem e tabela
+    // de preço PRÓPRIAS. Nunca chuta (PRD §2): se o médico está configurado para a classe mas o
+    // lote separado não foi selecionado nesta execução, vira alerta explícito (já registrado
+    // acima) em vez de reaproveitar a contagem do lote principal.
+    const guiasPorLoteSecundario: Partial<Record<Classe, number>> = {};
+    if (outrosHospitaisAtivo) guiasPorLoteSecundario.OUTROS_HOSPITAIS = guiasOutrosHospitaisTotal!;
+    if (imobilizacoesAtivo) guiasPorLoteSecundario.IMOBILIZACOES = guiasImobilizacoesTotal!;
 
     for (const classe of classesDoMedico(medico)) {
       const ehClasseSecundaria = classe === 'OUTROS_HOSPITAIS' || classe === 'IMOBILIZACOES';
-      const guiasClasse = ehClasseSecundaria ? guiasPorLoteSecundario[classe] : guias;
+      const guiasClasse = ehClasseSecundaria ? guiasPorLoteSecundario[classe] : guiasPrincipalTotal;
       if (guiasClasse == null) {
         // Lote separado não informado (alerta já registrado acima) — nunca chuta valor.
         continue;
@@ -231,7 +337,7 @@ export function processarMedico(
         ? tabelaSemExcedentePorGuia(tabela[classe])
         : tabela[classe];
       const { valor, faixa } = valorDaFaixa(tabelaClasse, guiasClasse);
-      subtotais.push({ classe, guias: guiasClasse, valor: valor ?? 0, faixa });
+      subtotais.push({ classe, guias: guiasClasse, valor: valor ?? 0, faixa: `${faixa}${notaAcumulo}` });
       totalValor += valor ?? 0;
       // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.
       if (valor == null) {
@@ -243,31 +349,34 @@ export function processarMedico(
   }
 
   // Story 10.2: componente ADITIVO de consultas ambulatoriais do pediatra — soma ao valor de
-  // guias já calculado acima (qualquer que seja o modo), nunca substitui. Lote separado
-  // (`itensConsultas`) nunca é o mesmo array de `itens` — anti-dupla-contagem por construção.
-  if (isPediatra(medico.especialidade) && consultasValidas.length > 0) {
-    const nConsultas = consultasValidas.length;
-    const valorConsultas = nConsultas * valorConsultaPediatria;
+  // guias já calculado acima (qualquer que seja o modo), nunca substitui.
+  if (subtotalConsultas) {
     totalValor += valorConsultas;
-    subtotais.push({
-      classe: 'CONSULTA_PEDIATRIA',
-      guias: nConsultas,
-      valor: valorConsultas,
-      faixa: `${nConsultas} consultas × R$${valorConsultaPediatria.toFixed(2)}`,
-    });
+    subtotais.push(subtotalConsultas);
   }
+
+  // Saldo consumido: buckets ativos zeram (cobrados agora); buckets não tocados nesta execução
+  // (lote não selecionado) preservam o valor anterior — não some com o resto só porque o médico
+  // bateu o limiar em OUTRO bucket.
+  const saldoFinal: SaldoAcumulado = {
+    guiasPrincipal: 0,
+    guiasOutrosHospitais: outrosHospitaisAtivo ? 0 : s.guiasOutrosHospitais,
+    guiasImobilizacoes: imobilizacoesAtivo ? 0 : s.guiasImobilizacoes,
+    valorBasePercentual: medico.modoCobranca === 'percentual_producao' ? 0 : s.valorBasePercentual,
+  };
 
   return {
     cpf: medico.cpf ?? '',
     nome: medico.nome,
     procedimentos: validos.length,
     cirurgias,
-    guias,
+    guias: guiasParaLimiar,
     guiasConsolidado,
     subtotais,
     totalValor,
     status: alertas.length > 0 ? 'alerta' : 'ok',
     alertas,
+    saldoParaProximaCompetencia: saldoFinal,
   };
 }
 
@@ -290,6 +399,9 @@ export function processarMedico(
  * dados com regra de CONTAGEM diferente. Lote não selecionado/informado nesta execução → alerta
  * explícito (nunca chuta, mesmo padrão de Outros Hospitais/Imobilizações) e 0 guias daquele lote —
  * nunca reaproveita a contagem de outro lote.
+ *
+ * Acúmulo (GATE 2026-08-13): as 4 fontes já convergem pra 1 classe/tabela só, então usam o MESMO
+ * bucket `guiasPrincipal` do saldo — sem caso especial em relação a um médico normal.
  */
 function processarAngiologista(
   medico: EntradaProcessamentoMedico['medico'],
@@ -300,6 +412,8 @@ function processarAngiologista(
     guiasCartaRede?: number;
   },
   tabela: TabelaPreco,
+  saldoAcumulado: SaldoAcumulado | null | undefined,
+  saldoAcumuladoDesde: string | null | undefined,
 ): ResultadoMedico {
   const alertas: string[] = [];
 
@@ -355,7 +469,9 @@ function processarAngiologista(
   const guiasConsolidado = guiasCateter + guiasFistula + consolidadoAngiografia + guiasCartaRede;
   const procedimentos = procedimentosCateter + procedimentosFistula + procedimentosAngiografia + guiasCartaRede;
 
-  if (guias === 0) {
+  const s = saldoAcumulado ?? SALDO_VAZIO;
+
+  if (guias === 0 && s.guiasPrincipal === 0) {
     return {
       cpf: medico.cpf ?? '',
       nome: medico.nome,
@@ -370,30 +486,60 @@ function processarAngiologista(
     };
   }
 
+  const guiasTotal = guias + s.guiasPrincipal;
+
+  if (guiasTotal < LIMIAR_MINIMO_GUIAS) {
+    const alertaAcumulo =
+      `${guiasTotal} guia(s) combinada(s) abaixo do mínimo de ${LIMIAR_MINIMO_GUIAS} — produção acumulada, ` +
+      `aguardando o próximo mês em que o médico for processado` +
+      (saldoAcumuladoDesde ? ` (acumulando desde ${saldoAcumuladoDesde})` : '') +
+      '.';
+    return {
+      cpf: medico.cpf ?? '',
+      nome: medico.nome,
+      procedimentos,
+      cirurgias,
+      guias: guiasTotal,
+      guiasConsolidado,
+      subtotais: [],
+      totalValor: 0,
+      status: 'acumulado',
+      alertas: [...alertas, alertaAcumulo],
+      saldoParaProximaCompetencia: { guiasPrincipal: guiasTotal, guiasOutrosHospitais: 0, guiasImobilizacoes: 0, valorBasePercentual: 0 },
+    };
+  }
+
   // Tabela padrão (crédito/não credenciado) — mesma classe/faixa que qualquer outro médico
   // usaria pro lote principal. Angiologista não tem classe/tabela própria (confirmado pelo dono).
   const classe: Classe = medico.statusHapvida === 'credenciado' ? 'HAPVIDA_CRED' : 'HAPVIDA_NAO_CRED';
   const tabelaClasse = medico.semExcedentePorGuia ? tabelaSemExcedentePorGuia(tabela[classe]) : tabela[classe];
-  const { valor, faixa } = valorDaFaixa(tabelaClasse, guias);
+  const { valor, faixa } = valorDaFaixa(tabelaClasse, guiasTotal);
   if (valor == null) {
-    alertas.push(`Classe ${classe} com ${guias} guias está FORA DA TABELA: faixa não definida, verificar.`);
+    alertas.push(`Classe ${classe} com ${guiasTotal} guias está FORA DA TABELA: faixa não definida, verificar.`);
   }
 
-  // Anota na memória de cálculo (faixa) quando a soma inclui guias digitadas manualmente — igual
-  // ao princípio de nunca esconder de onde veio um número (GATE 2026-08-12).
-  const faixaAnotada =
-    guiasCartaRede > 0 ? `${faixa} (inclui ${guiasCartaRede} guia(s) de Carta de Rede informada(s) manualmente)` : faixa;
+  // Anota na memória de cálculo (faixa) quando a soma inclui guias digitadas manualmente ou
+  // acumuladas de meses anteriores — igual ao princípio de nunca esconder de onde veio um número
+  // (GATE 2026-08-12, GATE 2026-08-13).
+  let faixaAnotada = faixa;
+  if (guiasCartaRede > 0) {
+    faixaAnotada += ` (inclui ${guiasCartaRede} guia(s) de Carta de Rede informada(s) manualmente)`;
+  }
+  if (s.guiasPrincipal > 0) {
+    faixaAnotada += ` — inclui ${s.guiasPrincipal} guia(s) acumulada(s)${saldoAcumuladoDesde ? ` desde ${saldoAcumuladoDesde}` : ''}`;
+  }
 
   return {
     cpf: medico.cpf ?? '',
     nome: medico.nome,
     procedimentos,
     cirurgias,
-    guias,
+    guias: guiasTotal,
     guiasConsolidado,
-    subtotais: [{ classe, guias, valor: valor ?? 0, faixa: faixaAnotada }],
+    subtotais: [{ classe, guias: guiasTotal, valor: valor ?? 0, faixa: faixaAnotada }],
     totalValor: valor ?? 0,
     status: alertas.length > 0 ? 'alerta' : 'ok',
     alertas,
+    saldoParaProximaCompetencia: { guiasPrincipal: 0, guiasOutrosHospitais: 0, guiasImobilizacoes: 0, valorBasePercentual: 0 },
   };
 }

@@ -2,7 +2,14 @@
 // Derivado da arquitetura (Data Models) e do PRD §7.
 
 export type StatusExecucao = 'processando' | 'concluido' | 'erro';
-export type StatusResultado = 'ok' | 'alerta' | 'sem_dados';
+/**
+ * 'acumulado' (achado real 2026-08-13, regra da coordenadora financeira): médico com menos de 5
+ * guias combinadas (todos os lotes, exceto consultas) na competência — NÃO gera boleto, a
+ * produção fica retida em `medicos_saldo_acumulado` até somar com um mês futuro e bater o
+ * limiar. `totalValor` sempre 0 nesse status; nunca elegível para emissão (mesma trava de
+ * `status !== 'ok'` já usada em `emitir-boleto.ts`).
+ */
+export type StatusResultado = 'ok' | 'alerta' | 'sem_dados' | 'acumulado';
 
 export type Classe =
   | 'HAPVIDA_CRED'
@@ -39,6 +46,8 @@ export interface Execucao {
   totalOk: number | null;
   totalAlerta: number | null;
   totalSemDados: number | null;
+  /** Médicos com status 'acumulado' nesta execução (achado 2026-08-13) — produção retida, sem boleto. */
+  totalAcumulado: number | null;
   totalGeralValor: number | null;
   /**
    * Marca esta execução como agregada por empresa (Story 10.4b) — soma a produção de vários

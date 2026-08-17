@@ -49,6 +49,10 @@ describe('processarMedico — modo percentual_producao (Story 6.2)', () => {
         // Glosado ENTRA na base (GATE resposta 2) e o valor PAGO é ignorado (GATE resposta 1).
         item({ pacienteNome: 'P2', statusOrigem: 'Glosado', valorCobradoOrigem: 500, valorPagoOrigem: 0 }),
         item({ pacienteNome: 'P3', statusOrigem: 'Recurso', valorCobradoOrigem: 250.5, valorPagoOrigem: null }),
+        // P4/P5: valor 0 (não null) — só pra bater o mínimo de 5 guias (GATE 2026-08-13), sem
+        // alterar a base nem disparar o alerta de "item sem valor" (esse exige null, não 0).
+        item({ pacienteNome: 'P4', valorCobradoOrigem: 0, valorPagoOrigem: 0 }),
+        item({ pacienteNome: 'P5', valorCobradoOrigem: 0, valorPagoOrigem: 0 }),
       ],
     });
 
@@ -83,6 +87,11 @@ describe('processarMedico — modo percentual_producao (Story 6.2)', () => {
       itens: [
         item({ pacienteNome: 'P1', valorCobradoOrigem: 1000 }),
         item({ pacienteNome: 'P2', valorCobradoOrigem: null }),
+        // P3-P5: valor 0 (não null) — só pra bater o mínimo de 5 guias, sem mudar a base nem
+        // adicionar outro item "sem valor" (GATE 2026-08-13).
+        item({ pacienteNome: 'P3', valorCobradoOrigem: 0 }),
+        item({ pacienteNome: 'P4', valorCobradoOrigem: 0 }),
+        item({ pacienteNome: 'P5', valorCobradoOrigem: 0 }),
       ],
     });
     expect(r.totalValor).toBe(50); // só a base conhecida
@@ -93,7 +102,14 @@ describe('processarMedico — modo percentual_producao (Story 6.2)', () => {
   it('base zerada (nenhum valor cobrado) → alerta, valor 0', () => {
     const r = processarMedico({
       medico: medicoPercentual(5),
-      itens: [item({ valorCobradoOrigem: null })],
+      // 5 itens (mínimo de guias, GATE 2026-08-13), todos sem valor — base continua zerada.
+      itens: [
+        item({ pacienteNome: 'P1', valorCobradoOrigem: null }),
+        item({ pacienteNome: 'P2', valorCobradoOrigem: null }),
+        item({ pacienteNome: 'P3', valorCobradoOrigem: null }),
+        item({ pacienteNome: 'P4', valorCobradoOrigem: null }),
+        item({ pacienteNome: 'P5', valorCobradoOrigem: null }),
+      ],
     });
     expect(r.totalValor).toBe(0);
     expect(r.status).toBe('alerta');
@@ -103,7 +119,14 @@ describe('processarMedico — modo percentual_producao (Story 6.2)', () => {
   it('percentual não configurado (defesa — CHECK do banco impede, engine não confia) → alerta', () => {
     const r = processarMedico({
       medico: medicoPercentual(null),
-      itens: [item({ valorCobradoOrigem: 1000 })],
+      // 5 itens (mínimo de guias, GATE 2026-08-13) — percentual 0/null zera o valor de qualquer forma.
+      itens: [
+        item({ pacienteNome: 'P1', valorCobradoOrigem: 1000 }),
+        item({ pacienteNome: 'P2', valorCobradoOrigem: 1000 }),
+        item({ pacienteNome: 'P3', valorCobradoOrigem: 1000 }),
+        item({ pacienteNome: 'P4', valorCobradoOrigem: 1000 }),
+        item({ pacienteNome: 'P5', valorCobradoOrigem: 1000 }),
+      ],
     });
     expect(r.totalValor).toBe(0);
     expect(r.status).toBe('alerta');
@@ -113,7 +136,14 @@ describe('processarMedico — modo percentual_producao (Story 6.2)', () => {
   it('percentual é por médico (não constante): 7.5% calcula 7.5%', () => {
     const r = processarMedico({
       medico: medicoPercentual(7.5),
-      itens: [item({ valorCobradoOrigem: 2000 })],
+      itens: [
+        item({ pacienteNome: 'P1', valorCobradoOrigem: 2000 }),
+        // P2-P5: valor 0 (não null) — só pra bater o mínimo de 5 guias, base continua 2000.
+        item({ pacienteNome: 'P2', valorCobradoOrigem: 0 }),
+        item({ pacienteNome: 'P3', valorCobradoOrigem: 0 }),
+        item({ pacienteNome: 'P4', valorCobradoOrigem: 0 }),
+        item({ pacienteNome: 'P5', valorCobradoOrigem: 0 }),
+      ],
     });
     expect(r.totalValor).toBe(150);
   });
@@ -130,7 +160,15 @@ describe('processarMedico — modo percentual_producao (Story 6.2)', () => {
       percentualProducao: null,
       statusHapvida: 'credenciado',
     };
-    const itens = [item({ pacienteNome: 'P1' }), item({ pacienteNome: 'P2' })];
+    // 5 itens (mínimo de guias, GATE 2026-08-13) — todos ficam na mesma faixa "até 30" de
+    // qualquer forma, então o valor esperado (263.59) não muda.
+    const itens = [
+      item({ pacienteNome: 'P1' }),
+      item({ pacienteNome: 'P2' }),
+      item({ pacienteNome: 'P3' }),
+      item({ pacienteNome: 'P4' }),
+      item({ pacienteNome: 'P5' }),
+    ];
     const r = processarMedico({ medico: medicoFaixas, itens });
 
     // Tabela padrão HAPVIDA_CRED: 2 guias → faixa "até 30" = R$ 263.59 (precos.ts).
