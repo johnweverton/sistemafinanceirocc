@@ -39,25 +39,28 @@ describe('Sidebar — agrupamento por seção (2026-07-24)', () => {
     expect(screen.getByText('Contabilidade')).toBeInTheDocument();
   });
 
-  it('Médicos/Empresas/Emissão/Recebíveis/Extrato/DRE ficam sob "Cobrança Médica"', () => {
+  it('Médicos/Empresas/Emissão/Recebíveis ficam sob "Cobrança Médica"', () => {
     renderSidebar();
     const secao = screen.getByText('Cobrança Médica').parentElement!;
-    for (const label of ['Médicos', 'Empresas', 'Emissão', 'Recebíveis', 'Extrato', 'DRE']) {
+    for (const label of ['Médicos', 'Empresas', 'Emissão', 'Recebíveis']) {
       expect(secao).toHaveTextContent(label);
     }
   });
 
-  it('Clientes Contábeis fica sob "Contabilidade", separado da Cobrança Médica', () => {
+  it('Clientes Contábeis/Extrato/DRE ficam sob "Contabilidade", separados da Cobrança Médica (reposicionamento 2026-08-17)', () => {
     renderSidebar();
     const secaoContabilidade = screen.getByText('Contabilidade').parentElement!;
     const secaoCobranca = screen.getByText('Cobrança Médica').parentElement!;
-    expect(secaoContabilidade).toHaveTextContent('Clientes Contábeis');
-    expect(secaoCobranca).not.toHaveTextContent('Clientes Contábeis');
+    for (const label of ['Clientes Contábeis', 'Extrato', 'DRE']) {
+      expect(secaoContabilidade).toHaveTextContent(label);
+      expect(secaoCobranca).not.toHaveTextContent(label);
+    }
   });
 
-  it('Dashboard e Configurações continuam avulsos (fora das seções)', () => {
+  it('Dashboard, Relatórios e Configurações continuam avulsos (fora das seções)', () => {
     renderSidebar();
     expect(screen.getByRole('link', { name: /Dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Relatórios/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Configurações/i })).toBeInTheDocument();
   });
 });

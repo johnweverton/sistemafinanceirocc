@@ -7,11 +7,15 @@ import { LogoutButton } from '@/components/layout/LogoutButton';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { useSidebar } from '@/components/layout/SidebarContext';
 
-// Item avulso (Dashboard) fica fora de qualquer seção — visão cruzada, não pertence a uma
-// vertical só. As duas verticais de cobrança (médica vs contabilidade) ficam em seções
-// separadas visualmente (feedback do dono, 2026-07-24), cada uma como um grupo que
-// expande/recolhe ao clicar no título (accordion — feedback do dono, 2026-07-30).
-const NAV_TOPO = [{ href: '/dashboard', label: 'Dashboard', icon: DashboardIcon }];
+// Itens avulsos (Dashboard, Relatórios) ficam fora de qualquer seção — visão cruzada, não
+// pertencem a uma vertical só (feedback do dono, 2026-08-17). As duas verticais de cobrança
+// (médica vs contabilidade) ficam em seções separadas visualmente (feedback do dono,
+// 2026-07-24), cada uma como um grupo que expande/recolhe ao clicar no título (accordion —
+// feedback do dono, 2026-07-30).
+const NAV_TOPO = [
+  { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
+  { href: '/relatorios', label: 'Relatórios', icon: RelatoriosIcon },
+];
 
 const NAV_SECOES = [
   {
@@ -23,15 +27,14 @@ const NAV_SECOES = [
       // a rota /execucoes e os nomes internos (execucaoId, NovaExecucao...) não mudam.
       { href: '/execucoes', label: 'Emissão', icon: ExecucoesIcon },
       { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
-      { href: '/extrato', label: 'Extrato', icon: ExtratoIcon },
-      { href: '/dre', label: 'DRE', icon: DreIcon },
-      { href: '/relatorios', label: 'Relatórios', icon: RelatoriosIcon },
     ],
   },
   {
     titulo: 'Contabilidade',
     itens: [
       { href: '/clientes-contabilidade', label: 'Clientes Contábeis', icon: ClientesContabeisIcon },
+      { href: '/extrato', label: 'Extrato', icon: ExtratoIcon },
+      { href: '/dre', label: 'DRE', icon: DreIcon },
     ],
   },
 ];
