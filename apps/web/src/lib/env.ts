@@ -121,6 +121,17 @@ const serverSchema = z.object({
   SMTP_PORT: z.string().regex(/^\d+$/).transform(Number).optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+
+  // ---------------------------------------------------------------------------
+  // CRON — relatório mensal automático (feature de custo zero, feedback do dono 2026-08-17).
+  // ---------------------------------------------------------------------------
+  // Segredo que o Vercel Cron envia como `Authorization: Bearer <CRON_SECRET>` — sem ele
+  // configurado, a rota /api/cron/* fica sempre bloqueada (fail-closed, mesmo padrão de
+  // segredo comparado em tempo constante do webhook da Cora).
+  CRON_SECRET: z.string().min(16, 'CRON_SECRET deve ter pelo menos 16 caracteres').optional(),
+  // Destinatários do relatório mensal (ex.: a CEO), e-mails separados por vírgula — mesmo
+  // formato de BOOTSTRAP_ADMIN_EMAILS. Vazio/ausente = cron roda mas pula o envio (log, não erro).
+  RELATORIO_MENSAL_EMAILS: z.string().optional(),
 });
 
 export const publicEnv = publicSchema.parse({
@@ -179,6 +190,8 @@ export function getServerEnv() {
     SMTP_PORT: process.env.SMTP_PORT,
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PASS: process.env.SMTP_PASS,
+    CRON_SECRET: process.env.CRON_SECRET,
+    RELATORIO_MENSAL_EMAILS: process.env.RELATORIO_MENSAL_EMAILS,
   });
 }
 

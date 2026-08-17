@@ -23,6 +23,15 @@ const PAGE_SIZE = 20;
 
 type Modo = { tipo: 'lista' } | { tipo: 'nova' } | { tipo: 'editar'; empresa: Empresa };
 
+// Busca por nome, sem acento (mesmo padrão de MedicosManager.tsx) — evita "MEDISA" vs "Médisa"
+// não baterem por causa de um acento digitado ou não.
+function normalizarBusca(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
 export function EmpresasManager() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -30,8 +39,14 @@ export function EmpresasManager() {
   const [erro, setErro] = useState<string | null>(null);
   const [confirmacao, setConfirmacao] = useState<Empresa | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
+  const [busca, setBusca] = useState('');
   const [pagina, setPagina] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function atualizarBusca(v: string) {
+    setBusca(v);
+    setPagina(1);
+  }
 
   const { data: empresas, isLoading, isError } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
@@ -42,13 +57,17 @@ export function EmpresasManager() {
     },
   });
 
-  // Mantém a página dentro do intervalo válido quando a lista muda de tamanho (exclusão,
-  // importação, ou carregamento inicial) — evita ficar numa página vazia.
+  const termoBusca = normalizarBusca(busca.trim());
+  const empresasFiltradas = (empresas ?? []).filter(
+    (e) => !termoBusca || normalizarBusca(e.nome).includes(termoBusca),
+  );
+
+  // Mantém a página dentro do intervalo válido quando a lista (filtrada) muda de tamanho
+  // (exclusão, importação, busca, ou carregamento inicial) — evita ficar numa página vazia.
   useEffect(() => {
-    const total = empresas?.length ?? 0;
-    const totalPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const totalPaginas = Math.max(1, Math.ceil(empresasFiltradas.length / PAGE_SIZE));
     setPagina((atual) => Math.min(atual, totalPaginas));
-  }, [empresas]);
+  }, [empresasFiltradas.length]);
 
   const criar = useMutation({
     mutationFn: (p: NovaEmpresaPayload) => empresasService.criar(p),
@@ -195,6 +214,16 @@ export function EmpresasManager() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="search"
+          value={busca}
+          onChange={(e) => atualizarBusca(e.target.value)}
+          placeholder="Buscar por nome..."
+          className="input max-w-xs"
+        />
+      </div>
+
       {erro && <p role="alert" className="alert-error">{erro}</p>}
 
       {importResult && (
@@ -221,7 +250,8 @@ export function EmpresasManager() {
 
       {!isLoading && !isError && empresas && empresas.length > 0 && (
         <p className="text-xs text-cc-muted">
-          {empresas.length} empresa{empresas.length !== 1 ? 's' : ''}
+          {empresasFiltradas.length} empresa{empresasFiltradas.length !== 1 ? 's' : ''}
+          {termoBusca && ` de ${empresas.length}`}
         </p>
       )}
 
@@ -233,6 +263,11 @@ export function EmpresasManager() {
         <EmptyState
           title="Nenhuma empresa cadastrada"
           description="Cadastre a primeira empresa (ex.: MEDISA) para agrupar produção de vários médicos."
+        />
+      ) : empresasFiltradas.length === 0 ? (
+        <EmptyState
+          title="Nenhuma empresa encontrada"
+          description="Ajuste a busca para ver outros resultados."
         />
       ) : (
         <div className="card overflow-x-auto">
@@ -247,7 +282,7 @@ export function EmpresasManager() {
               </tr>
             </thead>
             <tbody>
-              {empresas.slice((pagina - 1) * PAGE_SIZE, pagina * PAGE_SIZE).map((e) => (
+              {empresasFiltradas.slice((pagina - 1) * PAGE_SIZE, pagina * PAGE_SIZE).map((e) => (
                 <tr
                   key={e.id}
                   className="border-b border-cc-hairline last:border-0 hover:bg-cc-surface-2/50 cursor-pointer"
@@ -283,8 +318,8 @@ export function EmpresasManager() {
         </div>
       )}
 
-      {empresas && empresas.length > 0 && (
-        <Pagination page={pagina} totalItems={empresas.length} pageSize={PAGE_SIZE} onPageChange={setPagina} />
+      {empresasFiltradas.length > 0 && (
+        <Pagination page={pagina} totalItems={empresasFiltradas.length} pageSize={PAGE_SIZE} onPageChange={setPagina} />
       )}
     </section>
   );

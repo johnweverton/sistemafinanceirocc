@@ -14,6 +14,7 @@ import { ApiClientError } from '@/lib/api-client';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
+import { DreComposicaoChart } from '@/components/dre/DreComposicaoChart';
 
 function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -337,6 +338,11 @@ export function DreManager() {
         />
       ) : (
         <>
+          <div className="card p-5">
+            <h2 className="mb-3 text-sm font-semibold text-cc-ink">Composição do período</h2>
+            <DreComposicaoChart grupos={porGrupo.map(({ grupo, label, total }) => ({ grupo, label, total }))} />
+          </div>
+
           <div className="card space-y-4 p-5">
             {porGrupo.map((g) => (
               <div key={g.grupo}>

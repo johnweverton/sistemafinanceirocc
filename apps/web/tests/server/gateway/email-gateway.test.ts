@@ -62,6 +62,47 @@ describe('EmailGateway.enviarBoleto — sempre assina Carmem Cavalcante Contabil
   });
 });
 
+describe('EmailGateway.enviarRelatorioMensal (feedback do dono, 2026-08-17)', () => {
+  it('envia com assunto/anexo corretos e os 3 totais no corpo do e-mail', async () => {
+    const pdf = Buffer.from('%PDF-fake');
+    await new EmailGateway().enviarRelatorioMensal(
+      ['ceo@empresa.com', 'financeiro@empresa.com'],
+      '2026-08',
+      pdf,
+      { totalEmitido: 5000, totalPago: 3000, totalVencido: 1000 },
+    );
+    const mail = mockSendMail.mock.calls[0]![0] as {
+      to: string;
+      subject: string;
+      html: string;
+      attachments: Array<{ filename: string; content: Buffer }>;
+    };
+    expect(mail.to).toBe('ceo@empresa.com, financeiro@empresa.com');
+    expect(mail.subject).toContain('2026-08');
+    expect(mail.html).toContain('2026-08');
+    expect(mail.html).toContain('R$ 5.000,00');
+    expect(mail.html).toContain('R$ 3.000,00');
+    expect(mail.html).toContain('R$ 1.000,00');
+    expect(mail.attachments[0]!.filename).toBe('relatorio-2026-08.pdf');
+    expect(mail.attachments[0]!.content).toBe(pdf);
+  });
+
+  it('sem transporter configurado (modo mock) — não lança, só loga', async () => {
+    vi.mocked((await import('@/lib/env')).getServerEnv).mockReturnValueOnce({
+      ...mockEnv,
+      SMTP_HOST: undefined,
+    } as never);
+    await expect(
+      new EmailGateway().enviarRelatorioMensal(['ceo@empresa.com'], '2026-08', Buffer.from('x'), {
+        totalEmitido: 0,
+        totalPago: 0,
+        totalVencido: 0,
+      }),
+    ).resolves.not.toThrow();
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
+});
+
 describe('saudacaoPagador (mensagem-boleto.ts)', () => {
   it('médico (PF) → "Dr(a). {nome}"', () => {
     expect(saudacaoPagador({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' })).toBe('Dr(a). John Weverton');

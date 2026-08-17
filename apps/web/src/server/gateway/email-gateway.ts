@@ -103,4 +103,61 @@ export class EmailGateway {
       throw error;
     }
   }
+
+  /**
+   * Relatório mensal automático (cron, feedback do dono 2026-08-17): PDF do fechamento do mês
+   * anterior, já gerado por quem chama (gerarRelatorioRecebiveisPdf) — este método só envia.
+   * Mesmo modo mock de enviarBoleto: sem transporter configurado, só loga e não lança.
+   */
+  async enviarRelatorioMensal(
+    paraEmails: string[],
+    competencia: string,
+    pdfBuffer: Buffer,
+    resumo: { totalEmitido: number; totalPago: number; totalVencido: number },
+  ) {
+    if (!this.transporter) {
+      console.log(`[Mock Email] Simulando envio do relatório mensal (${competencia}) para ${paraEmails.join(', ')}`);
+      return;
+    }
+
+    const remetente = getServerEnv().SMTP_USER || 'contato@empresa.com.br';
+    const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5; max-width: 600px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #171717; padding: 24px; text-align: center;">
+           <h1 style="color: #fff; margin: 0; font-size: 20px;">${NOME_REMETENTE_MENSAGEM}</h1>
+        </div>
+        <div style="padding: 32px 24px;">
+          <p style="font-size: 16px; margin-top: 0;">Relatório mensal de recebíveis — competência <strong>${competencia}</strong>.</p>
+          <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+            <tr><td style="padding: 6px 0; color: #666;">Emitido</td><td style="padding: 6px 0; text-align: right; font-weight: bold;">${brl(resumo.totalEmitido)}</td></tr>
+            <tr><td style="padding: 6px 0; color: #666;">Recebido</td><td style="padding: 6px 0; text-align: right; font-weight: bold; color: #059669;">${brl(resumo.totalPago)}</td></tr>
+            <tr><td style="padding: 6px 0; color: #666;">Vencido</td><td style="padding: 6px 0; text-align: right; font-weight: bold; color: #D97706;">${brl(resumo.totalVencido)}</td></tr>
+          </table>
+          <p>O detalhamento completo, agrupado por empresa, está no PDF em anexo.</p>
+        </div>
+        <div style="background-color: #f9f9f9; padding: 16px 24px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #eaeaea;">
+          At.te, ${NOME_REMETENTE_MENSAGEM}. Este é um e-mail automático, por favor não responda.
+        </div>
+      </div>
+    `;
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: `"${NOME_REMETENTE_MENSAGEM}" <${remetente}>`,
+        to: paraEmails.join(', '),
+        subject: `Relatório Mensal de Recebíveis — ${competencia}`,
+        html,
+        attachments: [
+          { filename: `relatorio-${competencia}.pdf`, content: pdfBuffer, contentType: 'application/pdf' },
+        ],
+      });
+      console.log(`[EmailGateway] Relatório mensal enviado: ${info.messageId}`);
+      return info;
+    } catch (error) {
+      console.error('[EmailGateway] Erro ao enviar relatório mensal:', error);
+      throw error;
+    }
+  }
 }
