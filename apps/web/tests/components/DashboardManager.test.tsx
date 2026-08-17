@@ -21,6 +21,24 @@ vi.mock('../../src/services/dashboard', () => ({
   },
 }));
 
+// Inadimplência (BI gerencial, feedback da CEO 2026-08-17) reusa /recebiveis — mockado à parte
+// dos outros 3 endpoints do dashboard, mesmo padrão.
+const mockRecebiveis = vi.fn();
+vi.mock('../../src/services/recebiveis', () => ({
+  recebiveisService: { listar: (...a: unknown[]) => mockRecebiveis(...a) },
+  recebiveisQueryKeys: { recebiveis: (f: unknown) => ['recebiveis', f] },
+}));
+
+// recharts usa ResizeObserver/getBoundingClientRect que jsdom não implementa — os gráficos em si
+// não são o alvo destes testes (são só wrappers finos do lib/inadimplencia.ts, já testado à
+// parte), então os componentes de gráfico são stubados para evitar ruído de layout no jsdom.
+vi.mock('../../src/components/dashboard/EvolucaoMensalChart', () => ({
+  EvolucaoMensalChart: () => <div data-testid="evolucao-chart-stub" />,
+}));
+vi.mock('../../src/components/dashboard/VencidoPorMedicoChart', () => ({
+  VencidoPorMedicoChart: () => <div data-testid="vencido-chart-stub" />,
+}));
+
 import { DashboardManager } from '../../src/components/dashboard/DashboardManager';
 
 function renderComProviders() {
@@ -33,7 +51,10 @@ function renderComProviders() {
 }
 
 describe('DashboardManager', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRecebiveis.mockResolvedValue([]); // default: sem inadimplência, sobrescrito por teste quando relevante
+  });
 
   it('renderiza KPIs (via rollup), aging e tabela por médico', async () => {
     mockComp.mockResolvedValue([
@@ -87,5 +108,41 @@ describe('DashboardManager', () => {
     await waitFor(() => expect(mockComp).toHaveBeenCalledWith(undefined, 'cavalcante_viana'));
     expect(mockMed).toHaveBeenCalledWith(undefined, 'cavalcante_viana');
     expect(mockAging).toHaveBeenCalledWith(undefined, 'cavalcante_viana');
+  });
+
+  it('BI gerencial (2026-08-17): mostra card de médico inadimplente e abre drill-down dos boletos vencidos ao clicar', async () => {
+    mockComp.mockResolvedValue([
+      { competencia: null, qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
+      { competencia: '2026-06', qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
+    ]);
+    mockMed.mockResolvedValue([
+      { medicoId: 'm1', nome: 'Dr. Alfa', qtdBoletos: 4, totalEmitido: 4000, totalRecebido: 2000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.25, ticketMedio: 1000 },
+    ]);
+    mockAging.mockResolvedValue([{ faixa: '0-30', qtd: 2, total: 900 }]);
+    mockRecebiveis.mockResolvedValue([
+      {
+        boletoId: 'b1', execucaoResultadoId: 'e1', idExterno: null, competencia: '2026-06',
+        medicoId: 'm1', nome: 'Dr. Alfa', valor: 1000, vencimento: '2026-06-10', pagoEm: null,
+        valorPago: null, emitidoEm: '2026-06-01T00:00:00Z', contaEmissora: 'mc', statusDerivado: 'vencido',
+      },
+    ]);
+
+    renderComProviders();
+
+    await waitFor(() => expect(screen.getByText('Quem está inadimplente', { exact: false })).toBeInTheDocument());
+    // Card agregado do médico — nome + total vencido.
+    const card = await screen.findByRole('button', { name: /Dr\. Alfa/i });
+    expect(card).toHaveTextContent('R$ 1.000,00');
+
+    // Drill-down: clicar no card abre a tabela de boletos vencidos daquele médico.
+    fireEvent.click(card);
+    expect(await screen.findByText(/Boletos vencidos · Dr\. Alfa/)).toBeInTheDocument();
+    // Vencimento do boleto do drill-down, formatado — único nessa tela (não colide com o select
+    // de competência, que usa o formato AAAA-MM).
+    expect(screen.getByText('10/06/2026')).toBeInTheDocument();
+
+    // Clicar de novo fecha o drill-down.
+    fireEvent.click(card);
+    expect(screen.queryByText(/Boletos vencidos · Dr\. Alfa/)).not.toBeInTheDocument();
   });
 });

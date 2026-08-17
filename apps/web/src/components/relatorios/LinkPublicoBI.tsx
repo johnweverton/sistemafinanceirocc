@@ -142,7 +142,6 @@ export function LinkPublicoBI() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-cc-ink">Link público do BI</h2>
-          <p className="text-xs text-cc-muted">Acesso sem login, só leitura — para acompanhamento externo (ex.: a CEO).</p>
         </div>
         <button onClick={() => setNovoLink(true)} className="btn-primary btn btn-sm">
           Novo link

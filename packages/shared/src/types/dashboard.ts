@@ -40,3 +40,17 @@ export interface ResumoPorEmpresa {
   totalVencido: number;
   taxaInadimplencia: number;
 }
+
+/**
+ * Um médico com boletos vencidos — visão gerencial de inadimplência do Dashboard (BI CEO).
+ * Agrupado no cliente a partir de `vw_recebiveis` (status_derivado='vencido'), não é uma view
+ * nova: reusa exatamente os mesmos dados já servidos por `/recebiveis`.
+ */
+export interface InadimplenteMedico {
+  medicoId: string | null;
+  nome: string;
+  qtdVencidos: number;
+  totalVencido: number;
+  vencimentoMaisAntigo: string | null; // ISO date (YYYY-MM-DD) do boleto vencido há mais tempo
+  diasAtrasoMax: number; // dias corridos desde vencimentoMaisAntigo até hoje
+}

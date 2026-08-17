@@ -4,7 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import type { ContaEmissora } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
 import { dashboardService, dashboardQueryKeys } from '@/services/dashboard';
+import { recebiveisService, recebiveisQueryKeys } from '@/services/recebiveis';
+import { agruparInadimplentesPorMedico } from '@/lib/inadimplencia';
 import { SaldoEmpresas } from '@/components/dashboard/SaldoEmpresas';
+import { EvolucaoMensalChart } from '@/components/dashboard/EvolucaoMensalChart';
+import { VencidoPorMedicoChart } from '@/components/dashboard/VencidoPorMedicoChart';
+import { InadimplenciaSection } from '@/components/dashboard/InadimplenciaSection';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -34,10 +39,18 @@ export function DashboardManager() {
     queryKey: dashboardQueryKeys.aging(filtro, contaFiltro),
     queryFn: () => dashboardService.aging(filtro, contaFiltro),
   });
+  // Inadimplência (BI gerencial, feedback da CEO 2026-08-17): reusa o MESMO endpoint/serviço já
+  // usado por /recebiveis (Contas a Receber) — sem view/rota nova, só filtra status=vencido e
+  // agrupa por médico no cliente (agruparInadimplentesPorMedico, lib/inadimplencia.ts).
+  const vencidosQ = useQuery({
+    queryKey: recebiveisQueryKeys.recebiveis({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro }),
+    queryFn: () => recebiveisService.listar({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro }),
+  });
 
   const linhas = useMemo(() => comps.data ?? [], [comps.data]);
   // Opções do seletor: só competências reais (exclui a linha de rollup).
   const competencias = useMemo(() => linhas.filter((c) => c.competencia !== null), [linhas]);
+  const inadimplentes = useMemo(() => agruparInadimplentesPorMedico(vencidosQ.data ?? []), [vencidosQ.data]);
 
   // KPI da competência selecionada, ou a linha de rollup (competencia = null) para "Todas".
   // A taxa de inadimplência vem PRONTA do banco — sem recomputo no cliente.
@@ -107,6 +120,12 @@ export function DashboardManager() {
         <Kpi label="Inadimplência" valor={pct(kpi?.taxaInadimplencia ?? 0)} tom={(kpi?.taxaInadimplencia ?? 0) > 0.2 ? 'danger' : 'default'} />
       </div>
 
+      {/* Evolução mensal — visão de tendência que os KPIs (foto de UMA competência) não davam. */}
+      <div className="card p-5">
+        <h2 className="mb-3 text-sm font-semibold text-cc-ink">Evolução mensal</h2>
+        <EvolucaoMensalChart dados={competencias} />
+      </div>
+
       {/* Aging */}
       <div className="card p-5">
         <h2 className="mb-3 text-sm font-semibold text-cc-ink">Aging de vencidos <span className="font-normal text-cc-muted">· {escopo}</span></h2>
@@ -126,6 +145,16 @@ export function DashboardManager() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Quem está inadimplente — BI gerencial (feedback da CEO, 2026-08-17): cards por médico
+          com drill-down pros boletos vencidos individuais, mais o gráfico de "quem deve mais". */}
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-cc-ink">Quem está inadimplente <span className="font-normal text-cc-muted">· {escopo}</span></h2>
+        <div className="card p-5">
+          {vencidosQ.isLoading ? <Skeleton className="h-40" /> : <VencidoPorMedicoChart dados={inadimplentes} />}
+        </div>
+        {vencidosQ.isLoading ? <Skeleton className="h-40" /> : <InadimplenciaSection inadimplentes={inadimplentes} vencidos={vencidosQ.data ?? []} />}
       </div>
 
       {/* Por médico */}
