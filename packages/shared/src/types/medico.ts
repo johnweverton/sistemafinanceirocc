@@ -160,17 +160,40 @@ export function cobrancaMinimaEmissao(m: Pick<Medico, 'cobranca'>): boolean {
 }
 
 /**
- * Regra de CADASTRO COMPLETO: mínimo pra emitir + e-mail + WhatsApp (contato necessário
- * pro disparo automático do boleto). Endereço NÃO entra mais aqui — a Cora não exige pra
- * emitir boleto registrado. Não bloqueia emissão; só sinaliza cadastro incompleto na UI
- * (Status 'cobranca_incompleta' em MedicosManager). Reutilizado pela UI e pelo guard de emissão.
+ * Regra de CADASTRO COMPLETO (bloco de cobrança): mínimo pra emitir + pelo menos UM contato,
+ * e-mail OU WhatsApp/ID de grupo (feedback do dono, 2026-08-19: exigir os dois indevidamente
+ * marcava como "incompleto" médico que só usa um dos dois canais, mesmo já emitindo boleto
+ * normalmente). Endereço NÃO entra aqui — a Cora não exige pra emitir boleto registrado. Não
+ * bloqueia emissão; só sinaliza cadastro incompleto na UI. Reutilizado por `cadastroCompleto`.
  */
 export function cobrancaCompleta(m: Pick<Medico, 'cobranca'>): boolean {
   if (!cobrancaMinimaEmissao(m)) return false;
   const c = m.cobranca!;
-  if (!c.email || String(c.email).trim() === '') return false;
-  if (!c.whatsapp || String(c.whatsapp).trim() === '') return false;
-  return true;
+  const temEmail = !!c.email && String(c.email).trim() !== '';
+  const temWhatsapp = !!c.whatsapp && String(c.whatsapp).trim() !== '';
+  return temEmail || temWhatsapp;
+}
+
+/**
+ * Regra de CADASTRO COMPLETO pra status "Ativo" na UI (feedback do dono, 2026-08-19): médico
+ * já configurado e emitindo boleto normalmente não pode aparecer como "incompleto". Campos
+ * exigidos: nome, especialidade, status Hapvida, empresa emissora, modo de cobrança e o bloco
+ * de cobrança do pagador (`cobrancaCompleta` — tipo/documento/nome + e-mail OU WhatsApp; CPF vs
+ * CNPJ do pagador já é o mesmo campo `pagadorDocumento`, distinguido por `pagadorTipo`).
+ * `cpf` (do médico) e `externalId` ficam DE FORA de propósito — são avisos à parte
+ * (`pendenciasDoMedico` em MedicosManager), não bloqueiam o status "Ativo".
+ * Não bloqueia emissão (guard continua sendo `cobrancaMinimaEmissao`); só sinaliza cadastro
+ * incompleto na UI (Status 'cobranca_incompleta' em MedicosManager).
+ */
+export function cadastroCompleto(
+  m: Pick<Medico, 'nome' | 'especialidade' | 'statusHapvida' | 'contaEmissora' | 'modoCobranca' | 'cobranca'>,
+): boolean {
+  if (!m.nome || m.nome.trim() === '') return false;
+  if (!m.especialidade || m.especialidade.trim() === '') return false;
+  if (!m.statusHapvida) return false;
+  if (!m.contaEmissora) return false;
+  if (!m.modoCobranca) return false;
+  return cobrancaCompleta(m);
 }
 
 // TIPO é derivado, nunca persistido como campo editável (PRD §5.1, §8.2).

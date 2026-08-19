@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Medico } from '@cobranca/shared';
-import { tipoDoMedico, cobrancaCompleta } from '@cobranca/shared';
+import { tipoDoMedico, cadastroCompleto } from '@cobranca/shared';
 import { ApiClientError } from '@/lib/api-client';
 import {
   medicosService,
@@ -32,11 +32,10 @@ type Confirmacao = { tipo: 'unico'; medico: Medico } | { tipo: 'lote'; ids: stri
 
 const POR_PAGINA = 25;
 
+/** Avisos que sobram para um médico já "Ativo" (todo o resto é exigido por `cadastroCompleto`). */
 function pendenciasDoMedico(m: Medico): string[] {
   const p: string[] = [];
   if (!m.cpf) p.push('CPF ausente');
-  if (!m.especialidade) p.push('Especialidade ausente');
-  if (!cobrancaCompleta(m)) p.push('Dados de cobrança incompletos');
   if (!m.externalId) p.push('Não vinculado à origem');
   return p;
 }
@@ -48,14 +47,14 @@ type Status = 'aguardando' | 'inativo' | 'cobranca_incompleta' | 'ativo';
 function calcularStatus(m: Medico): Status {
   if (m.necessitaConfiguracao) return 'aguardando';
   if (!m.ativo) return 'inativo';
-  if (!cobrancaCompleta(m)) return 'cobranca_incompleta';
+  if (!cadastroCompleto(m)) return 'cobranca_incompleta';
   return 'ativo';
 }
 
 const STATUS_INFO: Record<Status, { label: string; badge: string }> = {
   aguardando: { label: 'Aguarda configuração', badge: 'badge-amber' },
   inativo: { label: 'Inativo', badge: 'badge-slate' },
-  cobranca_incompleta: { label: 'Cobrança incompleta', badge: 'badge-amber' },
+  cobranca_incompleta: { label: 'Cadastro incompleto', badge: 'badge-amber' },
   ativo: { label: 'Ativo', badge: 'badge-green' },
 };
 
@@ -64,7 +63,7 @@ const FILTRO_OPCOES: { valor: FiltroStatus; label: string }[] = [
   { valor: 'aguardando', label: 'Aguardando configuração' },
   { valor: 'ativos', label: 'Ativos' },
   { valor: 'inativos', label: 'Inativos' },
-  { valor: 'cobranca_incompleta', label: 'Cobrança incompleta' },
+  { valor: 'cobranca_incompleta', label: 'Cadastro incompleto' },
 ];
 
 const FILTRO_TIPO_OPCOES: { valor: FiltroTipo; label: string }[] = [
