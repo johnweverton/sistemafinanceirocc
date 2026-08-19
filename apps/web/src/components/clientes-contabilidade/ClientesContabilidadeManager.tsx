@@ -19,6 +19,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Pagination } from '@/components/ui/Pagination';
 import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
+import { LoteContabilidadeDialog } from './LoteContabilidadeDialog';
 
 const PAGE_SIZE = 20;
 
@@ -47,6 +48,7 @@ export function ClientesContabilidadeManager() {
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
   const [excluirLoteResultado, setExcluirLoteResultado] = useState<ExclusaoLoteResultado | null>(null);
+  const [mostrarLote, setMostrarLote] = useState(false);
   const [pagina, setPagina] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -194,9 +196,15 @@ export function ClientesContabilidadeManager() {
   const nomesSelecionados = [...selecionados]
     .map((id) => clientesPorId.get(id)?.nome)
     .filter((n): n is string => Boolean(n));
+  const clientesSelecionadosAtivos = [...selecionados]
+    .map((id) => clientesPorId.get(id))
+    .filter((c): c is ClienteContabilidade => Boolean(c?.ativo));
 
   return (
     <section className="space-y-5">
+      {mostrarLote && (
+        <LoteContabilidadeDialog clientes={clientesSelecionadosAtivos} onClose={() => setMostrarLote(false)} />
+      )}
       {confirmacao && (
         <ConfirmDialog
           titulo={confirmacao.tipo === 'unico' ? 'Excluir cliente contábil' : `Excluir ${confirmacao.ids.length} clientes`}
@@ -312,6 +320,14 @@ export function ClientesContabilidadeManager() {
           <div className="flex items-center gap-2">
             <button onClick={() => setSelecionados(new Set())} className="btn-ghost btn btn-sm">
               Limpar seleção
+            </button>
+            <button
+              onClick={() => setMostrarLote(true)}
+              disabled={clientesSelecionadosAtivos.length === 0}
+              title={clientesSelecionadosAtivos.length === 0 ? 'Nenhum cliente ativo selecionado' : undefined}
+              className="btn-primary btn btn-sm"
+            >
+              Calcular em lote ({clientesSelecionadosAtivos.length})
             </button>
             <button
               onClick={() => setConfirmacao({ tipo: 'lote', ids: [...selecionados] })}

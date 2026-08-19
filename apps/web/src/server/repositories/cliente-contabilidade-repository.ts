@@ -48,6 +48,21 @@ export async function listarClientesContabilidade(
   return (data as ClienteContabilidadeRow[]).map(toClienteContabilidade);
 }
 
+/**
+ * Busca vários clientes contábeis de uma vez (feedback do dono, 2026-08-20— cálculo em lote) —
+ * mesmo padrão de `listarMedicosPorIds`: 1 query em vez de N round-trips pra validar/resolver o
+ * lote inteiro.
+ */
+export async function listarClientesContabilidadePorIds(ids: string[]): Promise<ClienteContabilidade[]> {
+  if (ids.length === 0) return [];
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from('clientes_contabilidade').select('*').in('id', ids);
+  if (error) {
+    throw new ApiError(500, 'Falha ao buscar clientes contábeis', 'DB_ERROR', { error: error.message });
+  }
+  return (data as ClienteContabilidadeRow[]).map(toClienteContabilidade);
+}
+
 export async function buscarClienteContabilidade(id: string): Promise<ClienteContabilidade | null> {
   const db = getSupabaseAdmin();
   const { data, error } = await db.from('clientes_contabilidade').select('*').eq('id', id).maybeSingle();

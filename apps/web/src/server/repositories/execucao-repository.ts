@@ -59,6 +59,9 @@ export async function criarExecucao(
   clienteContabilidadeId?: string | null,
   /** Marca a execução como o boleto avulso do adicional semestral (Story 11.4). */
   ehAdicional?: boolean,
+  /** CÁLCULO EM LOTE de clientes contábeis (feedback do dono, 2026-08-20) — migration 0051.
+   *  Distinto de `clienteContabilidadeId` (singular): nunca preenchidos juntos. */
+  clientesContabilidadeIds?: string[] | null,
 ): Promise<Execucao> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -72,6 +75,7 @@ export async function criarExecucao(
       empresa_id: empresaId ?? null,
       cliente_contabilidade_id: clienteContabilidadeId ?? null,
       eh_adicional: ehAdicional ?? false,
+      clientes_contabilidade_ids: clientesContabilidadeIds?.length ? clientesContabilidadeIds : null,
     })
     .select('*')
     .single();

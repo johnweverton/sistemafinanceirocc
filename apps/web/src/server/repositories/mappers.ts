@@ -646,6 +646,8 @@ export interface ExecucaoRow {
   cliente_contabilidade_id?: string | null;
   /** Adicional semestral (migration 0033, Story 11.4) — opcional em bancos sem a migration. */
   eh_adicional?: boolean | null;
+  /** Lote de clientes contábeis (migration 0051) — opcional em bancos sem a migration. */
+  clientes_contabilidade_ids?: string[] | null;
 }
 
 export function toExecucao(row: ExecucaoRow): Execucao {
@@ -666,6 +668,7 @@ export function toExecucao(row: ExecucaoRow): Execucao {
     empresaId: row.empresa_id ?? null,
     clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
     ehAdicional: row.eh_adicional ?? false,
+    clientesContabilidadeIds: row.clientes_contabilidade_ids ?? null,
   };
 }
 

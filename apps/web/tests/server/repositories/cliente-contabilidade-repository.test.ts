@@ -74,6 +74,10 @@ vi.mock('../../../src/lib/supabase/admin', () => ({
             eq: vi.fn((_col: string, id: string) => ({
               maybeSingle: vi.fn(async () => ({ data: estado.clientes.get(id) ?? null, error: null })),
             })),
+            in: vi.fn(async (_col: string, ids: string[]) => ({
+              data: ids.map((id) => estado.clientes.get(id)).filter(Boolean),
+              error: null,
+            })),
             order: vi.fn(async () => ({
               data: Array.from(estado.clientes.values()),
               error: null,
@@ -142,6 +146,7 @@ import {
   excluirClienteContabilidade,
   historicoDoClienteContabilidade,
   listarClientesContabilidade,
+  listarClientesContabilidadePorIds,
 } from '../../../src/server/repositories/cliente-contabilidade-repository';
 
 beforeEach(() => {
@@ -182,6 +187,26 @@ describe('listarClientesContabilidade', () => {
     const clientes = await listarClientesContabilidade();
     expect(clientes).toHaveLength(1);
     expect(clientes[0]?.nome).toBe('Padaria Bom Pão Ltda');
+  });
+});
+
+describe('listarClientesContabilidadePorIds (feedback do dono, 2026-08-20 — cálculo em lote)', () => {
+  it('devolve só os clientes cujos ids foram passados', async () => {
+    estado.clientes.set('cc-1', clienteRow({ id: 'cc-1', nome: 'A' }));
+    estado.clientes.set('cc-2', clienteRow({ id: 'cc-2', nome: 'B' }));
+    estado.clientes.set('cc-3', clienteRow({ id: 'cc-3', nome: 'C' }));
+    const clientes = await listarClientesContabilidadePorIds(['cc-1', 'cc-3']);
+    expect(clientes.map((c) => c.nome).sort()).toEqual(['A', 'C']);
+  });
+
+  it('lista vazia de ids → [] sem consultar o banco', async () => {
+    expect(await listarClientesContabilidadePorIds([])).toEqual([]);
+  });
+
+  it('id inexistente é simplesmente omitido do resultado (sem erro)', async () => {
+    estado.clientes.set('cc-1', clienteRow({ id: 'cc-1', nome: 'A' }));
+    const clientes = await listarClientesContabilidadePorIds(['cc-1', 'cc-inexistente']);
+    expect(clientes).toHaveLength(1);
   });
 });
 

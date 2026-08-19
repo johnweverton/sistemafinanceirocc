@@ -62,3 +62,16 @@ export const dispararExecucaoSchema = z
   });
 
 export type DispararExecucaoInput = z.infer<typeof dispararExecucaoSchema>;
+
+// Cálculo em lote de clientes contábeis (feedback do dono, 2026-08-20) — N clientes, 1 execução.
+// Mesmo teto de LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS (execucao-orchestrator.ts): duplicado aqui
+// de propósito (validação de payload é responsabilidade da camada HTTP, não do orquestrador).
+export const dispararLoteClientesContabilidadeSchema = z.object({
+  competencia: z.string().regex(/^\d{4}-\d{2}$/, 'Competência deve ser AAAA-MM'),
+  clienteContabilidadeIds: z
+    .array(z.string().uuid())
+    .min(1, 'Selecione ao menos um cliente contábil')
+    .max(200, 'Máximo de 200 clientes por lote'),
+});
+
+export type DispararLoteClientesContabilidadeInput = z.infer<typeof dispararLoteClientesContabilidadeSchema>;

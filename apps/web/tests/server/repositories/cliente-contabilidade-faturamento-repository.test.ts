@@ -4,10 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 interface EstadoFake {
   faturamentos: Map<string, Record<string, unknown>>; // chave: `${clienteId}:${competencia}`
+  /** Clientes cujo upsert deve falhar (simula erro do banco) — lote em massa, 2026-08-20. */
+  falhaParaCliente: Set<string>;
 }
 
 function novoEstado(): EstadoFake {
-  return { faturamentos: new Map() };
+  return { faturamentos: new Map(), falhaParaCliente: new Set() };
 }
 
 let estado = novoEstado();
@@ -24,6 +26,9 @@ vi.mock('../../../src/lib/supabase/admin', () => ({
           upsert: vi.fn((row: Record<string, unknown>) => ({
             select: vi.fn(() => ({
               single: vi.fn(async () => {
+                if (estado.falhaParaCliente.has(row.cliente_contabilidade_id as string)) {
+                  return { data: null, error: { message: 'falha simulada de banco' } };
+                }
                 const k = chave(row.cliente_contabilidade_id as string, row.competencia as string);
                 const existente = estado.faturamentos.get(k);
                 const salvo = { id: existente?.id ?? `fat-${estado.faturamentos.size + 1}`, ...row };
@@ -57,6 +62,7 @@ vi.mock('../../../src/lib/supabase/admin', () => ({
 
 import {
   lancarFaturamento,
+  lancarFaturamentoLote,
   listarFaturamentos,
   buscarFaturamento,
 } from '../../../src/server/repositories/cliente-contabilidade-faturamento-repository';

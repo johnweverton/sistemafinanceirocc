@@ -50,6 +50,24 @@ export interface ExclusaoLoteResultado {
   bloqueados: { id: string; nome: string; motivo: string }[];
 }
 
+// Cálculo/emissão em lote (feedback do dono, 2026-08-20) — sem emissão em lote própria: o
+// cálculo devolve um `execucaoId` que o mecanismo JÁ EXISTENTE de emissão em lote de boletos
+// (LoteEmissaoDialog) consome sem mudança nenhuma (já é agnóstico de médico/empresa/cliente).
+export interface DispararLotePayload {
+  competencia: string;
+  clienteContabilidadeIds: string[];
+}
+
+export interface LancamentoFaturamentoLotePayload {
+  clienteContabilidadeId: string;
+  faturamento: number;
+}
+
+export interface ResultadoLancamentoFaturamentoLote {
+  lancados: number;
+  falhas: { clienteContabilidadeId: string; motivo: string }[];
+}
+
 export const clientesContabilidadeService = {
   listar: () => apiFetch<ClienteContabilidade[]>('/clientes-contabilidade'),
   detalhe: (id: string) => apiFetch<ClienteContabilidade>(`/clientes-contabilidade/${id}`),
@@ -88,6 +106,16 @@ export const clientesContabilidadeService = {
     apiFetch<ExecucaoHistoricoMedicoItem[]>(`/clientes-contabilidade/${id}/execucoes`),
   lancarFaturamento: (id: string, payload: LancarFaturamentoPayload) =>
     apiFetch<LancarFaturamentoResposta>(`/clientes-contabilidade/${id}/faturamentos`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  lancarFaturamentoLote: (competencia: string, lancamentos: LancamentoFaturamentoLotePayload[]) =>
+    apiFetch<ResultadoLancamentoFaturamentoLote>('/clientes-contabilidade/faturamentos/lote', {
+      method: 'POST',
+      body: JSON.stringify({ competencia, lancamentos }),
+    }),
+  dispararLote: (payload: DispararLotePayload) =>
+    apiFetch<{ execucaoId: string }>('/clientes-contabilidade/lote', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

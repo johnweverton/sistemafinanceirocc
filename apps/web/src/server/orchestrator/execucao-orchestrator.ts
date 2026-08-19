@@ -29,7 +29,10 @@ import { aplicarRegraPreco } from '@/server/engine/regra-preco';
 import { buscarItens, buscarItensPorLote } from '@/server/integration/fin-api-client';
 import { buscarMedico, listarMedicosPorIds } from '@/server/repositories/medico-repository';
 import { buscarEmpresa } from '@/server/repositories/empresa-repository';
-import { buscarClienteContabilidade } from '@/server/repositories/cliente-contabilidade-repository';
+import {
+  buscarClienteContabilidade,
+  listarClientesContabilidadePorIds,
+} from '@/server/repositories/cliente-contabilidade-repository';
 import { buscarFaturamento } from '@/server/repositories/cliente-contabilidade-faturamento-repository';
 import {
   criarExecucao,
@@ -63,6 +66,17 @@ import { executarComLimite } from './concorrencia';
  * maxDuration de 300s (architecture).
  */
 export const BATCH_SIZE = 150;
+
+/**
+ * Clientes contábeis por lote de cálculo (feedback do dono, 2026-08-20). Diferente do lote de
+ * médico, cada cliente é só leitura local (regra de preço + faturamento já lançado, sem chamada
+ * de rede externa) — cabe inteiro numa invocação só, sem encadeamento. Mesmo teto de
+ * `EMISSAO_LOTE_MAX_ITENS` (emissao-lote-orchestrator.ts) — consistência de limite no sistema.
+ */
+export const LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS = 200;
+/** Concorrência do lote de clientes contábeis — mesma ordem de grandeza do médico (8), mas sem
+ *  precisar de env var nova (não há chamada de rede externa a limitar, só leitura de banco). */
+export const LOTE_CLIENTES_CONTABILIDADE_CONCORRENCIA = 8;
 
 export interface SelecaoDeps {
   execucaoId: string;
@@ -101,6 +115,8 @@ export interface OrchestratorDeps {
   buscarEmpresa: (id: string) => Promise<Empresa | null>;
   /** Cliente contábil de uma execução (Story 11.3). */
   buscarClienteContabilidade: (id: string) => Promise<ClienteContabilidade | null>;
+  /** Vários clientes contábeis de uma vez (feedback do dono, 2026-08-20 — cálculo em lote). */
+  listarClientesContabilidadePorIds: (ids: string[]) => Promise<ClienteContabilidade[]>;
   /** Faturamento lançado da competência (Story 11.2), usado no modo faixa_faturamento. */
   buscarFaturamentoClienteContabilidade: (
     clienteId: string,
@@ -132,6 +148,7 @@ export interface OrchestratorDeps {
     empresaId?: string | null,
     clienteContabilidadeId?: string | null,
     ehAdicional?: boolean,
+    clientesContabilidadeIds?: string[] | null,
   ) => Promise<Execucao>;
   buscarExecucao: (id: string) => Promise<Execucao | null>;
   contarResultados: (execucaoId: string) => Promise<number>;
@@ -202,6 +219,7 @@ export function depsPadrao(): OrchestratorDeps {
     listarMedicosPorIds,
     buscarEmpresa,
     buscarClienteContabilidade,
+    listarClientesContabilidadePorIds,
     buscarFaturamentoClienteContabilidade: buscarFaturamento,
     criarExecucao,
     buscarExecucao,
@@ -371,6 +389,46 @@ export async function iniciarExecucao(
   return deps.criarExecucao(competencia, usuarioId, selecoes, empresaId ?? null);
 }
 
+/**
+ * Cria uma execução de CÁLCULO EM LOTE de clientes contábeis (feedback do dono, 2026-08-20) — N
+ * clientes, 1 execução, N execucao_resultados (mesmo desenho do lote de médico). Diferente de
+ * `iniciarExecucao` com `clienteContabilidadeId` singular: aqui sempre múltiplos clientes.
+ * Validação de existência/ativo é feita aqui (defesa em profundidade — a UI já filtra), mesmo
+ * espírito do QA M-1 pra médico em `iniciarExecucao` acima.
+ */
+export async function iniciarLoteClientesContabilidade(
+  competencia: string,
+  clienteContabilidadeIds: string[],
+  usuarioId: string,
+  deps: OrchestratorDeps = depsPadrao(),
+): Promise<Execucao> {
+  const idsUnicos = [...new Set(clienteContabilidadeIds)];
+  if (idsUnicos.length !== clienteContabilidadeIds.length) {
+    throw new ApiError(422, 'Clientes contábeis duplicados na seleção', 'SELECAO_DUPLICADA');
+  }
+  if (idsUnicos.length > LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS) {
+    throw new ApiError(
+      422,
+      `Selecionados ${idsUnicos.length} clientes, acima do limite de ${LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS} por lote.`,
+      'LOTE_MUITO_GRANDE',
+    );
+  }
+
+  const clientes = await deps.listarClientesContabilidadePorIds(idsUnicos);
+  const porId = new Map(clientes.map((c) => [c.id, c]));
+  const invalidos: string[] = [];
+  for (const id of idsUnicos) {
+    const c = porId.get(id);
+    if (!c) invalidos.push(`${id}: cliente contábil não encontrado`);
+    else if (!c.ativo) invalidos.push(`${c.nome}: inativo`);
+  }
+  if (invalidos.length > 0) {
+    throw new ApiError(422, 'Seleção inválida para lote de clientes contábeis', 'SELECAO_INVALIDA', { invalidos });
+  }
+
+  return deps.criarExecucao(competencia, usuarioId, [], null, null, false, idsUnicos);
+}
+
 export interface ResultadoLote {
   concluido: boolean;
   processadosNoLote: number;
@@ -406,6 +464,18 @@ export async function processarProximoLote(
       execucao.clienteContabilidadeId,
       execucao.competencia,
       Boolean(execucao.ehAdicional),
+      deps,
+    );
+  }
+
+  // Feedback do dono, 2026-08-20: CÁLCULO EM LOTE de clientes contábeis — N clientes, sem
+  // encadeamento (cada cálculo é só leitura local, cabe inteiro numa invocação). Única leitura
+  // de `execucao.clientesContabilidadeIds` em todo o orquestrador.
+  if (execucao.clientesContabilidadeIds && execucao.clientesContabilidadeIds.length > 0) {
+    return processarLoteClientesContabilidade(
+      execucaoId,
+      execucao.clientesContabilidadeIds,
+      execucao.competencia,
       deps,
     );
   }
@@ -622,10 +692,47 @@ async function processarExecucaoEmpresa(
 }
 
 /**
+ * Calcula o valor de um cliente contábil pela regra de preço dele — sem I/O de gravação, só
+ * leitura (regra do cliente + faturamento lançado, quando `faixa_faturamento`). Extraída pra
+ * reuso entre o caso singular (`processarExecucaoClienteContabilidade`) e o lote (feedback do
+ * dono, 2026-08-20) — as duas execuções da mesma regra de negócio não podem divergir.
+ */
+async function calcularResultadoClienteContabilidade(
+  cliente: ClienteContabilidade,
+  competencia: string,
+  ehAdicional: boolean,
+  deps: OrchestratorDeps,
+): Promise<{ valor: number; alertas: string[]; subtotalFaixa: string }> {
+  // Adicional semestral (Story 11.4): valor à parte do cadastro, ignora modoCobranca/faturamento
+  // — regra montada em memória (não é a `regraPreco` persistida do cliente).
+  if (ehAdicional) {
+    return aplicarRegraPreco(
+      { forma: 'fixo', base: null, limiar: null, taxa: null, valorFixo: cliente.adicionalValor },
+      0,
+    );
+  }
+  if (cliente.modoCobranca === 'faixa_faturamento') {
+    const faturamento = await deps.buscarFaturamentoClienteContabilidade(cliente.id, competencia);
+    if (!faturamento) {
+      // Nunca chuta valor (PRD §2): sem faturamento lançado, alerta explícito — o operador
+      // precisa lançar o faturamento (Story 11.2) antes de gerar o boleto desta competência.
+      return {
+        valor: 0,
+        alertas: [`Faturamento não lançado para a competência ${competencia}. Lance antes de gerar o boleto.`],
+        subtotalFaixa: '',
+      };
+    }
+    return aplicarRegraPreco(cliente.regraPreco, faturamento.faturamento);
+  }
+  // modo 'fixo': valorFixo independe de qualquer quantidade (0 é ignorado por aplicarRegraPreco
+  // nesta forma).
+  return aplicarRegraPreco(cliente.regraPreco, 0);
+}
+
+/**
  * Processa uma execução de CLIENTE CONTÁBIL (Story 11.3) de ponta a ponta, sem lotes: não há
  * médicos nem produção — só a regra de preço do cliente e, no modo `faixa_faturamento`, o
- * faturamento já lançado da competência (Story 11.2). Mesmo mecanismo de `aplicarRegraPreco`
- * usado por médico/empresa, reaproveitado sem alteração. Falha de infraestrutura propaga (mesmo
+ * faturamento já lançado da competência (Story 11.2). Falha de infraestrutura propaga (mesmo
  * comportamento de `processarExecucaoEmpresa` — não há "isolar 1 e seguir" pra um resultado só).
  */
 async function processarExecucaoClienteContabilidade(
@@ -638,33 +745,7 @@ async function processarExecucaoClienteContabilidade(
   const cliente = await deps.buscarClienteContabilidade(clienteContabilidadeId);
   if (!cliente) throw new Error(`Cliente contábil ${clienteContabilidadeId} não encontrado`);
 
-  const resultado = await (async () => {
-    // Adicional semestral (Story 11.4): valor à parte do cadastro, ignora modoCobranca/faturamento
-    // — regra montada em memória (não é a `regraPreco` persistida do cliente).
-    if (ehAdicional) {
-      return aplicarRegraPreco(
-        { forma: 'fixo', base: null, limiar: null, taxa: null, valorFixo: cliente.adicionalValor },
-        0,
-      );
-    }
-    if (cliente.modoCobranca === 'faixa_faturamento') {
-      const faturamento = await deps.buscarFaturamentoClienteContabilidade(clienteContabilidadeId, competencia);
-      if (!faturamento) {
-        // Nunca chuta valor (PRD §2): sem faturamento lançado, alerta explícito — o operador
-        // precisa lançar o faturamento (Story 11.2) antes de gerar o boleto desta competência.
-        return {
-          valor: 0,
-          alertas: [`Faturamento não lançado para a competência ${competencia}. Lance antes de gerar o boleto.`],
-          subtotalFaixa: '',
-        };
-      }
-      return aplicarRegraPreco(cliente.regraPreco, faturamento.faturamento);
-    }
-    // modo 'fixo': valorFixo independe de qualquer quantidade (0 é ignorado por aplicarRegraPreco
-    // nesta forma).
-    return aplicarRegraPreco(cliente.regraPreco, 0);
-  })();
-
+  const resultado = await calcularResultadoClienteContabilidade(cliente, competencia, ehAdicional, deps);
   const status: ExecucaoResultado['status'] = resultado.alertas.length > 0 ? 'alerta' : 'ok';
 
   await deps.gravarResultadoClienteContabilidade(execucaoId, cliente.id, {
@@ -687,6 +768,60 @@ async function processarExecucaoClienteContabilidade(
   });
 
   return { concluido: true, processadosNoLote: 1, progresso: 100 };
+}
+
+/**
+ * Processa o CÁLCULO EM LOTE de clientes contábeis (feedback do dono, 2026-08-20) de ponta a
+ * ponta, sem encadeamento: cada cálculo é só leitura local (regra de preço + faturamento já
+ * lançado), então cabe inteiro numa invocação só, com concorrência limitada (mesmo padrão do
+ * lote de médico, `executarComLimite`). Falha de 1 cliente vira alerta nesse resultado e não
+ * afeta os demais (mesmo espírito de `processarUmMedico`) — `ehAdicional` nunca é true aqui: o
+ * adicional semestral é um boleto avulso por cliente, não faz sentido em lote.
+ */
+async function processarLoteClientesContabilidade(
+  execucaoId: string,
+  clienteContabilidadeIds: string[],
+  competencia: string,
+  deps: OrchestratorDeps,
+): Promise<ResultadoLote> {
+  await executarComLimite(clienteContabilidadeIds, LOTE_CLIENTES_CONTABILIDADE_CONCORRENCIA, (clienteId) =>
+    processarUmClienteContabilidadeDoLote(execucaoId, clienteId, competencia, deps),
+  );
+
+  await finalizar(execucaoId, deps);
+  return { concluido: true, processadosNoLote: clienteContabilidadeIds.length, progresso: 100 };
+}
+
+/** Calcula e grava 1 cliente do lote, isolando falha (não derruba os demais clientes do lote). */
+async function processarUmClienteContabilidadeDoLote(
+  execucaoId: string,
+  clienteContabilidadeId: string,
+  competencia: string,
+  deps: OrchestratorDeps,
+): Promise<void> {
+  try {
+    const cliente = await deps.buscarClienteContabilidade(clienteContabilidadeId);
+    if (!cliente) throw new Error('Cliente contábil não encontrado na base');
+
+    const resultado = await calcularResultadoClienteContabilidade(cliente, competencia, false, deps);
+    const status: ExecucaoResultado['status'] = resultado.alertas.length > 0 ? 'alerta' : 'ok';
+    await deps.gravarResultadoClienteContabilidade(execucaoId, cliente.id, {
+      nome: cliente.nome,
+      totalValor: resultado.valor,
+      status,
+      alertas: resultado.alertas,
+      subtotalFaixa: resultado.subtotalFaixa,
+    });
+  } catch (e) {
+    // Falha de infraestrutura ao calcular — vira alerta nesse cliente, o lote segue.
+    await deps.gravarResultadoClienteContabilidade(execucaoId, clienteContabilidadeId, {
+      nome: 'Cliente contábil desconhecido',
+      totalValor: 0,
+      status: 'alerta',
+      alertas: [`Falha ao calcular. Tentar novamente. (${String(e)})`],
+      subtotalFaixa: '',
+    });
+  }
 }
 
 async function finalizar(execucaoId: string, deps: OrchestratorDeps): Promise<void> {

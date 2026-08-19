@@ -31,8 +31,12 @@ describe('Orquestrador — cliente contábil, modo fixo (Story 11.3)', () => {
     expect(resultado.totalValor).toBe(1200);
     expect(resultado.nome).toBe('Clínica X');
 
-    // Regressão: nenhum resultado por-médico nem de empresa foi gravado.
-    expect(state.resultados.get(exec.id)).toEqual([]);
+    // Regressão: o resultado espelhado no map genérico (mesma tabela execucao_resultados do
+    // banco real — necessário pro CÁLCULO EM LOTE, 2026-08-20) tem medicoId null e o valor do
+    // cliente contábil, nunca um resultado por-médico de verdade; nenhum resultado de empresa.
+    expect(state.resultados.get(exec.id)).toEqual([
+      { medicoId: null, r: expect.objectContaining({ nome: 'Clínica X', totalValor: 1200, status: 'ok' }) },
+    ]);
     expect(state.resultadosEmpresa.has(exec.id)).toBe(false);
   });
 });

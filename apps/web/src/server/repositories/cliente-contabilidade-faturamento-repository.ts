@@ -45,6 +45,40 @@ export async function lancarFaturamento(
   return toClienteContabilidadeFaturamento(data as ClienteContabilidadeFaturamentoRow);
 }
 
+export interface LancamentoFaturamentoLote {
+  clienteContabilidadeId: string;
+  faturamento: number;
+}
+
+export interface ResultadoLancamentoFaturamentoLote {
+  lancados: number;
+  falhas: { clienteContabilidadeId: string; motivo: string }[];
+}
+
+/**
+ * Lança faturamento de VÁRIOS clientes na mesma competência (feedback do dono, 2026-08-20) —
+ * passo que precede o cálculo em lote pros clientes `faixa_faturamento` (o valor do boleto
+ * desse modo depende do faturamento já lançado). Falha individual não aborta o lote — mesmo
+ * espírito de `excluirClientesContabilidade`.
+ */
+export async function lancarFaturamentoLote(
+  competencia: string,
+  lancamentos: LancamentoFaturamentoLote[],
+  informadoPor: string,
+): Promise<ResultadoLancamentoFaturamentoLote> {
+  const resultado: ResultadoLancamentoFaturamentoLote = { lancados: 0, falhas: [] };
+  for (const l of lancamentos) {
+    try {
+      await lancarFaturamento(l.clienteContabilidadeId, competencia, l.faturamento, informadoPor);
+      resultado.lancados += 1;
+    } catch (e) {
+      const motivo = e instanceof ApiError ? e.message : 'Falha ao lançar faturamento';
+      resultado.falhas.push({ clienteContabilidadeId: l.clienteContabilidadeId, motivo });
+    }
+  }
+  return resultado;
+}
+
 export async function listarFaturamentos(
   clienteContabilidadeId: string,
 ): Promise<ClienteContabilidadeFaturamento[]> {

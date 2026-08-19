@@ -189,9 +189,11 @@ export function fakeDeps(
       ids.map((id) => state.medicos.get(id)).filter((m): m is Medico => m != null),
     buscarEmpresa: async (id) => state.empresas.get(id) ?? null,
     buscarClienteContabilidade: async (id) => state.clientesContabilidade.get(id) ?? null,
+    listarClientesContabilidadePorIds: async (ids) =>
+      ids.map((id) => state.clientesContabilidade.get(id)).filter((c): c is ClienteContabilidade => c != null),
     buscarFaturamentoClienteContabilidade: async (clienteId, competencia) =>
       state.faturamentos.get(`${clienteId}:${competencia}`) ?? null,
-    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId, clienteContabilidadeId, ehAdicional) => {
+    criarExecucao: async (competencia, iniciadoPor, selecoes, empresaId, clienteContabilidadeId, ehAdicional, clientesContabilidadeIds) => {
       const id = `exec-${proximoId++}`;
       const exec: Execucao = {
         id,
@@ -210,6 +212,7 @@ export function fakeDeps(
         empresaId: empresaId ?? null,
         clienteContabilidadeId: clienteContabilidadeId ?? null,
         ehAdicional: ehAdicional ?? false,
+        clientesContabilidadeIds: clientesContabilidadeIds ?? null,
       };
       state.execucoes.set(id, exec);
       state.resultados.set(id, []);
@@ -238,6 +241,28 @@ export function fakeDeps(
     gravarResultadoClienteContabilidade: async (execucaoId, clienteContabilidadeId, r) => {
       const resultadoId = `resultado-cliente-contabilidade-${proximoId++}`;
       state.resultadosClienteContabilidade.set(execucaoId, { id: resultadoId, execucaoId, clienteContabilidadeId, ...r });
+      // Espelha no map genérico de resultados (mesma tabela `execucao_resultados` no banco real,
+      // onde listarResultados/finalizar leem de forma agnóstica) — necessário pro CÁLCULO EM
+      // LOTE (feedback do dono, 2026-08-20), que grava N clientes na MESMA execução e depende de
+      // `finalizar` agregar todos eles, não só o último (resultadosClienteContabilidade acima é
+      // singular por execução — preservado pro caso singular já existente, não usado no lote).
+      const lista = state.resultados.get(execucaoId) ?? [];
+      lista.push({
+        medicoId: null,
+        r: {
+          cpf: '',
+          nome: r.nome,
+          procedimentos: 0,
+          cirurgias: 0,
+          guias: 0,
+          guiasConsolidado: 0,
+          subtotais: [],
+          totalValor: r.totalValor,
+          status: r.status,
+          alertas: r.alertas,
+        },
+      });
+      state.resultados.set(execucaoId, lista);
       return resultadoId;
     },
     atualizarProgresso: async (id, progresso) => {

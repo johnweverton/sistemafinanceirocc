@@ -88,3 +88,23 @@ export const lancarFaturamentoSchema = z
   .strict();
 
 export type LancarFaturamentoInput = z.infer<typeof lancarFaturamentoSchema>;
+
+// Lançamento de faturamento EM MASSA (feedback do dono, 2026-08-20) — mesma competência pra
+// vários clientes `faixa_faturamento` de uma vez, passo que precede o cálculo em lote (o valor do
+// boleto desse modo depende do faturamento já lançado, nunca é derivável sozinho).
+export const lancarFaturamentoLoteSchema = z
+  .object({
+    competencia: competenciaSchema,
+    lancamentos: z
+      .array(
+        z.object({
+          clienteContabilidadeId: z.string().uuid(),
+          faturamento: z.number().min(0, 'Faturamento não pode ser negativo'),
+        }),
+      )
+      .min(1, 'Informe ao menos um lançamento')
+      .max(200, 'Máximo de 200 lançamentos por vez'),
+  })
+  .strict();
+
+export type LancarFaturamentoLoteInput = z.infer<typeof lancarFaturamentoLoteSchema>;
