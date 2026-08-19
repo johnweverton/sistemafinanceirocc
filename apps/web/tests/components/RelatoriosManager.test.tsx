@@ -95,7 +95,7 @@ describe('RelatoriosManager', () => {
     await waitFor(() => expect(screen.getByText(/Sem recebíveis no período/i)).toBeInTheDocument());
   });
 
-  it('filtro "Tipo de serviço" (migration 0049) repassa tipoServico pro preview e pro export', async () => {
+  it('filtro "Tipo de serviço" (migration 0050) repassa tipoServico pro preview e pro export', async () => {
     mockPreview.mockResolvedValue(RELATORIO);
     mockListarLinks.mockResolvedValue([]);
     renderComProviders();

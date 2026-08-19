@@ -989,7 +989,7 @@ export interface RecebivelRow {
   /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
   conta_emissora?: Recebivel['contaEmissora'] | null;
   status_derivado: StatusRecebivel;
-  /** Migration 0049 — opcionais em bancos sem a migration aplicada. */
+  /** Migration 0050 — opcionais em bancos sem a migration aplicada. */
   cliente_contabilidade_id?: string | null;
   tipo_servico?: Recebivel['tipoServico'] | null;
 }
@@ -1010,7 +1010,7 @@ export function toRecebivel(row: RecebivelRow): Recebivel {
     contaEmissora: row.conta_emissora ?? 'mc', // default seguro pré-migration 0021 (backfill)
     statusDerivado: row.status_derivado,
     clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
-    tipoServico: row.tipo_servico ?? 'cobranca_medica', // default seguro pré-migration 0049
+    tipoServico: row.tipo_servico ?? 'cobranca_medica', // default seguro pré-migration 0050
   };
 }
 

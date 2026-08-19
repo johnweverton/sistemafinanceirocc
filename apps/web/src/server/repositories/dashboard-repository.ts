@@ -27,7 +27,7 @@ import {
 /**
  * Resumo por competência. Retorna as linhas por competência E a linha de rollup (competencia = null =
  * total geral), graças ao GROUPING SETS da view (0010). Filtro opcional para uma competência específica.
- * `contaEmissora` (migration 0042) e `tipoServico` (migration 0049) são filtros INDEPENDENTES — sempre
+ * `contaEmissora` (migration 0042) e `tipoServico` (migration 0050) são filtros INDEPENDENTES — sempre
  * aplicados (eq ou is-null), mesmo quando `competencia` não é passada (ela continua sem filtro nesse
  * caso, para alimentar o dropdown numa query só).
  */
@@ -50,7 +50,7 @@ export async function resumoPorCompetencia(
  * Resumo por médico. Sem `competencia` → linha de rollup por médico (todas as competências, via
  * GROUPING SETS na view 0010). Com `competencia` → totais do médico naquela competência. Ordenado por
  * total emitido. Agregações (ticket/inadimplência) vêm do banco — não são recomputadas no cliente.
- * `contaEmissora` (migration 0042) e `tipoServico` (migration 0049) seguem o mesmo padrão: sem eles →
+ * `contaEmissora` (migration 0042) e `tipoServico` (migration 0050) seguem o mesmo padrão: sem eles →
  * rollup (IS NULL); com eles → eq. Cliente contábil aparece aqui com medico_id NULL e nome = nome do
  * cliente (mesmo desenho de sempre) — filtrar tipoServico='contabilidade' isola essas linhas, é o
  * "relatório dos clientes de contabilidade" pedido pelo dono, sem view nova.
@@ -96,7 +96,7 @@ export async function resumoPorEmpresa(
 }
 
 /**
- * Resumo por tipo de serviço (Cobrança Médica vs Contabilidade, migration 0049) — feedback do
+ * Resumo por tipo de serviço (Cobrança Médica vs Contabilidade, migration 0050) — feedback do
  * dono 2026-08-19: "separar as emissões realizadas para o serviço de contabilidade e emissões
  * para o serviço de cobranças médicas". Mesmo eixo de `resumoPorEmpresa`, mas isolado por
  * tipo_servico (nunca NULL) em vez de conta_emissora. `contaEmissora` opcional (sem ela → rollup,
@@ -119,7 +119,7 @@ export async function resumoPorTipoServico(
 /**
  * Aging de vencidos. Sem `competencia` → rollup por faixa (todas as competências). Com `competencia` →
  * aging daquela competência. (GROUPING SETS na view 0010.) `contaEmissora` (migration 0042) e
- * `tipoServico` (migration 0049) seguem o mesmo padrão independente: sem eles → rollup (IS NULL);
+ * `tipoServico` (migration 0050) seguem o mesmo padrão independente: sem eles → rollup (IS NULL);
  * com eles → eq.
  */
 export async function aging(

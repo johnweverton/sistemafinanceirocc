@@ -43,7 +43,7 @@ export interface ResumoPorEmpresa {
 }
 
 /**
- * Resumo por tipo de serviço (Cobrança Médica vs Contabilidade, migration 0049) — mesmo
+ * Resumo por tipo de serviço (Cobrança Médica vs Contabilidade, migration 0050) — mesmo
  * grouping set (competencia, tipo_servico) de vw_dashboard_competencia, isolado por
  * tipo_servico (nunca NULL). Espelha ResumoPorEmpresa, mas no eixo tipo_servico.
  */

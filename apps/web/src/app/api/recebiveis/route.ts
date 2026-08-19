@@ -14,7 +14,7 @@ const recebiveisQuerySchema = z.object({
   status: z.enum(['pago', 'cancelado', 'vencido', 'em_aberto']).optional(),
   // Filtro por empresa emissora (Story 7.3) — espelha a CHECK do banco.
   conta: z.enum(CONTAS_EMISSORAS_VALIDAS).optional(),
-  // Cobrança Médica vs Contabilidade (migration 0049).
+  // Cobrança Médica vs Contabilidade (migration 0050).
   tipoServico: z.enum(TIPOS_SERVICO_VALIDOS).optional(),
 });
 

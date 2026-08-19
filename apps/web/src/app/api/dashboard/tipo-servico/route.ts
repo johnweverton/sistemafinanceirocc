@@ -1,5 +1,5 @@
 // GET /api/dashboard/tipo-servico — resumo Cobrança Médica vs Contabilidade (admin/financeiro,
-// migration 0049, feedback do dono 2026-08-19).
+// migration 0050, feedback do dono 2026-08-19).
 import { withErrorHandler } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { resumoPorTipoServico } from '@/server/repositories/dashboard-repository';

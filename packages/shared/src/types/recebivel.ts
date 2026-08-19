@@ -20,9 +20,9 @@ export interface Recebivel {
   /** Conta Cora que emitiu o boleto (Épico 7) — badge/filtro "Empresa" na UI. */
   contaEmissora: ContaEmissora;
   statusDerivado: StatusRecebivel;
-  /** Cliente contábil de origem, quando `tipoServico === 'contabilidade'` (migration 0049). */
+  /** Cliente contábil de origem, quando `tipoServico === 'contabilidade'` (migration 0050). */
   clienteContabilidadeId: string | null;
-  /** Cobrança médica vs contabilidade (migration 0049) — derivado de clienteContabilidadeId,
+  /** Cobrança médica vs contabilidade (migration 0050) — derivado de clienteContabilidadeId,
    *  NUNCA de contaEmissora (as 4 contas atendem qualquer tipo de serviço desde a 0040). */
   tipoServico: TipoServico;
   /** Disparos de notificação (WhatsApp/e-mail) do boleto — badges de status na UI. */
@@ -35,6 +35,6 @@ export interface FiltroRecebiveis {
   statusDerivado?: StatusRecebivel;
   /** Filtro por empresa emissora (Story 7.3). */
   contaEmissora?: ContaEmissora;
-  /** Filtro por tipo de serviço — cobrança médica vs contabilidade (migration 0049). */
+  /** Filtro por tipo de serviço — cobrança médica vs contabilidade (migration 0050). */
   tipoServico?: TipoServico;
 }

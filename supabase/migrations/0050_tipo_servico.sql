@@ -1,4 +1,4 @@
--- Migration 0049 — dimensão `tipo_servico` (Cobrança Médica vs Contabilidade), feedback do
+-- Migration 0050 — dimensão `tipo_servico` (Cobrança Médica vs Contabilidade), feedback do
 -- dono 2026-08-19.
 --
 -- Achado ao investigar: `conta_emissora` NÃO é um proxy confiável de "tipo de serviço" — a
@@ -51,7 +51,7 @@ from boletos b
 where b.status not in ('falha', 'processando');
 
 comment on view vw_recebiveis is
-  'Contas a Receber: boletos + resultado + competencia com status derivado (pago/cancelado/vencido/em_aberto), conta emissora (Épico 7) e tipo de serviço (cobranca_medica/contabilidade, migration 0049 — derivado de cliente_contabilidade_id, NUNCA de conta_emissora). Exclui falhas de emissão e reservas ainda não confirmadas pelo gateway. security_invoker=on respeita a RLS das tabelas base.';
+  'Contas a Receber: boletos + resultado + competencia com status derivado (pago/cancelado/vencido/em_aberto), conta emissora (Épico 7) e tipo de serviço (cobranca_medica/contabilidade, migration 0050 — derivado de cliente_contabilidade_id, NUNCA de conta_emissora). Exclui falhas de emissão e reservas ainda não confirmadas pelo gateway. security_invoker=on respeita a RLS das tabelas base.';
 
 -- ============================================================================
 -- 2. vw_dashboard_competencia — tipo_servico como 3ª dimensão independente via CUBE.

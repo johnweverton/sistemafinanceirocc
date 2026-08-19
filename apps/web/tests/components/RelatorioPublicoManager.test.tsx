@@ -54,7 +54,7 @@ describe('RelatorioPublicoManager', () => {
     expect(screen.getAllByText('MC').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Evolução mensal')).toBeInTheDocument();
     expect(screen.getByText(/Aging de vencidos/)).toBeInTheDocument();
-    // Breakdown Cobrança Médica × Contabilidade (migration 0049, feedback do dono 2026-08-19).
+    // Breakdown Cobrança Médica × Contabilidade (migration 0050, feedback do dono 2026-08-19).
     expect(screen.getByText(/Cobrança Médica × Contabilidade/)).toBeInTheDocument();
     expect(screen.getByText('Cobrança Médica')).toBeInTheDocument();
     expect(screen.getByText('Contabilidade')).toBeInTheDocument();

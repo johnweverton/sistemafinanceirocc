@@ -25,7 +25,7 @@ export function DashboardManager() {
   const filtro = competencia || undefined; // undefined = "Todas" (linha de rollup no banco)
   const [contaEmissora, setContaEmissora] = useState<ContaEmissora | ''>('');
   const contaFiltro = contaEmissora || undefined; // undefined = "Todas as contas" (linha de rollup no banco)
-  // Cobrança Médica vs Contabilidade (migration 0049, feedback do dono 2026-08-19) — NÃO é a
+  // Cobrança Médica vs Contabilidade (migration 0050, feedback do dono 2026-08-19) — NÃO é a
   // mesma dimensão que contaEmissora (as 4 contas atendem qualquer tipo de serviço desde a 0040).
   const [tipoServico, setTipoServico] = useState<TipoServico | ''>('');
   const tipoFiltro = tipoServico || undefined;

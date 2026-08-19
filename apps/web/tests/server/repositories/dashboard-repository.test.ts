@@ -65,7 +65,7 @@ describe('resumoPorCompetencia', () => {
     expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
   });
 
-  it('aplica .eq de tipo_servico quando tipoServico é passado (migration 0049)', async () => {
+  it('aplica .eq de tipo_servico quando tipoServico é passado (migration 0050)', async () => {
     const builder = makeBuilder({ data: [], error: null });
     mockFrom.mockReturnValue(builder);
     await resumoPorCompetencia(undefined, undefined, 'contabilidade');
@@ -175,7 +175,7 @@ describe('resumoPorEmpresa', () => {
     expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'mc');
   });
 
-  it('sempre fica em rollup de tipo_servico via .is(null) — não quebra por tipo de serviço (migration 0049)', async () => {
+  it('sempre fica em rollup de tipo_servico via .is(null) — não quebra por tipo de serviço (migration 0050)', async () => {
     const builder = makeBuilder({ data: [], error: null });
     mockFrom.mockReturnValue(builder);
     await resumoPorEmpresa();
@@ -183,7 +183,7 @@ describe('resumoPorEmpresa', () => {
   });
 });
 
-describe('resumoPorTipoServico (migration 0049, feedback do dono 2026-08-19)', () => {
+describe('resumoPorTipoServico (migration 0050, feedback do dono 2026-08-19)', () => {
   it('mapeia snake→camel incluindo tipoServico', async () => {
     mockFrom.mockReturnValue(makeBuilder({
       data: [{ tipo_servico: 'contabilidade', competencia: '2026-06', qtd_boletos: 2, total_emitido: 800,

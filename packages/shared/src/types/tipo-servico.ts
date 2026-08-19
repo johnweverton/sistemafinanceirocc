@@ -1,4 +1,4 @@
-// Tipo de serviço — Cobrança Médica vs Contabilidade (migration 0049, feedback do dono
+// Tipo de serviço — Cobrança Médica vs Contabilidade (migration 0050, feedback do dono
 // 2026-08-19). Derivado de `execucao_resultados.cliente_contabilidade_id` (setado só quando o
 // resultado é de cliente contábil, mutuamente exclusivo com medico_id/empresa_id) — NUNCA de
 // `conta_emissora`, que desde a migration 0040 está liberada pra qualquer boleto do sistema

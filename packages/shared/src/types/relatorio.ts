@@ -68,7 +68,7 @@ export interface PorEmpresaRelatorioPublico {
   totalVencido: number;
 }
 
-/** Cobrança Médica vs Contabilidade agregado (migration 0049) — nunca tem nome de cliente. */
+/** Cobrança Médica vs Contabilidade agregado (migration 0050) — nunca tem nome de cliente. */
 export interface PorTipoServicoRelatorioPublico {
   tipoServico: TipoServico;
   tipoServicoLabel: string;
