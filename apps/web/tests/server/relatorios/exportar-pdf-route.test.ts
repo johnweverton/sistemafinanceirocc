@@ -40,8 +40,17 @@ describe('GET /api/relatorios/recebiveis/exportar-pdf', () => {
     const res = await reqGet('?competencia=2026-06&conta=mc');
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('application/pdf');
-    expect(res.headers.get('Content-Disposition')).toContain('recebiveis-2026-06-mc.pdf');
+    expect(res.headers.get('Content-Disposition')).toContain('recebiveis-2026-06-mc-todos.pdf');
     const buf = Buffer.from(await res.arrayBuffer());
     expect(buf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  });
+
+  it('filtro tipoServico entra no nome do arquivo e é repassado ao repositório', async () => {
+    mockListarRecebiveis.mockResolvedValue([]);
+    const res = await reqGet('?tipoServico=contabilidade');
+    expect(res.headers.get('Content-Disposition')).toContain('recebiveis-todas-todas-contabilidade.pdf');
+    expect(mockListarRecebiveis).toHaveBeenCalledWith(
+      expect.objectContaining({ tipoServico: 'contabilidade' }),
+    );
   });
 });

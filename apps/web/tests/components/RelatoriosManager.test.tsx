@@ -2,7 +2,7 @@
 // Cobre: preview agrupado por empresa com subtotal/total geral, e listagem de links públicos
 // (LinkPublicoBI é renderizado dentro do mesmo componente).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../src/components/ui/Toast';
 
@@ -93,6 +93,20 @@ describe('RelatoriosManager', () => {
     mockListarLinks.mockResolvedValue([]);
     renderComProviders();
     await waitFor(() => expect(screen.getByText(/Sem recebíveis no período/i)).toBeInTheDocument());
+  });
+
+  it('filtro "Tipo de serviço" (migration 0049) repassa tipoServico pro preview e pro export', async () => {
+    mockPreview.mockResolvedValue(RELATORIO);
+    mockListarLinks.mockResolvedValue([]);
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Dr. Alfa')).toBeInTheDocument());
+
+    const selectTipo = screen.getByRole('combobox', { name: 'Tipo de serviço' });
+    fireEvent.change(selectTipo, { target: { value: 'contabilidade' } });
+
+    await waitFor(() =>
+      expect(mockPreview).toHaveBeenCalledWith(expect.objectContaining({ tipoServico: 'contabilidade' })),
+    );
   });
 
   it('lista os links públicos existentes', async () => {

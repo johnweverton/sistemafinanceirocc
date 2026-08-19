@@ -36,6 +36,10 @@ const RESPOSTA = {
     { competencia: '2026-06', qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
   ],
   porEmpresa: [{ contaEmissora: 'mc', contaEmissoraLabel: 'MC', totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000 }],
+  porTipoServico: [
+    { tipoServico: 'cobranca_medica', tipoServicoLabel: 'Cobrança Médica', totalEmitido: 4000, totalRecebido: 2500, totalEmAberto: 900, totalVencido: 600 },
+    { tipoServico: 'contabilidade', tipoServicoLabel: 'Contabilidade', totalEmitido: 1000, totalRecebido: 500, totalEmAberto: 100, totalVencido: 400 },
+  ],
   aging: [{ faixa: '0-30', qtd: 2, total: 900 }],
   geradoEm: '2026-06-15T00:00:00Z',
 };
@@ -50,6 +54,10 @@ describe('RelatorioPublicoManager', () => {
     expect(screen.getAllByText('MC').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Evolução mensal')).toBeInTheDocument();
     expect(screen.getByText(/Aging de vencidos/)).toBeInTheDocument();
+    // Breakdown Cobrança Médica × Contabilidade (migration 0049, feedback do dono 2026-08-19).
+    expect(screen.getByText(/Cobrança Médica × Contabilidade/)).toBeInTheDocument();
+    expect(screen.getByText('Cobrança Médica')).toBeInTheDocument();
+    expect(screen.getByText('Contabilidade')).toBeInTheDocument();
   });
 
   it('mostra mensagem amigável quando o link é inválido/revogado (404)', async () => {

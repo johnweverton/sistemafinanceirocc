@@ -23,6 +23,7 @@ import type {
   ResumoCompetencia,
   ResumoMedico,
   ResumoPorEmpresa,
+  ResumoPorTipoServico,
   AgingFaixa,
   ExtratoTransacao,
   PlanoContas,
@@ -988,6 +989,9 @@ export interface RecebivelRow {
   /** Conta emissora (migration 0021) — opcional em bancos sem a migration aplicada. */
   conta_emissora?: Recebivel['contaEmissora'] | null;
   status_derivado: StatusRecebivel;
+  /** Migration 0049 — opcionais em bancos sem a migration aplicada. */
+  cliente_contabilidade_id?: string | null;
+  tipo_servico?: Recebivel['tipoServico'] | null;
 }
 
 export function toRecebivel(row: RecebivelRow): Recebivel {
@@ -1005,6 +1009,8 @@ export function toRecebivel(row: RecebivelRow): Recebivel {
     emitidoEm: row.emitido_em,
     contaEmissora: row.conta_emissora ?? 'mc', // default seguro pré-migration 0021 (backfill)
     statusDerivado: row.status_derivado,
+    clienteContabilidadeId: row.cliente_contabilidade_id ?? null,
+    tipoServico: row.tipo_servico ?? 'cobranca_medica', // default seguro pré-migration 0049
   };
 }
 
@@ -1063,6 +1069,24 @@ export interface ResumoPorEmpresaRow extends Omit<ResumoCompetenciaRow, 'compete
 export function toResumoPorEmpresa(row: ResumoPorEmpresaRow): ResumoPorEmpresa {
   return {
     contaEmissora: row.conta_emissora,
+    competencia: row.competencia,
+    qtdBoletos: num(row.qtd_boletos),
+    totalEmitido: num(row.total_emitido),
+    totalRecebido: num(row.total_recebido),
+    totalEmAberto: num(row.total_em_aberto),
+    totalVencido: num(row.total_vencido),
+    taxaInadimplencia: num(row.taxa_inadimplencia),
+  };
+}
+
+export interface ResumoPorTipoServicoRow extends Omit<ResumoCompetenciaRow, 'competencia'> {
+  tipo_servico: ResumoPorTipoServico['tipoServico'];
+  competencia: string | null;
+}
+
+export function toResumoPorTipoServico(row: ResumoPorTipoServicoRow): ResumoPorTipoServico {
+  return {
+    tipoServico: row.tipo_servico,
     competencia: row.competencia,
     qtdBoletos: num(row.qtd_boletos),
     totalEmitido: num(row.total_emitido),

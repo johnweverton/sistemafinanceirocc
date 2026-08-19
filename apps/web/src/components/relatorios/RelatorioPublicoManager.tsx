@@ -73,6 +73,7 @@ export function RelatorioPublicoManager({ token }: { token: string }) {
   const dados = respostaQ.data!;
   const agingMax = Math.max(1, ...dados.aging.map((a) => a.total));
   const empresaMax = Math.max(1, ...dados.porEmpresa.map((e) => e.totalEmitido));
+  const tipoServicoMax = Math.max(1, ...dados.porTipoServico.map((t) => t.totalEmitido));
   const evolucaoMax = Math.max(1, ...dados.evolucaoMensal.map((m) => m.totalEmitido));
   const escopo = competencia ? `competência ${competencia}` : 'todas as competências';
 
@@ -116,6 +117,27 @@ export function RelatorioPublicoManager({ token }: { token: string }) {
                   <div className="progress-fill h-full rounded-full" style={{ width: `${(e.totalEmitido / empresaMax) * 100}%` }} />
                 </div>
                 <span className="tabular w-28 text-right text-sm text-cc-ink">{brl(e.totalEmitido)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card p-5">
+        <h2 className="mb-3 text-sm font-semibold text-cc-ink">
+          Cobrança Médica × Contabilidade <span className="font-normal text-cc-muted">· {escopo}</span>
+        </h2>
+        {dados.porTipoServico.length === 0 ? (
+          <p className="text-sm text-cc-muted">Sem dados no período.</p>
+        ) : (
+          <div className="space-y-2">
+            {dados.porTipoServico.map((t) => (
+              <div key={t.tipoServico} className="flex items-center gap-3">
+                <span className="w-32 text-xs text-cc-muted">{t.tipoServicoLabel}</span>
+                <div className="h-3 flex-1 overflow-hidden rounded-full bg-cc-surface-2">
+                  <div className="progress-fill h-full rounded-full" style={{ width: `${(t.totalEmitido / tipoServicoMax) * 100}%` }} />
+                </div>
+                <span className="tabular w-28 text-right text-sm text-cc-ink">{brl(t.totalEmitido)}</span>
               </div>
             ))}
           </div>

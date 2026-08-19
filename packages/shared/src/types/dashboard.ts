@@ -1,5 +1,6 @@
 // Agregações do Dashboard financeiro (Épico 4, Story 4.5). Derivam das views vw_dashboard_*.
 import type { ContaEmissora } from './conta-emissora';
+import type { TipoServico } from './tipo-servico';
 
 export interface ResumoCompetencia {
   competencia: string | null; // null = linha de rollup (total geral / "Todas")
@@ -32,6 +33,22 @@ export interface AgingFaixa {
 /** Resumo por empresa (conta emissora) — Módulo de Relatórios. */
 export interface ResumoPorEmpresa {
   contaEmissora: ContaEmissora;
+  competencia: string | null; // null = rollup (todas as competências)
+  qtdBoletos: number;
+  totalEmitido: number;
+  totalRecebido: number;
+  totalEmAberto: number;
+  totalVencido: number;
+  taxaInadimplencia: number;
+}
+
+/**
+ * Resumo por tipo de serviço (Cobrança Médica vs Contabilidade, migration 0049) — mesmo
+ * grouping set (competencia, tipo_servico) de vw_dashboard_competencia, isolado por
+ * tipo_servico (nunca NULL). Espelha ResumoPorEmpresa, mas no eixo tipo_servico.
+ */
+export interface ResumoPorTipoServico {
+  tipoServico: TipoServico;
   competencia: string | null; // null = rollup (todas as competências)
   qtdBoletos: number;
   totalEmitido: number;

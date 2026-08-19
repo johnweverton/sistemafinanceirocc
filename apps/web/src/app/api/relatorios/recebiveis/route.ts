@@ -6,11 +6,12 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarRecebiveis } from '@/server/repositories/recebiveis-repository';
 import { agruparRecebiveisPorEmpresa } from '@/server/engine/relatorio-recebiveis';
-import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import { CONTAS_EMISSORAS_VALIDAS, TIPOS_SERVICO_VALIDOS } from '@cobranca/shared';
 
 const querySchema = z.object({
   competencia: z.string().regex(/^\d{4}-\d{2}$/, 'Formato esperado: YYYY-MM').optional(),
   conta: z.enum(CONTAS_EMISSORAS_VALIDAS).optional(),
+  tipoServico: z.enum(TIPOS_SERVICO_VALIDOS).optional(),
 });
 
 export const GET = withErrorHandler(async (req) => {
@@ -19,14 +20,15 @@ export const GET = withErrorHandler(async (req) => {
   const query = querySchema.safeParse({
     competencia: url.searchParams.get('competencia') ?? undefined,
     conta: url.searchParams.get('conta') ?? undefined,
+    tipoServico: url.searchParams.get('tipoServico') ?? undefined,
   });
   if (!query.success) {
     throw new ApiError(400, 'Parâmetros de consulta inválidos', 'VALIDATION', { issues: query.error.issues });
   }
-  const { competencia, conta } = query.data;
+  const { competencia, conta, tipoServico } = query.data;
 
-  const recebiveis = await listarRecebiveis({ competencia, contaEmissora: conta });
-  const relatorio = agruparRecebiveisPorEmpresa(recebiveis, { competencia, contaEmissora: conta });
+  const recebiveis = await listarRecebiveis({ competencia, contaEmissora: conta, tipoServico });
+  const relatorio = agruparRecebiveisPorEmpresa(recebiveis, { competencia, contaEmissora: conta, tipoServico });
 
   return Response.json(relatorio);
 });

@@ -6,7 +6,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   getSupabaseAdmin: () => ({ from: mockFrom }),
 }));
 
-import { resumoPorCompetencia, resumoPorMedico, resumoPorEmpresa, aging } from '@/server/repositories/dashboard-repository';
+import { resumoPorCompetencia, resumoPorMedico, resumoPorEmpresa, resumoPorTipoServico, aging } from '@/server/repositories/dashboard-repository';
 
 function makeBuilder(result: { data: unknown; error: unknown }) {
   const builder: any = {
@@ -64,6 +64,20 @@ describe('resumoPorCompetencia', () => {
     await resumoPorCompetencia();
     expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
   });
+
+  it('aplica .eq de tipo_servico quando tipoServico é passado (migration 0049)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorCompetencia(undefined, undefined, 'contabilidade');
+    expect(builder.eq).toHaveBeenCalledWith('tipo_servico', 'contabilidade');
+  });
+
+  it('sem tipoServico aplica .is(null) em tipo_servico', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorCompetencia();
+    expect(builder.is).toHaveBeenCalledWith('tipo_servico', null);
+  });
 });
 
 describe('resumoPorMedico', () => {
@@ -106,6 +120,20 @@ describe('resumoPorMedico', () => {
     await resumoPorMedico();
     expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
   });
+
+  it('tipoServico=contabilidade filtra por .eq (relatório dos clientes de contabilidade)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorMedico(undefined, undefined, 'contabilidade');
+    expect(builder.eq).toHaveBeenCalledWith('tipo_servico', 'contabilidade');
+  });
+
+  it('sem tipoServico aplica .is(null) em tipo_servico', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorMedico();
+    expect(builder.is).toHaveBeenCalledWith('tipo_servico', null);
+  });
 });
 
 describe('resumoPorEmpresa', () => {
@@ -144,6 +172,46 @@ describe('resumoPorEmpresa', () => {
     const builder = makeBuilder({ data: [], error: null });
     mockFrom.mockReturnValue(builder);
     await resumoPorEmpresa(undefined, 'mc');
+    expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'mc');
+  });
+
+  it('sempre fica em rollup de tipo_servico via .is(null) — não quebra por tipo de serviço (migration 0049)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorEmpresa();
+    expect(builder.is).toHaveBeenCalledWith('tipo_servico', null);
+  });
+});
+
+describe('resumoPorTipoServico (migration 0049, feedback do dono 2026-08-19)', () => {
+  it('mapeia snake→camel incluindo tipoServico', async () => {
+    mockFrom.mockReturnValue(makeBuilder({
+      data: [{ tipo_servico: 'contabilidade', competencia: '2026-06', qtd_boletos: 2, total_emitido: 800,
+        total_recebido: 500, total_em_aberto: 300, total_vencido: 0, taxa_inadimplencia: 0 }],
+      error: null,
+    }));
+    const res = await resumoPorTipoServico();
+    expect(res[0]).toMatchObject({ tipoServico: 'contabilidade', totalEmitido: 800 });
+  });
+
+  it('exclui rollup sem tipo de serviço via .not(tipo_servico, is, null)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorTipoServico();
+    expect(builder.not).toHaveBeenCalledWith('tipo_servico', 'is', null);
+  });
+
+  it('sem contaEmissora aplica .is(null) — respeita o escopo do link público por padrão', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorTipoServico();
+    expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
+  });
+
+  it('com contaEmissora filtra por .eq — link público restrito a uma conta não vaza total de outra', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await resumoPorTipoServico(undefined, 'mc');
     expect(builder.eq).toHaveBeenCalledWith('conta_emissora', 'mc');
   });
 });
@@ -185,5 +253,19 @@ describe('aging', () => {
     mockFrom.mockReturnValue(builder);
     await aging();
     expect(builder.is).toHaveBeenCalledWith('conta_emissora', null);
+  });
+
+  it('aplica .eq de tipo_servico quando tipoServico é passado', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await aging(undefined, undefined, 'cobranca_medica');
+    expect(builder.eq).toHaveBeenCalledWith('tipo_servico', 'cobranca_medica');
+  });
+
+  it('sem tipoServico aplica .is(null) em tipo_servico', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+    await aging();
+    expect(builder.is).toHaveBeenCalledWith('tipo_servico', null);
   });
 });

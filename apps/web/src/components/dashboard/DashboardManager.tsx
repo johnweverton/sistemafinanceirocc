@@ -1,8 +1,8 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { ContaEmissora } from '@cobranca/shared';
-import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import type { ContaEmissora, TipoServico } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS, TIPO_SERVICO_LABEL, TIPOS_SERVICO_VALIDOS } from '@cobranca/shared';
 import { dashboardService, dashboardQueryKeys } from '@/services/dashboard';
 import { recebiveisService, recebiveisQueryKeys } from '@/services/recebiveis';
 import { agruparInadimplentesPorMedico } from '@/lib/inadimplencia';
@@ -25,26 +25,40 @@ export function DashboardManager() {
   const filtro = competencia || undefined; // undefined = "Todas" (linha de rollup no banco)
   const [contaEmissora, setContaEmissora] = useState<ContaEmissora | ''>('');
   const contaFiltro = contaEmissora || undefined; // undefined = "Todas as contas" (linha de rollup no banco)
+  // Cobrança Médica vs Contabilidade (migration 0049, feedback do dono 2026-08-19) — NÃO é a
+  // mesma dimensão que contaEmissora (as 4 contas atendem qualquer tipo de serviço desde a 0040).
+  const [tipoServico, setTipoServico] = useState<TipoServico | ''>('');
+  const tipoFiltro = tipoServico || undefined;
+  // Com tipoServico='contabilidade' selecionado, "Por médico"/"Quem está inadimplente" passam a
+  // listar clientes contábeis (medico_id NULL, nome = nome do cliente — mesmo desenho de sempre,
+  // ver vw_dashboard_medico). Rótulo muda pra refletir isso, sem view nem seção nova.
+  const rotuloPessoa = tipoServico === 'contabilidade' ? 'Cliente' : 'Médico';
 
   // A view retorna as linhas por competência + a linha de rollup (competencia = null = total geral).
   const comps = useQuery({
-    queryKey: dashboardQueryKeys.competencias(contaFiltro),
-    queryFn: () => dashboardService.competencias(undefined, contaFiltro),
+    queryKey: dashboardQueryKeys.competencias(contaFiltro, tipoFiltro),
+    queryFn: () => dashboardService.competencias(undefined, contaFiltro, tipoFiltro),
   });
   const medicos = useQuery({
-    queryKey: dashboardQueryKeys.medicos(filtro, contaFiltro),
-    queryFn: () => dashboardService.medicos(filtro, contaFiltro),
+    queryKey: dashboardQueryKeys.medicos(filtro, contaFiltro, tipoFiltro),
+    queryFn: () => dashboardService.medicos(filtro, contaFiltro, tipoFiltro),
   });
   const agingQ = useQuery({
-    queryKey: dashboardQueryKeys.aging(filtro, contaFiltro),
-    queryFn: () => dashboardService.aging(filtro, contaFiltro),
+    queryKey: dashboardQueryKeys.aging(filtro, contaFiltro, tipoFiltro),
+    queryFn: () => dashboardService.aging(filtro, contaFiltro, tipoFiltro),
+  });
+  // Resumo Cobrança Médica × Contabilidade — sempre as 2 linhas, independente do filtro acima
+  // (é o próprio seletor de "separar as emissões" pedido pelo dono).
+  const porTipoServicoQ = useQuery({
+    queryKey: dashboardQueryKeys.tipoServico(filtro),
+    queryFn: () => dashboardService.tipoServico(filtro),
   });
   // Inadimplência (BI gerencial, feedback da CEO 2026-08-17): reusa o MESMO endpoint/serviço já
   // usado por /recebiveis (Contas a Receber) — sem view/rota nova, só filtra status=vencido e
   // agrupa por médico no cliente (agruparInadimplentesPorMedico, lib/inadimplencia.ts).
   const vencidosQ = useQuery({
-    queryKey: recebiveisQueryKeys.recebiveis({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro }),
-    queryFn: () => recebiveisService.listar({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro }),
+    queryKey: recebiveisQueryKeys.recebiveis({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro, tipoServico: tipoFiltro }),
+    queryFn: () => recebiveisService.listar({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro, tipoServico: tipoFiltro }),
   });
 
   const linhas = useMemo(() => comps.data ?? [], [comps.data]);
@@ -106,6 +120,17 @@ export function DashboardManager() {
               <option key={c} value={c}>{CONTA_EMISSORA_LABEL[c]}</option>
             ))}
           </select>
+          <select
+            value={tipoServico}
+            onChange={(e) => setTipoServico(e.target.value as TipoServico | '')}
+            className="input w-44"
+            aria-label="Filtrar por tipo de serviço"
+          >
+            <option value="">Todos os serviços</option>
+            {TIPOS_SERVICO_VALIDOS.map((t) => (
+              <option key={t} value={t}>{TIPO_SERVICO_LABEL[t]}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -119,6 +144,30 @@ export function DashboardManager() {
         <Kpi label="Vencido" valor={brl(kpi?.totalVencido ?? 0)} tom="warning" />
         <Kpi label="Inadimplência" valor={pct(kpi?.taxaInadimplencia ?? 0)} tom={(kpi?.taxaInadimplencia ?? 0) > 0.2 ? 'danger' : 'default'} />
       </div>
+
+      {/* Cobrança Médica × Contabilidade — feedback do dono 2026-08-19: "separar as emissões". */}
+      {!tipoServico && (porTipoServicoQ.data ?? []).length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {(porTipoServicoQ.data ?? []).map((r) => (
+            <button
+              key={r.tipoServico}
+              type="button"
+              onClick={() => setTipoServico(r.tipoServico)}
+              className="card flex items-center justify-between p-4 text-left transition-colors hover:border-cc-accent"
+              title={`Ver só ${TIPO_SERVICO_LABEL[r.tipoServico]}`}
+            >
+              <div>
+                <p className="font-mono text-2xs uppercase tracking-wider text-cc-muted">{TIPO_SERVICO_LABEL[r.tipoServico]}</p>
+                <p className="tabular mt-1 text-lg font-semibold text-cc-ink">{brl(r.totalEmitido)}</p>
+              </div>
+              <div className="text-right text-2xs text-cc-muted">
+                <p>Recebido <span className="text-cc-success">{brl(r.totalRecebido)}</span></p>
+                <p>Vencido <span className="text-cc-warning">{brl(r.totalVencido)}</span></p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Evolução mensal — visão de tendência que os KPIs (foto de UMA competência) não davam. */}
       <div className="card p-5">
@@ -157,9 +206,9 @@ export function DashboardManager() {
         {vencidosQ.isLoading ? <Skeleton className="h-40" /> : <InadimplenciaSection inadimplentes={inadimplentes} vencidos={vencidosQ.data ?? []} />}
       </div>
 
-      {/* Por médico */}
+      {/* Por médico / cliente contábil, conforme o filtro de tipo de serviço acima. */}
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-cc-ink">Por médico <span className="font-normal text-cc-muted">· {escopo}</span></h2>
+        <h2 className="mb-2 text-sm font-semibold text-cc-ink">Por {rotuloPessoa.toLowerCase()} <span className="font-normal text-cc-muted">· {escopo}</span></h2>
         {medicos.isLoading ? (
           <Skeleton className="h-40" />
         ) : (medicos.data ?? []).length === 0 ? (
@@ -169,7 +218,7 @@ export function DashboardManager() {
             <table className="data-table">
               <thead className="border-b border-cc-hairline bg-cc-surface-2">
                 <tr>
-                  <th>Médico</th>
+                  <th>{rotuloPessoa}</th>
                   <th className="text-right">Emitido</th>
                   <th className="text-right">Recebido</th>
                   <th className="text-right">Vencido</th>

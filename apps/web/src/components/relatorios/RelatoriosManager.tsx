@@ -4,8 +4,8 @@
 // WhatsApp para a CEO): boletos, valor, status de pagamento, data de pagamento, por empresa.
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import type { ContaEmissora } from '@cobranca/shared';
-import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import type { ContaEmissora, TipoServico } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS, TIPO_SERVICO_LABEL, TIPOS_SERVICO_VALIDOS } from '@cobranca/shared';
 import { relatoriosService, relatoriosQueryKeys, type FiltroRelatorio } from '@/services/relatorios';
 import { ApiClientError } from '@/lib/api-client';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -49,9 +49,14 @@ function baixarBlob(blob: Blob, nomeArquivo: string): void {
 export function RelatoriosManager() {
   const [competencia, setCompetencia] = useState(competenciaCorrente());
   const [conta, setConta] = useState<ContaEmissora | ''>('');
+  const [tipoServico, setTipoServico] = useState<TipoServico | ''>('');
   const { toast } = useToast();
 
-  const filtro: FiltroRelatorio = { competencia: competencia || undefined, conta: conta || undefined };
+  const filtro: FiltroRelatorio = {
+    competencia: competencia || undefined,
+    conta: conta || undefined,
+    tipoServico: tipoServico || undefined,
+  };
 
   const relatorioQ = useQuery({
     queryKey: relatoriosQueryKeys.preview(filtro),
@@ -62,7 +67,7 @@ export function RelatoriosManager() {
     toast(e instanceof ApiClientError ? e.message : fallback, 'error');
   }
 
-  const sufixoArquivo = `${competencia || 'todas'}-${conta || 'todas'}`;
+  const sufixoArquivo = `${competencia || 'todas'}-${conta || 'todas'}-${tipoServico || 'todos'}`;
 
   const exportarExcel = useMutation({
     mutationFn: () => relatoriosService.exportarExcel(filtro),
@@ -106,6 +111,17 @@ export function RelatoriosManager() {
             <option value="">Todas as empresas</option>
             {CONTAS_EMISSORAS_VALIDAS.map((c) => (
               <option key={c} value={c}>{CONTA_EMISSORA_LABEL[c]}</option>
+            ))}
+          </select>
+          <select
+            value={tipoServico}
+            onChange={(e) => setTipoServico(e.target.value as TipoServico | '')}
+            className="input w-44"
+            aria-label="Tipo de serviço"
+          >
+            <option value="">Todos os serviços</option>
+            {TIPOS_SERVICO_VALIDOS.map((t) => (
+              <option key={t} value={t}>{TIPO_SERVICO_LABEL[t]}</option>
             ))}
           </select>
           <button

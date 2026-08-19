@@ -10,10 +10,12 @@ vi.mock('@/server/repositories/relatorio-links-repository', () => ({
 
 const mockResumoPorCompetencia = vi.fn();
 const mockResumoPorEmpresa = vi.fn();
+const mockResumoPorTipoServico = vi.fn();
 const mockAging = vi.fn();
 vi.mock('@/server/repositories/dashboard-repository', () => ({
   resumoPorCompetencia: (...a: unknown[]) => mockResumoPorCompetencia(...a),
   resumoPorEmpresa: (...a: unknown[]) => mockResumoPorEmpresa(...a),
+  resumoPorTipoServico: (...a: unknown[]) => mockResumoPorTipoServico(...a),
   aging: (...a: unknown[]) => mockAging(...a),
 }));
 
@@ -23,7 +25,10 @@ function reqGet(token: string, qs = '') {
   return GET(new Request(`http://test/api/relatorios/publico/${token}${qs}`), { params: { token } });
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockResumoPorTipoServico.mockResolvedValue([]); // default; sobrescrito por teste quando relevante
+});
 
 describe('GET /api/relatorios/publico/[token]', () => {
   it('token inválido/revogado/expirado → 404 uniforme, sem consultar dashboard', async () => {

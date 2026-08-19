@@ -8,16 +8,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockComp = vi.fn();
 const mockMed = vi.fn();
 const mockAging = vi.fn();
+const mockTipoServico = vi.fn();
 vi.mock('../../src/services/dashboard', () => ({
   dashboardService: {
     competencias: (...a: unknown[]) => mockComp(...a),
     medicos: (...a: unknown[]) => mockMed(...a),
     aging: (...a: unknown[]) => mockAging(...a),
+    tipoServico: (...a: unknown[]) => mockTipoServico(...a),
   },
   dashboardQueryKeys: {
-    competencias: (conta?: string) => ['dashboard', 'competencias', conta ?? null],
-    medicos: (c?: string, conta?: string) => ['dashboard', 'medicos', c ?? null, conta ?? null],
-    aging: (c?: string, conta?: string) => ['dashboard', 'aging', c ?? null, conta ?? null],
+    competencias: (conta?: string, tipo?: string) => ['dashboard', 'competencias', conta ?? null, tipo ?? null],
+    medicos: (c?: string, conta?: string, tipo?: string) => ['dashboard', 'medicos', c ?? null, conta ?? null, tipo ?? null],
+    aging: (c?: string, conta?: string, tipo?: string) => ['dashboard', 'aging', c ?? null, conta ?? null, tipo ?? null],
+    tipoServico: (c?: string) => ['dashboard', 'tipoServico', c ?? null],
   },
 }));
 
@@ -54,6 +57,7 @@ describe('DashboardManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRecebiveis.mockResolvedValue([]); // default: sem inadimplência, sobrescrito por teste quando relevante
+    mockTipoServico.mockResolvedValue([]); // default: sem breakdown, sobrescrito por teste quando relevante
   });
 
   it('renderiza KPIs (via rollup), aging e tabela por médico', async () => {
@@ -105,9 +109,38 @@ describe('DashboardManager', () => {
     const selectConta = screen.getByRole('combobox', { name: 'Filtrar por conta emissora' });
     fireEvent.change(selectConta, { target: { value: 'cavalcante_viana' } });
 
-    await waitFor(() => expect(mockComp).toHaveBeenCalledWith(undefined, 'cavalcante_viana'));
-    expect(mockMed).toHaveBeenCalledWith(undefined, 'cavalcante_viana');
-    expect(mockAging).toHaveBeenCalledWith(undefined, 'cavalcante_viana');
+    await waitFor(() => expect(mockComp).toHaveBeenCalledWith(undefined, 'cavalcante_viana', undefined));
+    expect(mockMed).toHaveBeenCalledWith(undefined, 'cavalcante_viana', undefined);
+    expect(mockAging).toHaveBeenCalledWith(undefined, 'cavalcante_viana', undefined);
+  });
+
+  it('BI gerencial (2026-08-19): mostra o resumo Cobrança Médica × Contabilidade e clicar num card filtra por tipo de serviço', async () => {
+    mockComp.mockResolvedValue([
+      { competencia: null, qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
+      { competencia: '2026-06', qtdBoletos: 10, totalEmitido: 5000, totalRecebido: 3000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.2 },
+    ]);
+    mockMed.mockResolvedValue([
+      { medicoId: 'm1', nome: 'Dr. Alfa', qtdBoletos: 4, totalEmitido: 4000, totalRecebido: 2000, totalEmAberto: 1000, totalVencido: 1000, taxaInadimplencia: 0.25, ticketMedio: 1000 },
+    ]);
+    mockAging.mockResolvedValue([{ faixa: '0-30', qtd: 2, total: 900 }]);
+    mockTipoServico.mockResolvedValue([
+      { tipoServico: 'cobranca_medica', competencia: null, qtdBoletos: 8, totalEmitido: 4000, totalRecebido: 2500, totalEmAberto: 900, totalVencido: 600, taxaInadimplencia: 0.15 },
+      { tipoServico: 'contabilidade', competencia: null, qtdBoletos: 2, totalEmitido: 1000, totalRecebido: 500, totalEmAberto: 300, totalVencido: 200, taxaInadimplencia: 0.2 },
+    ]);
+
+    renderComProviders();
+    // "Cobrança Médica"/"Contabilidade" também aparecem como <option> do select acima — os cards
+    // do breakdown são identificados pelo title (getByTitle), sem ambiguidade.
+    await waitFor(() => expect(screen.getByTitle('Ver só Cobrança Médica')).toBeInTheDocument());
+    expect(screen.getByTitle('Ver só Contabilidade')).toBeInTheDocument();
+
+    const cardContabilidade = screen.getByTitle('Ver só Contabilidade');
+    fireEvent.click(cardContabilidade);
+
+    // Selecionar via card equivale a escolher no select — dispara as 3 chamadas com tipoServico.
+    await waitFor(() => expect(mockComp).toHaveBeenCalledWith(undefined, undefined, 'contabilidade'));
+    // "Por médico" vira "Por cliente" quando o tipo de serviço é contabilidade.
+    expect(screen.getByText('Por cliente', { exact: false })).toBeInTheDocument();
   });
 
   it('BI gerencial (2026-08-17): mostra card de médico inadimplente e abre drill-down dos boletos vencidos ao clicar', async () => {

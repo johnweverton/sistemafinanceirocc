@@ -1,5 +1,6 @@
 // Relatórios financeiros (Excel/PDF + BI público via link com token) — Módulo de Relatórios.
 import type { ContaEmissora } from './conta-emissora';
+import type { TipoServico } from './tipo-servico';
 import type { Recebivel } from './recebivel';
 
 export interface SubtotalRelatorio {
@@ -20,7 +21,7 @@ export interface GrupoRelatorioRecebiveis {
 }
 
 export interface RelatorioRecebiveis {
-  filtro: { competencia?: string; contaEmissora?: ContaEmissora };
+  filtro: { competencia?: string; contaEmissora?: ContaEmissora; tipoServico?: TipoServico };
   geradoEm: string;
   grupos: GrupoRelatorioRecebiveis[];
   totalGeral: SubtotalRelatorio;
@@ -67,6 +68,16 @@ export interface PorEmpresaRelatorioPublico {
   totalVencido: number;
 }
 
+/** Cobrança Médica vs Contabilidade agregado (migration 0049) — nunca tem nome de cliente. */
+export interface PorTipoServicoRelatorioPublico {
+  tipoServico: TipoServico;
+  tipoServicoLabel: string;
+  totalEmitido: number;
+  totalRecebido: number;
+  totalEmAberto: number;
+  totalVencido: number;
+}
+
 export interface RelatorioPublicoResposta {
   nomeLink: string;
   escopoContaEmissora: ContaEmissora | null;
@@ -74,6 +85,7 @@ export interface RelatorioPublicoResposta {
   kpi: KpiRelatorioPublico;
   evolucaoMensal: KpiRelatorioPublico[];
   porEmpresa: PorEmpresaRelatorioPublico[];
+  porTipoServico: PorTipoServicoRelatorioPublico[];
   aging: { faixa: string; qtd: number; total: number }[];
   geradoEm: string;
 }

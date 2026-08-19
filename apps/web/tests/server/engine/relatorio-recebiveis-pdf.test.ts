@@ -21,6 +21,8 @@ function recebivel(overrides: Partial<Recebivel> = {}): Recebivel {
     emitidoEm: '2026-06-01T00:00:00Z',
     contaEmissora: 'mc',
     statusDerivado: 'em_aberto',
+    clienteContabilidadeId: null,
+    tipoServico: 'cobranca_medica',
     ...overrides,
   };
 }

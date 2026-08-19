@@ -2,7 +2,7 @@
 // sem I/O, mesmo padrão dos outros módulos do engine (ex.: ofx.ts). Reusa o mesmo Recebivel já
 // consumido em /recebiveis (vw_recebiveis via recebiveis-repository.ts) — nenhuma regra de
 // status nova, só reagrupamento + soma.
-import type { Recebivel, RelatorioRecebiveis, GrupoRelatorioRecebiveis, SubtotalRelatorio, ContaEmissora } from '@cobranca/shared';
+import type { Recebivel, RelatorioRecebiveis, GrupoRelatorioRecebiveis, SubtotalRelatorio, ContaEmissora, TipoServico } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 
 function subtotalVazio(): SubtotalRelatorio {
@@ -38,7 +38,7 @@ function somarSubtotais(a: SubtotalRelatorio, b: SubtotalRelatorio): SubtotalRel
 
 export function agruparRecebiveisPorEmpresa(
   recebiveis: Recebivel[],
-  filtro: { competencia?: string; contaEmissora?: ContaEmissora },
+  filtro: { competencia?: string; contaEmissora?: ContaEmissora; tipoServico?: TipoServico },
 ): RelatorioRecebiveis {
   const porEmpresa = new Map<ContaEmissora, Recebivel[]>();
   for (const r of recebiveis) {

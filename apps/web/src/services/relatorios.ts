@@ -1,16 +1,18 @@
-import type { ContaEmissora, RelatorioRecebiveis, RelatorioLink, CriarRelatorioLinkInput } from '@cobranca/shared';
+import type { ContaEmissora, TipoServico, RelatorioRecebiveis, RelatorioLink, CriarRelatorioLinkInput } from '@cobranca/shared';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import type { ApiErrorBody } from '@/lib/api-error';
 
 export interface FiltroRelatorio {
   competencia?: string;
   conta?: ContaEmissora;
+  tipoServico?: TipoServico;
 }
 
 function qs(filtros: FiltroRelatorio): string {
   const params = new URLSearchParams();
   if (filtros.competencia) params.set('competencia', filtros.competencia);
   if (filtros.conta) params.set('conta', filtros.conta);
+  if (filtros.tipoServico) params.set('tipoServico', filtros.tipoServico);
   const s = params.toString();
   return s ? `?${s}` : '';
 }

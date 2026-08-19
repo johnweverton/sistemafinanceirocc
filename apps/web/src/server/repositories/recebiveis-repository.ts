@@ -27,6 +27,7 @@ export async function listarRecebiveis(filtros: FiltroRecebiveis = {}): Promise<
   if (filtros.medicoId) query = query.eq('medico_id', filtros.medicoId);
   if (filtros.statusDerivado) query = query.eq('status_derivado', filtros.statusDerivado);
   if (filtros.contaEmissora) query = query.eq('conta_emissora', filtros.contaEmissora);
+  if (filtros.tipoServico) query = query.eq('tipo_servico', filtros.tipoServico);
 
   const { data, error } = await query;
   if (error) throw new ApiError(500, 'Falha ao listar recebíveis', 'DB_ERROR', { error: error.message });

@@ -51,4 +51,37 @@ describe('listarRecebiveis', () => {
     await listarRecebiveis();
     expect(builder.eq).not.toHaveBeenCalled();
   });
+
+  it('aplica filtro tipoServico como .eq (migration 0049)', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+
+    await listarRecebiveis({ tipoServico: 'contabilidade' });
+    expect(builder.eq).toHaveBeenCalledWith('tipo_servico', 'contabilidade');
+  });
+
+  it('mapeia clienteContabilidadeId e tipoServico da view', async () => {
+    const row = {
+      boleto_id: 'b1', execucao_resultado_id: 'r1', id_externo: null, competencia: '2026-06',
+      medico_id: null, nome: 'Cliente XYZ Contabilidade', valor: 800, vencimento: '2026-07-01',
+      pago_em: null, valor_pago: null, emitido_em: '2026-06-01T00:00:00Z', status_derivado: 'em_aberto',
+      cliente_contabilidade_id: 'cc1', tipo_servico: 'contabilidade',
+    };
+    mockFrom.mockReturnValue(makeBuilder({ data: [row], error: null }));
+
+    const res = await listarRecebiveis();
+    expect(res[0]).toMatchObject({ clienteContabilidadeId: 'cc1', tipoServico: 'contabilidade' });
+  });
+
+  it('linha sem tipo_servico (pré-migration 0049) tem fallback cobranca_medica', async () => {
+    const row = {
+      boleto_id: 'b1', execucao_resultado_id: 'r1', id_externo: null, competencia: '2026-06',
+      medico_id: 'm1', nome: 'Dr. A', valor: 800, vencimento: '2026-07-01',
+      pago_em: null, valor_pago: null, emitido_em: '2026-06-01T00:00:00Z', status_derivado: 'em_aberto',
+    };
+    mockFrom.mockReturnValue(makeBuilder({ data: [row], error: null }));
+
+    const res = await listarRecebiveis();
+    expect(res[0]).toMatchObject({ clienteContabilidadeId: null, tipoServico: 'cobranca_medica' });
+  });
 });

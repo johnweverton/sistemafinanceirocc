@@ -4,7 +4,7 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
 import { listarRecebiveis } from '@/server/repositories/recebiveis-repository';
 import { listarDisparosPorBoletos } from '@/server/repositories/boleto-disparo-repository';
-import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import { CONTAS_EMISSORAS_VALIDAS, TIPOS_SERVICO_VALIDOS } from '@cobranca/shared';
 import type { FiltroRecebiveis } from '@cobranca/shared';
 
 // Achado B-3: validar query params com Zod (whitelist de status válidos).
@@ -14,6 +14,8 @@ const recebiveisQuerySchema = z.object({
   status: z.enum(['pago', 'cancelado', 'vencido', 'em_aberto']).optional(),
   // Filtro por empresa emissora (Story 7.3) — espelha a CHECK do banco.
   conta: z.enum(CONTAS_EMISSORAS_VALIDAS).optional(),
+  // Cobrança Médica vs Contabilidade (migration 0049).
+  tipoServico: z.enum(TIPOS_SERVICO_VALIDOS).optional(),
 });
 
 export const GET = withErrorHandler(async (req) => {
@@ -24,6 +26,7 @@ export const GET = withErrorHandler(async (req) => {
     medico: url.searchParams.get('medico') ?? undefined,
     status: url.searchParams.get('status') ?? undefined,
     conta: url.searchParams.get('conta') ?? undefined,
+    tipoServico: url.searchParams.get('tipoServico') ?? undefined,
   });
   if (!query.success) {
     throw new ApiError(400, 'Parâmetros de consulta inválidos', 'VALIDATION', { issues: query.error.issues });
@@ -34,6 +37,7 @@ export const GET = withErrorHandler(async (req) => {
     medicoId: query.data.medico,
     statusDerivado: query.data.status,
     contaEmissora: query.data.conta,
+    tipoServico: query.data.tipoServico,
   };
 
   const recebiveis = await listarRecebiveis(filtros);

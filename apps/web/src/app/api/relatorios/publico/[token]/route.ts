@@ -6,9 +6,9 @@
 // texto puro (não revela o motivo), sem o envelope JSON das rotas autenticadas.
 import { NextResponse } from 'next/server';
 import { buscarLinkValidoPorToken, registrarAcesso } from '@/server/repositories/relatorio-links-repository';
-import { resumoPorCompetencia, resumoPorEmpresa, aging } from '@/server/repositories/dashboard-repository';
+import { resumoPorCompetencia, resumoPorEmpresa, resumoPorTipoServico, aging } from '@/server/repositories/dashboard-repository';
 import { logAuthFailure, extractIp } from '@/lib/security-logger';
-import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL, TIPO_SERVICO_LABEL } from '@cobranca/shared';
 import type { RelatorioPublicoResposta, KpiRelatorioPublico } from '@cobranca/shared';
 
 function kpiZerado(competencia: string | null): KpiRelatorioPublico {
@@ -36,8 +36,9 @@ export async function GET(req: Request, { params }: { params: { token: string } 
     ? (porCompetencia.find((r) => r.competencia === competencia) ?? kpiZerado(competencia))
     : rollup;
 
-  const [porEmpresaRows, agingFaixas] = await Promise.all([
+  const [porEmpresaRows, porTipoServicoRows, agingFaixas] = await Promise.all([
     resumoPorEmpresa(competencia, escopo),
+    resumoPorTipoServico(competencia, escopo),
     aging(competencia, escopo),
   ]);
 
@@ -50,6 +51,14 @@ export async function GET(req: Request, { params }: { params: { token: string } 
     porEmpresa: porEmpresaRows.map((r) => ({
       contaEmissora: r.contaEmissora,
       contaEmissoraLabel: CONTA_EMISSORA_LABEL[r.contaEmissora],
+      totalEmitido: r.totalEmitido,
+      totalRecebido: r.totalRecebido,
+      totalEmAberto: r.totalEmAberto,
+      totalVencido: r.totalVencido,
+    })),
+    porTipoServico: porTipoServicoRows.map((r) => ({
+      tipoServico: r.tipoServico,
+      tipoServicoLabel: TIPO_SERVICO_LABEL[r.tipoServico],
       totalEmitido: r.totalEmitido,
       totalRecebido: r.totalRecebido,
       totalEmAberto: r.totalEmAberto,
