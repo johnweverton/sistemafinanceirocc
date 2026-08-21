@@ -681,6 +681,14 @@ export interface ExecucaoSelecaoRow {
   /** Produção de consultas de pediatria (migration 0026) — opcional em bancos sem a migration. */
   producao_consultas_externa_id?: string | null;
   producao_consultas_nome?: string | null;
+  /** Sub-lotes de consultas de pediatria (achado 2026-08-21, migration 0052) — mutuamente
+   * exclusivo com producao_consultas_externa_id acima (produção flat). */
+  producao_consultas_lote_externa_ids?: string[] | null;
+  producao_consultas_lote_nomes?: string[] | null;
+  /** Os demais sub-lotes da produção mensal (guia principal quando os de consulta acima estão
+   * preenchidos, migration 0052) — mutuamente exclusivo com producao_externa_id. */
+  producao_guias_lote_externa_ids?: string[] | null;
+  producao_guias_lote_nomes?: string[] | null;
   /** Lotes separados de Outros Hospitais/Imobilizações (Story 10.5, migration 0027). */
   producao_outros_hospitais_externa_id?: string | null;
   producao_outros_hospitais_nome?: string | null;
@@ -709,6 +717,10 @@ export function toExecucaoSelecaoRow(selecao: {
   producaoNome: string | null;
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  producaoConsultasLoteExternaIds?: string[] | null;
+  producaoConsultasLoteNomes?: string[] | null;
+  producaoGuiasLoteExternaIds?: string[] | null;
+  producaoGuiasLoteNomes?: string[] | null;
   producaoOutrosHospitaisExternaId?: string | null;
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
@@ -732,6 +744,10 @@ export function toExecucaoSelecaoRow(selecao: {
     producao_nome: selecao.producaoNome,
     producao_consultas_externa_id: selecao.producaoConsultasExternaId ?? null,
     producao_consultas_nome: selecao.producaoConsultasNome ?? null,
+    producao_consultas_lote_externa_ids: selecao.producaoConsultasLoteExternaIds ?? null,
+    producao_consultas_lote_nomes: selecao.producaoConsultasLoteNomes ?? null,
+    producao_guias_lote_externa_ids: selecao.producaoGuiasLoteExternaIds ?? null,
+    producao_guias_lote_nomes: selecao.producaoGuiasLoteNomes ?? null,
     producao_outros_hospitais_externa_id: selecao.producaoOutrosHospitaisExternaId ?? null,
     producao_outros_hospitais_nome: selecao.producaoOutrosHospitaisNome ?? null,
     producao_imobilizacoes_externa_id: selecao.producaoImobilizacoesExternaId ?? null,
@@ -758,6 +774,10 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     producaoNome: row.producao_nome,
     producaoConsultasExternaId: row.producao_consultas_externa_id ?? null,
     producaoConsultasNome: row.producao_consultas_nome ?? null,
+    producaoConsultasLoteExternaIds: row.producao_consultas_lote_externa_ids ?? null,
+    producaoConsultasLoteNomes: row.producao_consultas_lote_nomes ?? null,
+    producaoGuiasLoteExternaIds: row.producao_guias_lote_externa_ids ?? null,
+    producaoGuiasLoteNomes: row.producao_guias_lote_nomes ?? null,
     producaoOutrosHospitaisExternaId: row.producao_outros_hospitais_externa_id ?? null,
     producaoOutrosHospitaisNome: row.producao_outros_hospitais_nome ?? null,
     producaoImobilizacoesExternaId: row.producao_imobilizacoes_externa_id ?? null,

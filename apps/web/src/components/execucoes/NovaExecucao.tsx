@@ -141,13 +141,23 @@ export function NovaExecucao() {
     queryFn: execucoesService.apoio,
   });
 
-  // Sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede) da produção mensal do Angiologista —
-  // busca sob demanda (GATE 2026-08-13), só quando o operador escolheu a produção mensal.
-  // Nunca faz parte de `apoio` (custaria uma chamada extra por médico/produção à toa).
+  // Sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede do Angiologista; Consultas/demais sub-
+  // lotes do Pediatra — achado 2026-08-21) da produção mensal selecionada — busca sob demanda
+  // (GATE 2026-08-13), só quando o operador escolheu a produção mensal. Nunca faz parte de
+  // `apoio` (custaria uma chamada extra por médico/produção à toa). Pediatra usa a MESMA produção
+  // escolhida no seletor "Produção" principal (`producaoId`) — ao contrário do Angiologista, que
+  // não tem lote principal e por isso tem seu próprio id dedicado
+  // (`angiologistaProducaoMensalId`) só pra alimentar esta busca. Calculado sem esperar
+  // `validMedicos` (definido mais abaixo) pra não reordenar hooks — busca direto em `apoio`.
+  const medicoSelecionadoEhPediatra = isPediatraEspecialidade(
+    apoio?.medicos.find((m) => m.id === medicoId)?.especialidade,
+  );
+  const idParaBuscarLotes =
+    angiologistaProducaoMensalId || (medicoSelecionadoEhPediatra ? producaoId : '');
   const { data: lotesData, isLoading: isLotesLoading, isError: isLotesError, error: lotesError } = useQuery({
-    queryKey: execucaoQueryKeys.lotes(angiologistaProducaoMensalId),
-    queryFn: () => execucoesService.lotes(angiologistaProducaoMensalId),
-    enabled: Boolean(angiologistaProducaoMensalId),
+    queryKey: execucaoQueryKeys.lotes(idParaBuscarLotes),
+    queryFn: () => execucoesService.lotes(idParaBuscarLotes),
+    enabled: Boolean(idParaBuscarLotes),
     retry: false,
   });
   const lotesDaProducaoMensal = lotesData?.lotes ?? [];
@@ -663,6 +673,11 @@ export function NovaExecucao() {
                     onChange={(e) => {
                       const novaProducaoId = e.target.value;
                       setProducaoId(novaProducaoId);
+                      // Achado 2026-08-21: sub-lotes (e a lista de "Produção de consultas" que os
+                      // exibe) são específicos da produção mensal selecionada — trocar de
+                      // produção sem limpar deixava uma seleção de consulta "fantasma" da
+                      // produção ANTERIOR ainda marcada no seletor.
+                      setConsultaProducaoId('');
                       const producao = producoesDoMedicoSelecionado.find((p) => p.id === novaProducaoId);
                       if (producao) preencherCompetenciaAuto(producao.nome);
                     }}
@@ -695,6 +710,7 @@ export function NovaExecucao() {
                     className="input"
                     value={consultaProducaoId}
                     onChange={(e) => setConsultaProducaoId(e.target.value)}
+                    disabled={Boolean(producaoId) && isLotesLoading}
                   >
                     <option value="">Sem componente de consultas</option>
                     {producoesDoMedicoSelecionado
@@ -704,9 +720,24 @@ export function NovaExecucao() {
                           {p.nome}
                         </option>
                       ))}
+                    {/* Sub-lotes da produção mensal selecionada (achado 2026-08-21) — a origem pode
+                        dividir "JULHO - 2026" em sub-lotes de guias (1Q/2Q/PARECER/2,5KG) MAIS um
+                        sub-lote de consultas (ex.: "HUMBERTO CONSULTAS DE JUNHO"). Escolher um
+                        aqui muda o cálculo do guia principal também: os DEMAIS sub-lotes desta
+                        produção passam a somar como guia (em vez do pacote completo), automático,
+                        sem precisar marcar mais nada — ver onClick de "Processar médico" abaixo. */}
+                    {lotesDaProducaoMensal.length > 0 && (
+                      <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
+                        {lotesDaProducaoMensal.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
-                    Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias.
+                    Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias. Se a produção selecionada tiver sub-lotes (ex.: &ldquo;CONSULTAS DE JUNHO&rdquo;), escolher um deles aqui faz o restante dos sub-lotes virar guia principal automaticamente.
                   </p>
                 </div>
               )}
@@ -784,6 +815,14 @@ export function NovaExecucao() {
                 onClick={() => {
                   if (!producaoObrigatoriaOk) return;
                   const consultaProd = producoesDoMedicoSelecionado.find((p) => p.id === consultaProducaoId);
+                  // Achado 2026-08-21: se a escolha de Consultas é um SUB-LOTE (fin-lotes, não a
+                  // lista flat de produções), o principal deixa de ser o pacote inteiro da
+                  // produção mensal e passa a ser a soma dos OUTROS sub-lotes — automático, sem o
+                  // operador precisar marcar mais nada (anti-dupla-contagem: ver migration 0052).
+                  const consultaLote = lotesDaProducaoMensal.find((l) => l.id === consultaProducaoId);
+                  const guiasLotesRestantes = consultaLote
+                    ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLote.id)
+                    : [];
                   const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === outrosHospitaisProducaoId,
                   );
@@ -803,11 +842,22 @@ export function NovaExecucao() {
                       {
                         medicoId,
                         // Angiologista não tem lote principal (GATE 2026-08-07) — vai null.
-                        producaoExternaId: medicoSelecionadoAngiologista ? null : (producaoSelecionada?.id ?? null),
-                        producaoNome: medicoSelecionadoAngiologista ? null : (producaoSelecionada?.nome ?? null),
-                        ...(consultaProd
-                          ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
-                          : {}),
+                        // Pediatra com sub-lote de consulta escolhido (achado 2026-08-21) também
+                        // vai null — o principal vem de producaoGuiasLoteExternaIds abaixo.
+                        producaoExternaId:
+                          medicoSelecionadoAngiologista || consultaLote ? null : (producaoSelecionada?.id ?? null),
+                        producaoNome:
+                          medicoSelecionadoAngiologista || consultaLote ? null : (producaoSelecionada?.nome ?? null),
+                        ...(consultaLote
+                          ? {
+                              producaoConsultasLoteExternaIds: [consultaLote.id],
+                              producaoConsultasLoteNomes: [consultaLote.nome],
+                              producaoGuiasLoteExternaIds: guiasLotesRestantes.map((l) => l.id),
+                              producaoGuiasLoteNomes: guiasLotesRestantes.map((l) => l.nome),
+                            }
+                          : consultaProd
+                            ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
+                            : {}),
                         ...(outrosHospitaisProd
                           ? {
                               producaoOutrosHospitaisExternaId: outrosHospitaisProd.id,

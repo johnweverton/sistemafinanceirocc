@@ -212,6 +212,116 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     const saldo = state.saldosAcumulados.get('m-pediatra-2');
     expect(saldo?.guiasPrincipal).toBe(3);
   });
+
+  // Achado real 2026-08-21 (caso do Humberto Bia): a produção mensal do pediatra pode ter a
+  // MESMA estrutura de sub-lotes do Angiologista (fin-lotes) — ex.: dentro de "JULHO - 2026" há
+  // sub-lotes "HUMBERTO 1Q"/"HUMBERTO 2Q" (guias) e "HUMBERTO CONSULTAS DE JUNHO" (consultas),
+  // tudo somado no pacote completo da produção mensal. Escolher o sub-lote de consulta separado
+  // SEM também trocar o principal pra "soma dos outros sub-lotes" contaria esses itens 2x (uma
+  // vez dentro do pacote completo, uma vez como consulta) — o item da origem não carrega um
+  // campo "pertence ao sub-lote X" pra filtrar depois.
+  it('Achado 2026-08-21 — pediatra com sub-lote de consulta DENTRO da produção mensal: guia principal vem só dos OUTROS sub-lotes (nunca do pacote completo)', async () => {
+    const pediatra = medicoFake({
+      id: 'm-pediatra-3',
+      cpf: '11122233344',
+      nome: 'Dr. Humberto',
+      especialidade: 'Pediatria',
+      statusHapvida: 'credenciado',
+    });
+    const state = novoEstado([pediatra]);
+
+    // "Pacote completo" da produção mensal (fin-producoes, flat) — o que `buscarItens` devolveria
+    // se alguém (bug de regressão) reaproveitasse `producaoExternaId` junto com os sub-lotes.
+    // Deliberadamente MUITO diferente da soma dos sub-lotes abaixo (60 itens vs 5), pra qualquer
+    // vazamento do pacote completo estourar nos asserts de guias/valor.
+    state.itensPorProducao['p-julho-completa'] = Array.from({ length: 60 }, (_, i) => ({
+      data: '2026-07-01', pacienteNome: `Pacote ${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+
+    // Sub-lotes de guia: "1Q" (3) + "2Q" (2) = 5 guias combinadas (bate o mínimo, GATE 2026-08-13).
+    state.itensPorLote['lote-1q'] = Array.from({ length: 3 }, (_, i) => ({
+      data: '2026-07-05', pacienteNome: `1Q-${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+    state.itensPorLote['lote-2q'] = Array.from({ length: 2 }, (_, i) => ({
+      data: '2026-07-20', pacienteNome: `2Q-${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+    // Sub-lote de consulta: 10 consultas × R$3,00 (default) = R$30,00.
+    state.itensPorLote['lote-consultas'] = Array.from({ length: 10 }, (_, i) => ({
+      data: '2026-07-10', pacienteNome: `Consulta ${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30721033', descricaoProcedimento: 'Consulta em consultório',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 150, valorPagoOrigem: 130,
+    }));
+
+    const selecoes = [
+      {
+        medicoId: 'm-pediatra-3',
+        // Achado 2026-08-21: producaoExternaId vai null — o principal vem 100% dos sub-lotes.
+        producaoExternaId: null,
+        producaoNome: null,
+        producaoConsultasLoteExternaIds: ['lote-consultas'],
+        producaoConsultasLoteNomes: ['HUMBERTO CONSULTAS DE JUNHO'],
+        producaoGuiasLoteExternaIds: ['lote-1q', 'lote-2q'],
+        producaoGuiasLoteNomes: ['HUMBERTO 1Q', 'HUMBERTO 2Q'],
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-07', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    // 5 guias (1Q+2Q) — NUNCA os 60 do pacote completo (prova que producaoExternaId não foi usado).
+    expect(resultado.guias).toBe(5);
+    expect(resultado.totalValor).toBeCloseTo(263.59 + 30, 2);
+    expect(resultado.subtotais.find((s) => s.classe === 'CONSULTA_PEDIATRIA')).toMatchObject({
+      guias: 10,
+      valor: 30,
+    });
+    expect(resultado.status).toBe('ok');
+  });
+
+  it('Achado 2026-08-21 — pediatra com sub-lotes disponíveis mas NENHUM marcado como consulta: comportamento inalterado (usa o pacote completo, sem regressão)', async () => {
+    const pediatra = medicoFake({
+      id: 'm-pediatra-4',
+      cpf: '55566677788',
+      nome: 'Dra. Sem Sub-lote Marcado',
+      especialidade: 'Pediatria',
+      statusHapvida: 'credenciado',
+    });
+    const state = novoEstado([pediatra]);
+    state.itensPorProducao['p-julho-completa'] = Array.from({ length: 5 }, (_, i) => ({
+      data: '2026-07-01', pacienteNome: `G${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+    // Sub-lotes existem na origem (ex.: a UI buscou pra popular o seletor), mas o operador não
+    // marcou nenhum como consulta — `producaoGuiasLoteExternaIds`/`producaoConsultasLoteExternaIds`
+    // ficam ausentes, e o motor deve continuar usando o pacote completo, exatamente como antes
+    // desta feature.
+    const selecoes = [
+      { medicoId: 'm-pediatra-4', producaoExternaId: 'p-julho-completa', producaoNome: 'Julho - 2026' },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-07', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    expect(resultado.guias).toBe(5);
+    expect(resultado.totalValor).toBeCloseTo(263.59, 2);
+    expect(resultado.subtotais.some((s) => s.classe === 'CONSULTA_PEDIATRIA')).toBe(false);
+  });
 });
 
 describe('Integração — execução agregada por empresa (Story 10.4b)', () => {

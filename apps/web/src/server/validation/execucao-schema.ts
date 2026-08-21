@@ -15,9 +15,27 @@ export const dispararExecucaoSchema = z
           // inteira de producaoCateter/Fistula/Angiografia abaixo).
           producaoExternaId: z.string().min(1).nullable(),
           producaoNome: z.string().min(1).nullable(),
-          // Produção de consultas de pediatria (Story 10.2) — opcional.
+          // Produção de consultas de pediatria (Story 10.2) — opcional. Produção FLAT (fin-
+          // producoes) inteira usada como consultas — só faz sentido quando a origem já separa
+          // guias e consultas em produções de nível-topo distintas.
           producaoConsultasExternaId: z.string().min(1).nullable().optional(),
           producaoConsultasNome: z.string().min(1).nullable().optional(),
+          // Sub-lote(s) de consultas de pediatria (achado 2026-08-21): a produção mensal do
+          // pediatra pode ter a MESMA estrutura de sub-lotes do Angiologista (fin-lotes) — ex.:
+          // "HUMBERTO 1Q"/"HUMBERTO 2Q" (guias) + "HUMBERTO CONSULTAS DE JUNHO" dentro de
+          // "JULHO - 2026". Quando o operador marca um sub-lote como consulta aqui, o principal
+          // deixa de ser a produção completa (`producaoExternaId`) e passa a ser a SOMA dos
+          // demais sub-lotes em `producaoGuiasLoteExternaIds` — nunca os dois ao mesmo tempo,
+          // senão os itens do sub-lote de consulta seriam contados 2x (uma vez como guia, uma
+          // vez como consulta). Mutuamente exclusivo com `producaoConsultasExternaId` acima.
+          producaoConsultasLoteExternaIds: z.array(z.string().min(1)).nullable().optional(),
+          producaoConsultasLoteNomes: z.array(z.string().min(1)).nullable().optional(),
+          // Os demais sub-lotes da produção mensal (tudo que NÃO foi marcado como consulta) —
+          // computado no cliente a partir da mesma lista de sub-lotes (fin-lotes) e enviado
+          // explicitamente para nunca reaproveitar `producaoExternaId` junto (anti-dupla-
+          // contagem). Só preenchido quando `producaoConsultasLoteExternaIds` também está.
+          producaoGuiasLoteExternaIds: z.array(z.string().min(1)).nullable().optional(),
+          producaoGuiasLoteNomes: z.array(z.string().min(1)).nullable().optional(),
           // Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — opcionais.
           producaoOutrosHospitaisExternaId: z.string().min(1).nullable().optional(),
           producaoOutrosHospitaisNome: z.string().min(1).nullable().optional(),

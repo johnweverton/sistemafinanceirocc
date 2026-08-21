@@ -38,6 +38,13 @@ export async function criarExecucao(
     producaoNome: string | null;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
+    /** Sub-lotes de consultas de pediatria (achado 2026-08-21, migration 0052). */
+    producaoConsultasLoteExternaIds?: string[] | null;
+    producaoConsultasLoteNomes?: string[] | null;
+    /** Demais sub-lotes da produção mensal — guia principal quando os de consulta acima estão
+     *  preenchidos (migration 0052). */
+    producaoGuiasLoteExternaIds?: string[] | null;
+    producaoGuiasLoteNomes?: string[] | null;
     producaoOutrosHospitaisExternaId?: string | null;
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
@@ -90,6 +97,10 @@ export async function criarExecucao(
       producao_nome: s.producaoNome,
       producao_consultas_externa_id: s.producaoConsultasExternaId ?? null,
       producao_consultas_nome: s.producaoConsultasNome ?? null,
+      producao_consultas_lote_externa_ids: s.producaoConsultasLoteExternaIds ?? null,
+      producao_consultas_lote_nomes: s.producaoConsultasLoteNomes ?? null,
+      producao_guias_lote_externa_ids: s.producaoGuiasLoteExternaIds ?? null,
+      producao_guias_lote_nomes: s.producaoGuiasLoteNomes ?? null,
       producao_outros_hospitais_externa_id: s.producaoOutrosHospitaisExternaId ?? null,
       producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
       producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,

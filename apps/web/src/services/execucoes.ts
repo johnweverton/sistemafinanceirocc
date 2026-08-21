@@ -14,9 +14,17 @@ export interface ExecucaoSelecaoPayload {
   /** Null pra médico Angiologista (GATE 2026-08-07) — sem lote principal. */
   producaoExternaId: string | null;
   producaoNome: string | null;
-  /** Produção de consultas de pediatria — opcional. */
+  /** Produção de consultas de pediatria — opcional. Flat (fin-producoes). */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  /** Sub-lote(s) de consultas de pediatria (achado 2026-08-21) — mutuamente exclusivo com
+   * `producaoConsultasExternaId`. Usado quando a produção mensal do pediatra tem a mesma
+   * estrutura de sub-lotes do Angiologista (fin-lotes). Sempre acompanhado de
+   * `producaoGuiasLoteExternaIds` (os demais sub-lotes, guia principal). */
+  producaoConsultasLoteExternaIds?: string[] | null;
+  producaoConsultasLoteNomes?: string[] | null;
+  producaoGuiasLoteExternaIds?: string[] | null;
+  producaoGuiasLoteNomes?: string[] | null;
   /** Lotes separados de Outros Hospitais/Imobilizações — opcionais. */
   producaoOutrosHospitaisExternaId?: string | null;
   producaoOutrosHospitaisNome?: string | null;

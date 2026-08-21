@@ -9,7 +9,9 @@ import { ToastProvider } from '../../src/components/ui/Toast';
 const mockApoio = vi.fn();
 const mockDisparar = vi.fn();
 const mockMedicosComBoleto = vi.fn();
-const mockLotes = vi.fn(async (..._args: unknown[]) => ({ lotes: [] }));
+const mockLotes = vi.fn(async (..._args: unknown[]): Promise<{ lotes: { id: string; nome: string }[] }> => ({
+  lotes: [],
+}));
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     apoio: (...a: unknown[]) => mockApoio(...a),
@@ -193,5 +195,148 @@ describe('NovaExecucao — médico já tem boleto na competência (achado 2026-0
 
     await screen.findByText(/já tem boleto emitido para a competência 2026-06/);
     expect(screen.getByRole('button', { name: 'Processar médico' })).toBeDisabled();
+  });
+});
+
+// Achado real 2026-08-21 (caso do Humberto Bia): a produção mensal do pediatra pode ter a MESMA
+// estrutura de sub-lotes do Angiologista (fin-lotes) — sub-lotes de guia (1Q/2Q) MAIS um sub-lote
+// de consultas ambulatoriais, tudo dentro da mesma produção mensal (ex.: "JULHO - 2026"). Marcar
+// um sub-lote como consulta precisa automaticamente fazer o principal virar "soma dos OUTROS
+// sub-lotes" — nunca o pacote completo (senão o sub-lote de consulta seria cobrado 2x).
+describe('NovaExecucao — modo "Por médico": sub-lotes de consulta de pediatria (achado 2026-08-21)', () => {
+  const medicoHumberto = {
+    id: 'm-humberto', nome: 'Dr. Humberto', ativo: true, necessitaConfiguracao: false,
+    externalId: 'ext-humberto', especialidade: 'Pediatria',
+  };
+  const apoioPediatraFixture = {
+    medicos: [medicoHumberto],
+    clientesOrigem: [
+      { id: 'ext-humberto', nome: 'Humberto', producoes: [{ id: 'p-julho', nome: 'JULHO - 2026' }] },
+    ],
+  };
+  const subLotesJulho = [
+    { id: 'lote-1q', nome: 'HUMBERTO 1Q' },
+    { id: 'lote-2q', nome: 'HUMBERTO 2Q' },
+    { id: 'lote-consultas', nome: 'HUMBERTO CONSULTAS DE JUNHO' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApoio.mockResolvedValue(apoioPediatraFixture);
+    mockListarEmpresas.mockResolvedValue([]);
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: [] });
+    mockLotes.mockImplementation(async (...args: unknown[]) =>
+      args[0] === 'p-julho' ? { lotes: subLotesJulho } : { lotes: [] },
+    );
+  });
+
+  async function selecionarMedicoEProducao() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Por médico' }));
+    fireEvent.change(screen.getByLabelText('Médico'), { target: { value: 'm-humberto' } });
+    fireEvent.change(screen.getByLabelText('Produção'), { target: { value: 'p-julho' } });
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-07' } });
+    // Espera a busca de sub-lotes (fin-lotes) resolver e popular o seletor de consultas.
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-julho'));
+  }
+
+  it('lista os sub-lotes da produção selecionada no seletor de "Produção de consultas"', async () => {
+    renderComProviders();
+    await selecionarMedicoEProducao();
+
+    const select = screen.getByLabelText(/Produção de consultas/) as HTMLSelectElement;
+    const opcoes = Array.from(select.options).map((o) => o.textContent);
+    expect(opcoes).toEqual(
+      expect.arrayContaining(['HUMBERTO 1Q', 'HUMBERTO 2Q', 'HUMBERTO CONSULTAS DE JUNHO']),
+    );
+  });
+
+  it('escolher um sub-lote como consulta zera producaoExternaId e envia os OUTROS sub-lotes como guia principal', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-1' });
+    renderComProviders();
+    await selecionarMedicoEProducao();
+
+    fireEvent.change(screen.getByLabelText(/Produção de consultas/), {
+      target: { value: 'lote-consultas' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Processar médico' }));
+
+    await waitFor(() =>
+      expect(mockDisparar).toHaveBeenCalledWith(
+        '2026-07',
+        [
+          expect.objectContaining({
+            medicoId: 'm-humberto',
+            producaoExternaId: null,
+            producaoNome: null,
+            producaoConsultasLoteExternaIds: ['lote-consultas'],
+            producaoConsultasLoteNomes: ['HUMBERTO CONSULTAS DE JUNHO'],
+            producaoGuiasLoteExternaIds: ['lote-1q', 'lote-2q'],
+            producaoGuiasLoteNomes: ['HUMBERTO 1Q', 'HUMBERTO 2Q'],
+          }),
+        ],
+        undefined,
+      ),
+    );
+  });
+
+  it('sem marcar nenhum sub-lote como consulta, mantém o comportamento atual (pacote completo, sem regressão)', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-2' });
+    renderComProviders();
+    await selecionarMedicoEProducao();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Processar médico' }));
+
+    await waitFor(() =>
+      expect(mockDisparar).toHaveBeenCalledWith(
+        '2026-07',
+        [
+          expect.objectContaining({
+            medicoId: 'm-humberto',
+            producaoExternaId: 'p-julho',
+            producaoNome: 'JULHO - 2026',
+          }),
+        ],
+        undefined,
+      ),
+    );
+    const [, selecoesEnviadas] = mockDisparar.mock.calls[0]!;
+    expect(selecoesEnviadas[0]).not.toHaveProperty('producaoConsultasLoteExternaIds');
+    expect(selecoesEnviadas[0]).not.toHaveProperty('producaoGuiasLoteExternaIds');
+  });
+
+  it('trocar de Produção limpa a seleção de consultas (evita sub-lote "fantasma" da produção anterior)', async () => {
+    mockApoio.mockResolvedValue({
+      medicos: [medicoHumberto],
+      clientesOrigem: [
+        {
+          id: 'ext-humberto',
+          nome: 'Humberto',
+          producoes: [
+            { id: 'p-julho', nome: 'JULHO - 2026' },
+            { id: 'p-agosto', nome: 'AGOSTO - 2026' },
+          ],
+        },
+      ],
+    });
+    mockLotes.mockImplementation(async (...args: unknown[]) => {
+      const producaoId = args[0];
+      if (producaoId === 'p-julho') return { lotes: subLotesJulho };
+      if (producaoId === 'p-agosto') return { lotes: [{ id: 'lote-ago-1q', nome: 'HUMBERTO AGOSTO 1Q' }] };
+      return { lotes: [] };
+    });
+    renderComProviders();
+    await selecionarMedicoEProducao();
+
+    fireEvent.change(screen.getByLabelText(/Produção de consultas/), {
+      target: { value: 'lote-consultas' },
+    });
+    expect((screen.getByLabelText(/Produção de consultas/) as HTMLSelectElement).value).toBe('lote-consultas');
+
+    // Troca para a produção mensal de Agosto — a seleção de consultas de Julho é outro namespace
+    // de ids (fin-lotes), não deveria continuar "selecionada" numa produção diferente.
+    fireEvent.change(screen.getByLabelText('Produção'), { target: { value: 'p-agosto' } });
+
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-agosto'));
+    expect((screen.getByLabelText(/Produção de consultas/) as HTMLSelectElement).value).toBe('');
   });
 });

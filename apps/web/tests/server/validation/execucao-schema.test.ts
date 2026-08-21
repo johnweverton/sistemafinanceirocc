@@ -57,6 +57,56 @@ describe('dispararExecucaoSchema — produção de consultas (Story 10.2)', () =
   });
 });
 
+describe('dispararExecucaoSchema — sub-lotes de consulta de pediatria (achado 2026-08-21)', () => {
+  it('producaoConsultasLoteExternaIds + producaoGuiasLoteExternaIds válidos passa (producaoExternaId null)', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [
+        {
+          medicoId: selecaoBase.medicoId,
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoConsultasLoteExternaIds: ['lote-consulta-1'],
+          producaoConsultasLoteNomes: ['HUMBERTO CONSULTAS DE JUNHO'],
+          producaoGuiasLoteExternaIds: ['lote-1q', 'lote-2q', 'lote-parecer'],
+          producaoGuiasLoteNomes: ['HUMBERTO 1Q', 'HUMBERTO 2Q', 'HUMBERTO PARECER 1Q'],
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('array vazio ([]) é aceito — mesma semântica de "nenhum lote selecionado" das demais categorias', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [
+        {
+          ...selecaoBase,
+          producaoConsultasLoteExternaIds: [],
+          producaoGuiasLoteExternaIds: [],
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('id vazio ("") dentro do array é rejeitado — mesma regra dos demais campos de lote', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [{ ...selecaoBase, producaoConsultasLoteExternaIds: [''] }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('seleção sem os campos de sub-lote continua válida (regressão — médico sem essa estrutura)', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [selecaoBase],
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
 describe('dispararExecucaoSchema — cliente contábil (Story 11.3)', () => {
   const clienteId = '22222222-2222-2222-2222-222222222222';
 

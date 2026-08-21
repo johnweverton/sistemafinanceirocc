@@ -84,9 +84,20 @@ export interface SelecaoDeps {
   /** Null pra médico Angiologista (GATE 2026-08-07) — sem lote principal. */
   producaoExternaId: string | null;
   producaoNome: string | null;
-  /** Produção de consultas de pediatria (Story 10.2) — opcional. */
+  /** Produção de consultas de pediatria (Story 10.2) — opcional. Flat (fin-producoes). */
   producaoConsultasExternaId?: string | null;
   producaoConsultasNome?: string | null;
+  /** Sub-lote(s) de consultas de pediatria (achado 2026-08-21) — mutuamente exclusivo com
+   * `producaoConsultasExternaId` acima. Quando presente, `producaoGuiasLoteExternaIds` abaixo
+   * TAMBÉM vem preenchido (os demais sub-lotes da produção mensal) e `producaoExternaId` é
+   * ignorado pelo Orchestrator — nunca os dois juntos (anti-dupla-contagem: ver migration 0052). */
+  producaoConsultasLoteExternaIds?: string[] | null;
+  producaoConsultasLoteNomes?: string[] | null;
+  /** Os demais sub-lotes da produção mensal do pediatra (guia principal) quando
+   * `producaoConsultasLoteExternaIds` está preenchido — computado no cliente a partir da mesma
+   * lista de fin-lotes, EXCLUINDO os marcados como consulta. */
+  producaoGuiasLoteExternaIds?: string[] | null;
+  producaoGuiasLoteNomes?: string[] | null;
   /** Lotes separados de Outros Hospitais/Imobilizações (Story 10.5) — opcionais. */
   producaoOutrosHospitaisExternaId?: string | null;
   producaoOutrosHospitaisNome?: string | null;
@@ -131,6 +142,10 @@ export interface OrchestratorDeps {
       producaoNome: string | null;
       producaoConsultasExternaId?: string | null;
       producaoConsultasNome?: string | null;
+      producaoConsultasLoteExternaIds?: string[] | null;
+      producaoConsultasLoteNomes?: string[] | null;
+      producaoGuiasLoteExternaIds?: string[] | null;
+      producaoGuiasLoteNomes?: string[] | null;
       producaoOutrosHospitaisExternaId?: string | null;
       producaoOutrosHospitaisNome?: string | null;
       producaoImobilizacoesExternaId?: string | null;
@@ -546,14 +561,25 @@ async function processarUmMedico(
   try {
     if (!medico) throw new Error('Médico não encontrado na base');
 
+    // Achado 2026-08-21: quando o pediatra tem sub-lotes de consulta marcados dentro da produção
+    // mensal, o principal deixa de vir da produção INTEIRA (`producaoExternaId`) e passa a ser a
+    // SOMA dos demais sub-lotes (`producaoGuiasLoteExternaIds`, computado no cliente) — nunca os
+    // dois juntos, senão o sub-lote de consulta seria contado 2x (uma vez como guia dentro do
+    // pacote completo, uma vez como consulta). `buscarItensDeVariosLotes` decide undefined vs [].
+    const itensDeGuiasPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoGuiasLoteExternaIds);
     // Angiologista não tem lote principal (GATE 2026-08-07) — producaoExternaId fica null pra
     // ele, `itens` fica vazio (o Engine desvia pro caminho de Cateter/Fístula/Angiografia).
-    const itens = selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : [];
+    const itens =
+      itensDeGuiasPorLote ?? (selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : []);
     // Story 10.2: lote separado de consultas ambulatoriais (pediatria) — opcional, produção
-    // distinta da de guias. NUNCA reaproveita `itens` (anti-dupla-contagem).
-    const itensConsultas = selecao.producaoConsultasExternaId
-      ? await deps.buscarItens(selecao.producaoConsultasExternaId)
-      : undefined;
+    // distinta da de guias. NUNCA reaproveita `itens` (anti-dupla-contagem). Achado 2026-08-21:
+    // sub-lote(s) de consulta (`producaoConsultasLoteExternaIds`) têm prioridade sobre a produção
+    // flat (`producaoConsultasExternaId`) — os dois nunca vêm preenchidos juntos na prática (ver
+    // NovaExecucao.tsx), mas se vierem, o sub-lote vence por ser a fonte mais específica.
+    const itensConsultasPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoConsultasLoteExternaIds);
+    const itensConsultas =
+      itensConsultasPorLote ??
+      (selecao.producaoConsultasExternaId ? await deps.buscarItens(selecao.producaoConsultasExternaId) : undefined);
     // Story 10.5: lotes separados de Outros Hospitais/Imobilizações — cada um com sua própria
     // contagem e tabela de preço (o Engine nunca reaproveita a contagem de `itens` para essas
     // classes; ver processar-medico.ts). `undefined` quando o operador não selecionou o lote

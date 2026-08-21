@@ -56,6 +56,10 @@ export interface FakeState {
     producaoNome: string | null;
     producaoConsultasExternaId?: string | null;
     producaoConsultasNome?: string | null;
+    producaoConsultasLoteExternaIds?: string[] | null;
+    producaoConsultasLoteNomes?: string[] | null;
+    producaoGuiasLoteExternaIds?: string[] | null;
+    producaoGuiasLoteNomes?: string[] | null;
     producaoOutrosHospitaisExternaId?: string | null;
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
