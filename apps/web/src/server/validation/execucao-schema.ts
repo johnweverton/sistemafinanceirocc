@@ -41,6 +41,12 @@ export const dispararExecucaoSchema = z
           producaoOutrosHospitaisNome: z.string().min(1).nullable().optional(),
           producaoImobilizacoesExternaId: z.string().min(1).nullable().optional(),
           producaoImobilizacoesNome: z.string().min(1).nullable().optional(),
+          // Sub-lote de Imobilizações (achado 2026-08-25, migration 0053) — mesmo mecanismo do
+          // sub-lote de consulta acima, mas sem "guias restantes": Imobilizações já é uma classe
+          // separada da produção principal, então marcar o sub-lote não afeta o lote principal.
+          // Mutuamente exclusivo com `producaoImobilizacoesExternaId` acima.
+          producaoImobilizacoesLoteExternaId: z.string().min(1).nullable().optional(),
+          producaoImobilizacoesLoteNome: z.string().min(1).nullable().optional(),
           // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
           // Arrays desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
           // quinzenas (1Q/2Q) como sub-lotes separados, todos somados na mesma execução.

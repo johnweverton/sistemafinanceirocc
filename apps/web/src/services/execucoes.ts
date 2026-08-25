@@ -30,6 +30,11 @@ export interface ExecucaoSelecaoPayload {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
+  /** Sub-lote de Imobilizações (achado 2026-08-25) — mutuamente exclusivo com
+   * `producaoImobilizacoesExternaId`. Mesmo mecanismo do sub-lote de consultas, mas sem "guias
+   * restantes": Imobilizações já é classe separada da produção principal. */
+  producaoImobilizacoesLoteExternaId?: string | null;
+  producaoImobilizacoesLoteNome?: string | null;
   /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
    * Arrays desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
    * quinzenas (1Q/2Q) como sub-lotes separados — todos os selecionados são somados. */

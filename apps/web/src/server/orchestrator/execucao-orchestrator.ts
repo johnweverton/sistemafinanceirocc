@@ -103,6 +103,12 @@ export interface SelecaoDeps {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
+  /** Sub-lote de Imobilizações (achado 2026-08-25) — mutuamente exclusivo com
+   * `producaoImobilizacoesExternaId` acima. Ao contrário do sub-lote de consulta, não precisa de
+   * um campo irmão "resto vira guia principal": Imobilizações já é classe separada da produção
+   * principal (tabela de preço própria), então marcar o sub-lote não afeta o lote principal. */
+  producaoImobilizacoesLoteExternaId?: string | null;
+  producaoImobilizacoesLoteNome?: string | null;
   /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
    * ARRAYS desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
    * quinzenas (1Q/2Q) como sub-lotes separados — todos os selecionados são somados. */
@@ -150,6 +156,8 @@ export interface OrchestratorDeps {
       producaoOutrosHospitaisNome?: string | null;
       producaoImobilizacoesExternaId?: string | null;
       producaoImobilizacoesNome?: string | null;
+      producaoImobilizacoesLoteExternaId?: string | null;
+      producaoImobilizacoesLoteNome?: string | null;
       producaoCateterExternaIds?: string[] | null;
       producaoCateterNomes?: string[] | null;
       producaoFistulaExternaIds?: string[] | null;
@@ -587,9 +595,14 @@ async function processarUmMedico(
     const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
       ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
       : undefined;
-    const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
-      ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
-      : undefined;
+    // Achado 2026-08-25: sub-lote de Imobilizações (`producaoImobilizacoesLoteExternaId`) tem
+    // prioridade sobre a produção flat — mesmo padrão de itensConsultasPorLote acima, mas sem
+    // "guias restantes": Imobilizações já é classe separada, o sub-lote não afeta o principal.
+    const itensImobilizacoes = selecao.producaoImobilizacoesLoteExternaId
+      ? await deps.buscarItensPorLote(selecao.producaoImobilizacoesLoteExternaId)
+      : selecao.producaoImobilizacoesExternaId
+        ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
+        : undefined;
     // GATE 2026-08-07: lotes de Cateter/Fístula/Angiografia (médico Angiologista, sem lote
     // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima. Esses
     // ids vêm de `listarLotes` (fin-lotes), NÃO de fin-producoes — busca via `buscarItensPorLote`

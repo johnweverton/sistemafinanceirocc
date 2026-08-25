@@ -49,6 +49,10 @@ export async function criarExecucao(
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
+    /** Sub-lote de Imobilizações (achado 2026-08-25, migration 0053) — mutuamente exclusivo com
+     *  producaoImobilizacoesExternaId acima. */
+    producaoImobilizacoesLoteExternaId?: string | null;
+    producaoImobilizacoesLoteNome?: string | null;
     producaoCateterExternaIds?: string[] | null;
     producaoCateterNomes?: string[] | null;
     producaoFistulaExternaIds?: string[] | null;
@@ -105,6 +109,8 @@ export async function criarExecucao(
       producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
       producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,
       producao_imobilizacoes_nome: s.producaoImobilizacoesNome ?? null,
+      producao_imobilizacoes_lote_externa_id: s.producaoImobilizacoesLoteExternaId ?? null,
+      producao_imobilizacoes_lote_nome: s.producaoImobilizacoesLoteNome ?? null,
       producao_cateter_externa_ids: s.producaoCateterExternaIds ?? null,
       producao_cateter_nomes: s.producaoCateterNomes ?? null,
       producao_fistula_externa_ids: s.producaoFistulaExternaIds ?? null,

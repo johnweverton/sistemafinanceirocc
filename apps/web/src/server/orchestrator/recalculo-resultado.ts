@@ -113,9 +113,13 @@ export async function recalcularResultado(
   const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
     ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
     : undefined;
-  const itensImobilizacoes = selecao.producaoImobilizacoesExternaId
-    ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
-    : undefined;
+  // Sub-lote de Imobilizações (achado 2026-08-25) tem prioridade sobre a produção flat — mesmo
+  // padrão do orquestrador principal.
+  const itensImobilizacoes = selecao.producaoImobilizacoesLoteExternaId
+    ? await deps.buscarItensPorLote(selecao.producaoImobilizacoesLoteExternaId)
+    : selecao.producaoImobilizacoesExternaId
+      ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
+      : undefined;
   // Sub-lotes vêm de fin-lotes, não fin-producoes — busca via loteId (GATE 2026-08-13). ARRAY
   // (migration 0046): soma todas as quinzenas (1Q/2Q) selecionadas de cada categoria.
   const itensCateter = await buscarItensDeVariosLotes(deps, selecao.producaoCateterExternaIds);

@@ -142,18 +142,19 @@ export function NovaExecucao() {
   });
 
   // Sub-lotes (Cateter/Fístula/Angiografia/Carta de Rede do Angiologista; Consultas/demais sub-
-  // lotes do Pediatra — achado 2026-08-21) da produção mensal selecionada — busca sob demanda
-  // (GATE 2026-08-13), só quando o operador escolheu a produção mensal. Nunca faz parte de
-  // `apoio` (custaria uma chamada extra por médico/produção à toa). Pediatra usa a MESMA produção
-  // escolhida no seletor "Produção" principal (`producaoId`) — ao contrário do Angiologista, que
-  // não tem lote principal e por isso tem seu próprio id dedicado
-  // (`angiologistaProducaoMensalId`) só pra alimentar esta busca. Calculado sem esperar
-  // `validMedicos` (definido mais abaixo) pra não reordenar hooks — busca direto em `apoio`.
-  const medicoSelecionadoEhPediatra = isPediatraEspecialidade(
-    apoio?.medicos.find((m) => m.id === medicoId)?.especialidade,
-  );
+  // lotes do Pediatra — achado 2026-08-21; Imobilizações — achado 2026-08-25) da produção mensal
+  // selecionada — busca sob demanda (GATE 2026-08-13), só quando o operador escolheu a produção
+  // mensal. Nunca faz parte de `apoio` (custaria uma chamada extra por médico/produção à toa).
+  // Pediatra/fazImobilizacoes usam a MESMA produção escolhida no seletor "Produção" principal
+  // (`producaoId`) — ao contrário do Angiologista, que não tem lote principal e por isso tem seu
+  // próprio id dedicado (`angiologistaProducaoMensalId`) só pra alimentar esta busca. Calculado
+  // sem esperar `validMedicos` (definido mais abaixo) pra não reordenar hooks — busca direto em
+  // `apoio`.
+  const medicoSelecionado = apoio?.medicos.find((m) => m.id === medicoId);
+  const medicoSelecionadoEhPediatra = isPediatraEspecialidade(medicoSelecionado?.especialidade);
   const idParaBuscarLotes =
-    angiologistaProducaoMensalId || (medicoSelecionadoEhPediatra ? producaoId : '');
+    angiologistaProducaoMensalId ||
+    (medicoSelecionadoEhPediatra || medicoSelecionado?.fazImobilizacoes ? producaoId : '');
   const { data: lotesData, isLoading: isLotesLoading, isError: isLotesError, error: lotesError } = useQuery({
     queryKey: execucaoQueryKeys.lotes(idParaBuscarLotes),
     queryFn: () => execucoesService.lotes(idParaBuscarLotes),
@@ -713,19 +714,14 @@ export function NovaExecucao() {
                     disabled={Boolean(producaoId) && isLotesLoading}
                   >
                     <option value="">Sem componente de consultas</option>
-                    {producoesDoMedicoSelecionado
-                      .filter((p) => p.id !== producaoId)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nome}
-                        </option>
-                      ))}
                     {/* Sub-lotes da produção mensal selecionada (achado 2026-08-21) — a origem pode
                         dividir "JULHO - 2026" em sub-lotes de guias (1Q/2Q/PARECER/2,5KG) MAIS um
                         sub-lote de consultas (ex.: "HUMBERTO CONSULTAS DE JUNHO"). Escolher um
                         aqui muda o cálculo do guia principal também: os DEMAIS sub-lotes desta
                         produção passam a somar como guia (em vez do pacote completo), automático,
-                        sem precisar marcar mais nada — ver onClick de "Processar médico" abaixo. */}
+                        sem precisar marcar mais nada — ver onClick de "Processar médico" abaixo.
+                        Vem ANTES da lista de produções (achado 2026-08-25, feedback do dono): é a
+                        opção mais usada por quem tem sub-lote, não faz sentido rolar até o fim. */}
                     {lotesDaProducaoMensal.length > 0 && (
                       <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
                         {lotesDaProducaoMensal.map((l) => (
@@ -735,6 +731,13 @@ export function NovaExecucao() {
                         ))}
                       </optgroup>
                     )}
+                    {producoesDoMedicoSelecionado
+                      .filter((p) => p.id !== producaoId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
                   </select>
                   <p className="mt-1.5 text-xs text-cc-muted">
                     Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias. Se a produção selecionada tiver sub-lotes (ex.: &ldquo;CONSULTAS DE JUNHO&rdquo;), escolher um deles aqui faz o restante dos sub-lotes virar guia principal automaticamente.
@@ -778,8 +781,25 @@ export function NovaExecucao() {
                     className="input"
                     value={imobilizacoesProducaoId}
                     onChange={(e) => setImobilizacoesProducaoId(e.target.value)}
+                    disabled={Boolean(producaoId) && isLotesLoading}
                   >
                     <option value="">Selecione o lote…</option>
+                    {/* Sub-lotes da produção mensal selecionada (achado 2026-08-25) — mesmo mecanismo
+                        do sub-lote de consultas acima: a origem pode dividir a produção mensal em
+                        sub-lotes de guias MAIS um sub-lote de imobilizações (ex.: "1º QUINZENA
+                        IMOBILIZAÇÕES"). Vem ANTES da lista de produções (feedback do dono,
+                        2026-08-25): é a opção mais usada por quem tem sub-lote. Ao contrário do
+                        sub-lote de consulta, escolher um aqui NÃO afeta o cálculo do lote principal
+                        — Imobilizações já é classe separada, com tabela de preço própria. */}
+                    {lotesDaProducaoMensal.length > 0 && (
+                      <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
+                        {lotesDaProducaoMensal.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.nome}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                     {producoesDoMedicoSelecionado
                       .filter((p) => p.id !== producaoId)
                       .map((p) => (
@@ -826,9 +846,14 @@ export function NovaExecucao() {
                   const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === outrosHospitaisProducaoId,
                   );
-                  const imobilizacoesProd = producoesDoMedicoSelecionado.find(
-                    (p) => p.id === imobilizacoesProducaoId,
-                  );
+                  // Achado 2026-08-25: mesmo mecanismo do consultaLote acima — a escolha de
+                  // Imobilizações pode ser um SUB-LOTE (fin-lotes) em vez de produção flat. Ao
+                  // contrário de Consultas, não precisa recalcular "guias restantes": Imobilizações
+                  // já é classe separada da produção principal, o sub-lote não afeta o principal.
+                  const imobilizacoesLote = lotesDaProducaoMensal.find((l) => l.id === imobilizacoesProducaoId);
+                  const imobilizacoesProd = imobilizacoesLote
+                    ? undefined
+                    : producoesDoMedicoSelecionado.find((p) => p.id === imobilizacoesProducaoId);
                   // Sub-lotes vêm de fin-lotes (lotesDaProducaoMensal), não da lista flat de
                   // produções do médico — namespace de ids diferente (GATE 2026-08-13). Cada
                   // categoria pode ter mais de um lote marcado (1Q + 2Q, achado 2026-08-13).
@@ -864,12 +889,17 @@ export function NovaExecucao() {
                               producaoOutrosHospitaisNome: outrosHospitaisProd.nome,
                             }
                           : {}),
-                        ...(imobilizacoesProd
+                        ...(imobilizacoesLote
                           ? {
-                              producaoImobilizacoesExternaId: imobilizacoesProd.id,
-                              producaoImobilizacoesNome: imobilizacoesProd.nome,
+                              producaoImobilizacoesLoteExternaId: imobilizacoesLote.id,
+                              producaoImobilizacoesLoteNome: imobilizacoesLote.nome,
                             }
-                          : {}),
+                          : imobilizacoesProd
+                            ? {
+                                producaoImobilizacoesExternaId: imobilizacoesProd.id,
+                                producaoImobilizacoesNome: imobilizacoesProd.nome,
+                              }
+                            : {}),
                         ...(cateterProds.length
                           ? {
                               producaoCateterExternaIds: cateterProds.map((l) => l.id),

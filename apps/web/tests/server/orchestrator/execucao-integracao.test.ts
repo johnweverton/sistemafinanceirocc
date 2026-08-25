@@ -322,6 +322,61 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     expect(resultado.totalValor).toBeCloseTo(263.59, 2);
     expect(resultado.subtotais.some((s) => s.classe === 'CONSULTA_PEDIATRIA')).toBe(false);
   });
+
+  // Achado 2026-08-25: mesmo caso do Humberto (sub-lote de consulta acima), mas para
+  // Imobilizações — a produção mensal do médico pode ter um sub-lote de imobilizações (ex.:
+  // "1º QUINZENA IMOBILIZAÇÕES") dentro dela, em vez de vir como produção de nível-topo separada.
+  // Ao contrário de Consultas, escolher o sub-lote NÃO precisa recalcular "guias restantes":
+  // Imobilizações já é classe totalmente separada da produção principal — o teste prova que o
+  // motor busca via `buscarItensPorLote` (loteId), nunca `buscarItens` (producaoId) reaproveitando
+  // a produção flat que teria o mesmo nome/competência.
+  it('Achado 2026-08-25 — médico com sub-lote de Imobilizações DENTRO da produção mensal: usa o lote (buscarItensPorLote), nunca a produção flat', async () => {
+    const medico = medicoFake({
+      id: 'm-imob-lote',
+      cpf: '22233344455',
+      nome: 'Dr. Sub-lote Imobilizações',
+      fazImobilizacoes: true,
+      especialidade: 'Ortopedia',
+    });
+    const state = novoEstado([medico]);
+
+    // Produção flat (fin-producoes) com nome parecido, usada só pro lote PRINCIPAL — prova de
+    // que ela nunca é lida como fonte de Imobilizações.
+    state.itensPorProducao['p-julho-completa'] = Array.from({ length: 5 }, (_, i) => ({
+      data: '2026-07-01', pacienteNome: `G${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+    // Sub-lote de Imobilizações (fin-lotes) — 4 itens, deliberadamente diferente da produção
+    // flat acima pra qualquer vazamento estourar no assert de guias.
+    state.itensPorLote['lote-imob'] = Array.from({ length: 4 }, (_, i) => ({
+      data: '2026-07-12', pacienteNome: `Imob-${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '31309054', descricaoProcedimento: 'Imobilização',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+
+    const selecoes = [
+      {
+        medicoId: 'm-imob-lote',
+        producaoExternaId: 'p-julho-completa',
+        producaoNome: 'Julho - 2026',
+        producaoImobilizacoesLoteExternaId: 'lote-imob',
+        producaoImobilizacoesLoteNome: '1º QUINZENA IMOBILIZAÇÕES',
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-07', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    // Principal (HAPVIDA_CRED) vem da produção flat, como sempre.
+    expect(resultado.subtotais.find((s) => s.classe === 'HAPVIDA_CRED')).toMatchObject({ guias: 5 });
+    // Imobilizações vem do SUB-LOTE (4), nunca reaproveitando a produção flat (5).
+    expect(resultado.subtotais.find((s) => s.classe === 'IMOBILIZACOES')).toMatchObject({ guias: 4 });
+  });
 });
 
 describe('Integração — execução agregada por empresa (Story 10.4b)', () => {
