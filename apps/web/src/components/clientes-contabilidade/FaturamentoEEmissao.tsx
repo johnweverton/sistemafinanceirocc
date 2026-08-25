@@ -6,12 +6,10 @@ import { ApiClientError } from '@/lib/api-client';
 import { clientesContabilidadeService, clienteContabilidadeQueryKeys } from '@/services/clientes-contabilidade';
 import { execucoesService } from '@/services/execucoes';
 import { useToast } from '@/components/ui/Toast';
+import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
+import { competenciaAtual } from '@/lib/competencia';
+import { brl } from '@/lib/formato';
 import { Acompanhamento } from './GerarExecucao';
-
-function competenciaAtual(): string {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-}
 
 /**
  * Fluxo combinado para clientes no modo `faixa_faturamento` (Story de polimento UX, 2026-07-30 —
@@ -62,7 +60,7 @@ export function FaturamentoEEmissao({ clienteId }: { clienteId: string }) {
       if (resp.preview.alertas.length > 0) {
         toast(resp.preview.alertas[0] ?? 'Faturamento lançado com alerta na regra de preço', 'error');
       } else {
-        toast(`Faturamento lançado. Valor calculado: R$ ${resp.preview.valor.toFixed(2)}`, 'success');
+        toast(`Faturamento lançado. Valor calculado: ${brl(resp.preview.valor)}`, 'success');
       }
     },
     onError: (e) => {
@@ -121,16 +119,11 @@ export function FaturamentoEEmissao({ clienteId }: { clienteId: string }) {
             }}
             className="grid grid-cols-1 gap-4 sm:grid-cols-3"
           >
-            <label className="block">
-              <span className="field-label mb-1.5">Competência</span>
-              <input
-                type="month"
-                value={competencia}
-                onChange={(e) => onCompetenciaChange(e.target.value)}
-                className="input"
-                disabled={lancar.isPending}
-              />
-            </label>
+            <CampoCompetencia
+              value={competencia}
+              onChange={onCompetenciaChange}
+              disabled={lancar.isPending}
+            />
             <label className="block">
               <span className="field-label mb-1.5">Faturamento do mês (R$)</span>
               <input
@@ -198,7 +191,7 @@ export function FaturamentoEEmissao({ clienteId }: { clienteId: string }) {
                 faturamentos.map((f) => (
                   <tr key={f.id} className="border-b border-cc-hairline last:border-0">
                     <td className="py-2.5 px-4 font-medium text-cc-ink">{f.competencia}</td>
-                    <td className="py-2.5 px-4 text-cc-ink-2 tabular">R$ {f.faturamento.toFixed(2)}</td>
+                    <td className="py-2.5 px-4 text-cc-ink-2 tabular">{brl(f.faturamento)}</td>
                     <td className="py-2.5 px-4 text-cc-ink-2">{new Date(f.informadoEm).toLocaleString('pt-BR')}</td>
                   </tr>
                 ))

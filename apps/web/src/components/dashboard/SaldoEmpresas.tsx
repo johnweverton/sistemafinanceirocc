@@ -4,10 +4,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { contasService, contasQueryKeys } from '@/services/contas';
 import { Skeleton } from '@/components/ui/Skeleton';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 function hora(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });

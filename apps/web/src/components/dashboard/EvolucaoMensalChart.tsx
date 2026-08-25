@@ -7,10 +7,7 @@
 // bruto (superset de Recebido/Vencido/EmAberto), não uma identidade concorrente.
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { ResumoCompetencia } from '@cobranca/shared';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 function brlCompacto(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 });

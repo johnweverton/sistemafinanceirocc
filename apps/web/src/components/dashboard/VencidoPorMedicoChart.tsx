@@ -5,10 +5,7 @@
 // aqui é o COMPRIMENTO da barra, não a intensidade da cor.
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { InadimplenteMedico } from '@cobranca/shared';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 function brlCompacto(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 });

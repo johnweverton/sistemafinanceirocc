@@ -15,15 +15,10 @@ import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
+import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
 import { LoteEmissaoDialog } from '@/components/execucoes/LoteEmissaoDialog';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-function competenciaAtual(): string {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-}
+import { brl } from '@/lib/formato';
+import { competenciaAtual } from '@/lib/competencia';
 
 export function LoteContabilidadeDialog({
   clientes,
@@ -135,19 +130,15 @@ export function LoteContabilidadeDialog({
         </>
       }
     >
-      <label className="block max-w-[10rem]">
-        <span className="field-label mb-1.5">Competência</span>
-        <input
-          type="month"
-          value={competencia}
-          onChange={(e) => {
-            setCompetencia(e.target.value);
-            setFaturamentoLancado(false);
-          }}
-          className="input"
-          disabled={!!execucaoId}
-        />
-      </label>
+      <CampoCompetencia
+        containerClassName="max-w-[10rem]"
+        value={competencia}
+        onChange={(valor) => {
+          setCompetencia(valor);
+          setFaturamentoLancado(false);
+        }}
+        disabled={!!execucaoId}
+      />
 
       {!execucaoId && precisaFaturamento && (
         <div className="space-y-3 rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4">

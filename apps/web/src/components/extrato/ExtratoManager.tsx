@@ -20,10 +20,7 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { ConciliacaoResumo } from './ConciliacaoResumo';
-
-function brl(v: number | null): string {
-  return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 /** Data ISO → dd/mm/aa hh:mm locais (mesmo formato dos Recebíveis). */
 function dataHora(iso: string): string {

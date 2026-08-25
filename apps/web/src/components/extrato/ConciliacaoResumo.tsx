@@ -13,10 +13,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ContaEmissora, ExtratoTransacaoComBoleto } from '@cobranca/shared';
 import { contasService, contasQueryKeys } from '@/services/contas';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 // "Não conciliadas" = ainda pendentes de decisão humana/automática (candidatas a
 // depósito/pagamento em trânsito). `ignorado` fica de fora — já foi triado como

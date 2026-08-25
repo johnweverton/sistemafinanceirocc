@@ -108,7 +108,12 @@ describe('GerarExecucao', () => {
     renderComProviders();
     fireEvent.click(screen.getByRole('button', { name: /Calcular valor/i }));
 
-    await waitFor(() => expect(screen.getByText(/R\$ 1200.00/)).toBeInTheDocument());
+    // Story 12.2 (AC 5): era `R$ 1200.00` (toFixed cru); agora passa pelo `brl()` pt-BR.
+    await waitFor(() =>
+      expect(
+        screen.getByText((t) => t.replace(/\s/g, ' ') === 'Valor calculado: R$ 1.200,00'),
+      ).toBeInTheDocument(),
+    );
     expect(screen.getByRole('button', { name: /Emitir boleto/i })).toBeInTheDocument();
 
     vi.mocked(boletosService.emitir).mockResolvedValue({} as any);

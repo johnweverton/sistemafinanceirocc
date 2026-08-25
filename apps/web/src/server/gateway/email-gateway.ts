@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { getServerEnv } from '@/lib/env';
+import { brl } from '@/lib/formato';
 import { NOME_REMETENTE_MENSAGEM, formatarDataBR } from './mensagem-boleto';
 
 export class EmailGateway {
@@ -121,7 +122,6 @@ export class EmailGateway {
     }
 
     const remetente = getServerEnv().SMTP_USER || 'contato@empresa.com.br';
-    const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
     const html = `
       <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5; max-width: 600px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 8px; overflow: hidden;">

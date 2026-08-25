@@ -11,10 +11,7 @@ import { LoteEmissaoDialog } from './LoteEmissaoDialog';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl, normalizarBusca } from '@/lib/formato';
 
 function classeLabel(classe: string): string {
   switch (classe) {
@@ -98,13 +95,6 @@ function totalGuiasTodosLotes(r: ExecucaoResultado): number {
   return r.subtotais
     .filter((s) => s.classe !== 'CONSULTA_PEDIATRIA')
     .reduce((acc, s) => acc + s.guias, 0);
-}
-
-function normalizarBusca(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
 }
 
 // Relatório em três grupos: ok / alerta / sem_dados (PRD §8.4).

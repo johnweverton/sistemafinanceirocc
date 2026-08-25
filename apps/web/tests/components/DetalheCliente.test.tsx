@@ -82,7 +82,8 @@ describe('DetalheCliente', () => {
     expect(screen.getByText('Simples Nacional')).toBeInTheDocument();
     expect(screen.getByText('Faixa de faturamento')).toBeInTheDocument();
     expect(screen.getByText('Mensal')).toBeInTheDocument();
-    expect(screen.getByText('R$ 250.00')).toBeInTheDocument();
+    // Story 12.2 (AC 5): era `R$ 250.00` (toFixed cru); agora passa pelo `brl()` pt-BR.
+    expect(screen.getByText((t) => t.replace(/\s/g, ' ') === 'R$ 250,00')).toBeInTheDocument();
   });
 
   it('cliente fixo com regraPreco nunca alterada há mais de 12 meses mostra o aviso de reajuste', async () => {

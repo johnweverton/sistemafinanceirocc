@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { MedicoForm } from './MedicoForm';
 
 import { SyncModal } from './SyncModal';
+import { normalizarBusca } from '@/lib/formato';
 
 type Modo = { tipo: 'lista' } | { tipo: 'novo' } | { tipo: 'editar'; medico: Medico };
 type FiltroStatus = 'todos' | 'aguardando' | 'ativos' | 'inativos' | 'cobranca_incompleta';
@@ -72,13 +73,6 @@ const FILTRO_TIPO_OPCOES: { valor: FiltroTipo; label: string }[] = [
   { valor: 'credenciado', label: 'Credenciado' },
   { valor: 'nenhum', label: 'Nenhum' },
 ];
-
-function normalizarBusca(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
-}
 
 export function MedicosManager() {
   const qc = useQueryClient();

@@ -8,10 +8,7 @@ import { useState } from 'react';
 import type { InadimplenteMedico, Recebivel } from '@cobranca/shared';
 import { chaveMedico, diasEmAtraso } from '@/lib/inadimplencia';
 import { EmptyState } from '@/components/ui/EmptyState';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 /** Mesmas faixas de severidade do card "Aging de vencidos" já existente — não inventa uma nova escala. */
 function badgeAtraso(dias: number): string {

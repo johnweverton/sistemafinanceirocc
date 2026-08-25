@@ -12,10 +12,8 @@ import { VencidoPorMedicoChart } from '@/components/dashboard/VencidoPorMedicoCh
 import { InadimplenciaSection } from '@/components/dashboard/InadimplenciaSection';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { brl } from '@/lib/formato';
 
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 function pct(v: number): string {
   return `${(v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 }

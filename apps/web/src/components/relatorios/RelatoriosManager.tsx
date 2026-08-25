@@ -12,10 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { LinkPublicoBI } from './LinkPublicoBI';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 /** AAAA-MM-DD (ou timestamp ISO) → DD/MM/AAAA. String pura (sem passar por Date) para não
  *  sofrer deslocamento de fuso horário — mesmo padrão de formatarDataBR em gateway/mensagem-boleto.ts. */

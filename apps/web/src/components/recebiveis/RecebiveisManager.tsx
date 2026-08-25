@@ -11,10 +11,7 @@ import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
-
-function brl(v: number | null): string {
-  return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 /** Formata timestamp ISO como data e hora locais compactas (dd/mm/aa hh:mm). */
 function dataHora(iso: string): string {

@@ -6,10 +6,7 @@ import { lotesEmissaoService, type PreviewLoteEmissao } from '@/services/boletos
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 const CODIGO_ERRO_LABEL: Record<string, string> = {
   COBRANCA_INCOMPLETA: 'Cadastro de cobrança incompleto',

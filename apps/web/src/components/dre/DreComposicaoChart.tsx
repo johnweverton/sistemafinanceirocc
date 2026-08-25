@@ -6,10 +6,7 @@
 // grupo somável junto deles; misturar os dois no mesmo eixo enganaria quem olha rápido.
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { GrupoPlanoContas } from '@cobranca/shared';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 function brlCompacto(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 });

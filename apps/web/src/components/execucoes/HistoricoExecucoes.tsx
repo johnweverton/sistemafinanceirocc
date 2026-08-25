@@ -7,22 +7,12 @@ import type { Execucao, StatusExecucao } from '@cobranca/shared';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-
-function brl(v: number | null): string {
-  return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl, normalizarBusca } from '@/lib/formato';
 
 function StatusBadge({ status }: { status: StatusExecucao }) {
   if (status === 'concluido') return <span className="badge-green">Concluído</span>;
   if (status === 'processando') return <span className="badge-amber">Processando</span>;
   return <span className="badge-red">Erro</span>;
-}
-
-function normalizarBusca(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
 }
 
 type FiltroStatus = 'todos' | StatusExecucao;

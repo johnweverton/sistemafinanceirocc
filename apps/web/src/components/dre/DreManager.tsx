@@ -15,10 +15,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { DreComposicaoChart } from '@/components/dre/DreComposicaoChart';
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { brl } from '@/lib/formato';
 
 /** Primeiro dia do mês corrente e hoje (YYYY-MM-DD, fuso local) — mesmo default do /extrato. */
 function periodoMesCorrente(): { inicio: string; fim: string } {

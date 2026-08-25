@@ -8,12 +8,10 @@ import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { boletosService } from '@/services/boletos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
 import { useToast } from '@/components/ui/Toast';
+import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
 import { cicloAdicionalVencendoNaCompetencia } from '@/lib/adicional-semestral';
-
-function competenciaAtual(): string {
-  const hoje = new Date();
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-}
+import { competenciaAtual } from '@/lib/competencia';
+import { brl } from '@/lib/formato';
 
 export function GerarExecucao({ clienteId }: { clienteId: string }) {
   const { toast } = useToast();
@@ -64,15 +62,7 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
       {!execucaoId && (
         <div className="card space-y-4 p-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <label className="block">
-              <span className="field-label mb-1.5">Competência</span>
-              <input
-                type="month"
-                value={competencia}
-                onChange={(e) => setCompetencia(e.target.value)}
-                className="input"
-              />
-            </label>
+            <CampoCompetencia value={competencia} onChange={setCompetencia} />
             <div className="flex items-end">
               <button
                 onClick={() => disparar.mutate()}
@@ -94,7 +84,7 @@ export function GerarExecucao({ clienteId }: { clienteId: string }) {
                   className="h-4 w-4 rounded border-cc-hairline accent-cc-accent"
                 />
                 <span className="text-sm text-cc-ink-2">
-                  Gerar o adicional semestral desta competência (R$ {(cliente.adicionalValor ?? 0).toFixed(2)}) em
+                  Gerar o adicional semestral desta competência ({brl(cliente.adicionalValor)}) em
                   vez do boleto mensal
                 </span>
               </label>
@@ -148,7 +138,7 @@ export function Acompanhamento({ execucaoId }: { execucaoId: string }) {
             Status: <span className={resultado.status === 'ok' ? 'badge-green' : 'badge-slate'}>{resultado.status}</span>
           </p>
           <p className="text-lg font-semibold text-cc-ink tabular">
-            Valor calculado: R$ {(resultado.totalValor ?? 0).toFixed(2)}
+            Valor calculado: {brl(resultado.totalValor)}
           </p>
           {resultado.alertas.length > 0 && (
             <ul className="list-disc space-y-1 pl-5 text-sm text-cc-danger">

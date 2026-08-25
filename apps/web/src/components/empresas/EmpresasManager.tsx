@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Pagination } from '@/components/ui/Pagination';
 import { EmpresaForm } from './EmpresaForm';
+import { normalizarBusca } from '@/lib/formato';
 
 const PAGE_SIZE = 20;
 
@@ -25,13 +26,6 @@ type Modo = { tipo: 'lista' } | { tipo: 'nova' } | { tipo: 'editar'; empresa: Em
 
 // Busca por nome, sem acento (mesmo padrão de MedicosManager.tsx) — evita "MEDISA" vs "Médisa"
 // não baterem por causa de um acento digitado ou não.
-function normalizarBusca(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
-}
-
 export function EmpresasManager() {
   const qc = useQueryClient();
   const { toast } = useToast();

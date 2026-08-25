@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Pagination } from '@/components/ui/Pagination';
 import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
 import { LoteContabilidadeDialog } from './LoteContabilidadeDialog';
+import { normalizarBusca } from '@/lib/formato';
 
 const PAGE_SIZE = 20;
 
@@ -29,13 +30,6 @@ const PAGE_SIZE = 20;
 // 'editar' saiu deste componente; cadastro só é editado dentro do hub (DetalheCliente.tsx).
 type Modo = { tipo: 'lista' } | { tipo: 'novo' };
 type Confirmacao = { tipo: 'unico'; cliente: ClienteContabilidade } | { tipo: 'lote'; ids: string[] };
-
-function normalizarBusca(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
-}
 
 export function ClientesContabilidadeManager() {
   const router = useRouter();

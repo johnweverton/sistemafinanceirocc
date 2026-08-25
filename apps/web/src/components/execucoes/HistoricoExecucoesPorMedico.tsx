@@ -6,19 +6,9 @@ import type { ExecucaoResumoMedico, StatusResultado } from '@cobranca/shared';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { brl, normalizarBusca } from '@/lib/formato';
 
 const POR_PAGINA = 25;
-
-function brl(v: number | null): string {
-  return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function normalizarBusca(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
-}
 
 function ResultadoBadge({ status }: { status: StatusResultado }) {
   if (status === 'ok') return <span className="badge-green">Ok</span>;

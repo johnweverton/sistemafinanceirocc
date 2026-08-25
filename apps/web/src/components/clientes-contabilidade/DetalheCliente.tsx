@@ -9,6 +9,7 @@ import {
   type AtualizarClienteContabilidadePayload,
 } from '@/services/clientes-contabilidade';
 import { reajusteAnualPendente } from '@/lib/reajuste-anual';
+import { brl } from '@/lib/formato';
 import { useToast } from '@/components/ui/Toast';
 import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
 
@@ -140,7 +141,7 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
                   faturamentos.map((f) => (
                     <tr key={f.id} className="border-b border-cc-hairline last:border-0">
                       <td className="py-2.5 px-4 font-medium text-cc-ink">{f.competencia}</td>
-                      <td className="py-2.5 px-4 text-cc-ink-2 tabular">R$ {f.faturamento.toFixed(2)}</td>
+                      <td className="py-2.5 px-4 text-cc-ink-2 tabular">{brl(f.faturamento)}</td>
                     </tr>
                   ))
                 )}
@@ -177,7 +178,7 @@ export function DetalheCliente({ clienteId }: { clienteId: string }) {
                     <td className="py-2.5 px-4">
                       <span className={e.statusResultado === 'ok' ? 'badge-green' : 'badge-slate'}>{e.statusResultado}</span>
                     </td>
-                    <td className="py-2.5 px-4 text-cc-ink-2 tabular">R$ {(e.totalValor ?? 0).toFixed(2)}</td>
+                    <td className="py-2.5 px-4 text-cc-ink-2 tabular">{brl(e.totalValor)}</td>
                   </tr>
                 ))
               )}

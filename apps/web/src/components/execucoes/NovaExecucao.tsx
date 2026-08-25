@@ -8,6 +8,7 @@ import { ProgressoExecucao } from './ProgressoExecucao';
 import { RelatorioGrupos } from './RelatorioGrupos';
 import { useExecucaoRealtime } from '@/hooks/useExecucaoRealtime';
 import { useToast } from '@/components/ui/Toast';
+import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
 
 /** Mesmo critério usado em MedicoForm.tsx e no Engine (isPediatra) — checagem local, sem I/O. */
 function isPediatraEspecialidade(especialidade: string | null | undefined): boolean {
@@ -434,20 +435,11 @@ export function NovaExecucao() {
                 </p>
               </div>
 
-              <div>
-                <label htmlFor="competencia-empresa" className="field-label mb-1.5">
-                  Competência
-                </label>
-                <input
-                  id="competencia-empresa"
-                  value={competencia}
-                  onChange={(e) => setCompetencia(e.target.value)}
-                  placeholder="2026-06"
-                  className="input font-mono"
-                  maxLength={7}
-                />
-                <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM (Ex: 2026-05)</p>
-              </div>
+              <CampoCompetencia
+                id="competencia-empresa"
+                value={competencia}
+                onChange={setCompetencia}
+              />
 
               {erro && <p role="alert" className="alert-error">{erro}</p>}
 
@@ -814,20 +806,11 @@ export function NovaExecucao() {
                 </div>
               )}
 
-              <div>
-                <label htmlFor="competencia-medico" className="field-label mb-1.5">
-                  Competência
-                </label>
-                <input
-                  id="competencia-medico"
-                  value={competencia}
-                  onChange={(e) => setCompetencia(e.target.value)}
-                  placeholder="2026-06"
-                  className="input font-mono"
-                  maxLength={7}
-                />
-                <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM (Ex: 2026-05)</p>
-              </div>
+              <CampoCompetencia
+                id="competencia-medico"
+                value={competencia}
+                onChange={setCompetencia}
+              />
 
               {erro && <p role="alert" className="alert-error">{erro}</p>}
 
@@ -970,21 +953,12 @@ export function NovaExecucao() {
                   </p>
                 </div>
 
-                <div>
-                  <label htmlFor="competencia" className="field-label mb-1.5">
-                    Competência
-                  </label>
-                  <input
-                    id="competencia"
-                    name="competencia"
-                    value={competencia}
-                    onChange={(e) => setCompetencia(e.target.value)}
-                    placeholder="2026-06"
-                    className="input font-mono"
-                    maxLength={7}
-                  />
-                  <p className="mt-1.5 text-xs text-cc-muted">Formato: AAAA-MM (Ex: 2026-05)</p>
-                </div>
+                <CampoCompetencia
+                  id="competencia"
+                  name="competencia"
+                  value={competencia}
+                  onChange={setCompetencia}
+                />
 
                 {erro && <p role="alert" className="alert-error">{erro}</p>}
 
