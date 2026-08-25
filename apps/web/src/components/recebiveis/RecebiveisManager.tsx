@@ -10,6 +10,7 @@ import { TableSkeleton } from '@/components/ui/Skeleton';
 import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
+import { Modal } from '@/components/ui/Modal';
 
 function brl(v: number | null): string {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -68,34 +69,16 @@ function CancelarBoletoDialog({
   const motivoValido = motivo.trim().length >= MOTIVO_MIN;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-cc-surface card w-full max-w-md shadow-2xl">
-        <div className="border-b border-cc-hairline px-6 py-4">
-          <h2 className="text-lg font-bold text-cc-ink">Cancelar boleto</h2>
-        </div>
-        <div className="space-y-3 px-6 py-4">
-          <p className="text-sm text-cc-ink-2">
-            Cancelar o boleto de <strong>{recebivel.nome}</strong> ({recebivel.competencia}) no
-            valor de <strong>{brl(recebivel.valor)}</strong>? Após o cancelamento, um novo boleto
-            poderá ser emitido para este resultado.
-          </p>
-          <label className="block text-xs font-medium text-cc-ink-2" htmlFor="motivo-cancelamento">
-            Motivo do cancelamento (obrigatório)
-          </label>
-          <textarea
-            id="motivo-cancelamento"
-            value={motivo}
-            onChange={(e) => setMotivo(e.target.value)}
-            placeholder="Ex.: valor incorreto, será reemitido com o valor certo"
-            className="input min-h-20 w-full"
-            maxLength={500}
-            disabled={confirmando}
-          />
-          <p className="text-xs font-semibold text-cc-danger">
-            O boleto será cancelado na Cora. Esta ação NÃO PODE ser desfeita.
-          </p>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
+    <Modal
+      titulo="Cancelar boleto"
+      largura="md"
+      onClose={onCancel}
+      // Cancelamento em voo: a chamada já saiu para a Cora — Escape/backdrop não podem sumir com
+      // a tela e deixar o operador sem saber se o boleto foi cancelado ou não.
+      emVoo={confirmando}
+      mensagemEmVoo="Aguarde o cancelamento terminar."
+      rodape={
+        <>
           <button onClick={onCancel} disabled={confirmando} className="btn-ghost btn btn-sm">
             Voltar
           </button>
@@ -107,9 +90,30 @@ function CancelarBoletoDialog({
           >
             {confirmando ? 'Cancelando...' : 'Cancelar boleto'}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="text-sm text-cc-ink-2">
+        Cancelar o boleto de <strong>{recebivel.nome}</strong> ({recebivel.competencia}) no valor de{' '}
+        <strong>{brl(recebivel.valor)}</strong>? Após o cancelamento, um novo boleto poderá ser
+        emitido para este resultado.
+      </p>
+      <label className="block text-xs font-medium text-cc-ink-2" htmlFor="motivo-cancelamento">
+        Motivo do cancelamento (obrigatório)
+      </label>
+      <textarea
+        id="motivo-cancelamento"
+        value={motivo}
+        onChange={(e) => setMotivo(e.target.value)}
+        placeholder="Ex.: valor incorreto, será reemitido com o valor certo"
+        className="input min-h-20 w-full"
+        maxLength={500}
+        disabled={confirmando}
+      />
+      <p className="text-xs font-semibold text-cc-danger">
+        O boleto será cancelado na Cora. Esta ação NÃO PODE ser desfeita.
+      </p>
+    </Modal>
   );
 }
 

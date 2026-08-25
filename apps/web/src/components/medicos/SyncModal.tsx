@@ -5,6 +5,7 @@ import { ApiClientError } from '@/lib/api-client';
 import type { ClienteExterno } from '@cobranca/shared';
 import { useToast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { Modal } from '@/components/ui/Modal';
 
 interface SyncModalProps {
   relatorio: SyncRelatorio;
@@ -88,27 +89,33 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-cc-surface card flex h-full max-h-[85vh] w-full max-w-4xl flex-col shadow-2xl">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-cc-hairline px-6 py-4">
-          <div>
-            <h2 className="text-xl font-bold text-cc-ink">Sincronização com o Sistema Web</h2>
-            <p className="text-sm text-cc-muted">
-              {relatorio.totalOrigem} clientes encontrados na origem. 
-              {vinculados > 0 && ` ${vinculados} já vinculados.`} 
-              {criados > 0 && ` ${criados} novos criados.`}
-            </p>
-          </div>
+    // Story 12.1: as duas confirmações são IRMÃS do modal, não filhas — cada `<Modal>` monta o
+    // próprio overlay e a pilha interna garante que só a de cima reage a Escape/Tab.
+    <>
+      <Modal
+        titulo="Sincronização com o Sistema Web"
+        descricao={
+          <>
+            {relatorio.totalOrigem} clientes encontrados na origem.
+            {vinculados > 0 && ` ${vinculados} já vinculados.`}
+            {criados > 0 && ` ${criados} novos criados.`}
+          </>
+        }
+        largura="4xl"
+        onClose={onClose}
+        // Vincular/criar já desabilitam o "Fechar" enquanto rodam — Escape e backdrop seguem a
+        // mesma regra, em vez de fechar por cima de uma escrita em andamento.
+        emVoo={isPending}
+        mensagemEmVoo="Aguarde a operação terminar."
+        painelClassName="flex h-full max-h-[85vh] flex-col"
+        corpoClassName="flex-1 space-y-8 overflow-y-auto px-6 py-4"
+        acoesCabecalho={
           <button onClick={onClose} disabled={isPending} className="btn-ghost btn btn-sm">
             Fechar
           </button>
-        </div>
+        }
+      >
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-8">
-          
           {/* Sessão Sugestões */}
           {comSugestao.length > 0 && (
             <section>
@@ -225,9 +232,7 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
               <p className="text-sm">Não há mais pendências de vínculo.</p>
             </div>
           )}
-
-        </div>
-      </div>
+      </Modal>
 
       {confirmVinculo && (
         <ConfirmDialog
@@ -256,6 +261,6 @@ export function SyncModal({ relatorio, onClose }: SyncModalProps) {
           onConfirm={() => criarTodos.mutate(semPar.map(c => c.id))}
         />
       )}
-    </div>
+    </>
   );
 }

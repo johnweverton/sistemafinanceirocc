@@ -134,6 +134,13 @@ describe('RecebiveisManager', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.getByText('Cancelar boleto', { selector: 'h2' })).toBeInTheDocument();
 
+    // Story 12.1 (AC 3, 4): o diálogo virou `<Modal>` — semântica de diálogo real.
+    const dialogo = screen.getByRole('dialog');
+    expect(dialogo).toHaveAttribute('aria-modal', 'true');
+    expect(dialogo).toHaveAccessibleName('Cancelar boleto');
+    // Foco entra no primeiro interativo do diálogo (o campo de motivo).
+    expect(screen.getByLabelText(/Motivo do cancelamento/i)).toHaveFocus();
+
     // Confirmação desabilitada sem motivo válido.
     const confirmar = screen.getByRole('button', { name: 'Cancelar boleto' });
     expect(confirmar).toBeDisabled();

@@ -5,6 +5,7 @@ import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import { lotesEmissaoService, type PreviewLoteEmissao } from '@/services/boletos-lote';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
+import { Modal } from '@/components/ui/Modal';
 
 function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -29,11 +30,21 @@ export function LoteEmissaoDialog({
   execucaoId,
   onClose,
   onAlgumEmitido,
+  tituloPrefixo,
+  onVoltar,
 }: {
   execucaoId: string;
   onClose: () => void;
   /** Chamado quando o lote conclui — o chamador invalida a lista de resultados. */
   onAlgumEmitido: () => void;
+  /**
+   * Breadcrumb do modal-dentro-de-modal (G-39): quando este diálogo substitui outro no mesmo
+   * lugar, o chamador passa o contexto de origem (ex.: "Lote 2026-08") e o título vira
+   * "Lote 2026-08 · Emitir boletos", deixando explícito que é o mesmo lote.
+   */
+  tituloPrefixo?: string;
+  /** Volta para o diálogo de origem (não fecha o fluxo). Renderiza "← Voltar ao lote". */
+  onVoltar?: () => void;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -104,31 +115,23 @@ export function LoteEmissaoDialog({
   }, [statusAtual]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-cc-surface card w-full max-w-lg shadow-2xl">
-        <div className="border-b border-cc-hairline px-6 py-4">
-          <h2 className="text-lg font-bold text-cc-ink">Emitir boletos em lote</h2>
-        </div>
-
-        <div className="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-4">
-          {montarPreview.isPending && <p className="text-sm text-cc-muted">Montando o preview…</p>}
-
-          {preview && !confirmado && !retomar.isSuccess && (
-            <PreviewConteudo preview={preview} />
+    <Modal
+      titulo={tituloPrefixo ? `${tituloPrefixo} · Emitir boletos` : 'Emitir boletos em lote'}
+      largura="lg"
+      onClose={onClose}
+      // "Em voo" aqui é a REQUISIÇÃO de confirmar/retomar, não o lote processando: o lote
+      // confirmado roda no servidor e o diálogo é explicitamente fechável durante o
+      // acompanhamento (decisão 5 da revisão de arquitetura 2026-07-31, botão "Fechar" ativo).
+      emVoo={confirmar.isPending || retomar.isPending}
+      mensagemEmVoo="Aguarde a confirmação do lote terminar."
+      corpoClassName="max-h-[60vh] space-y-4 overflow-y-auto px-6 py-4"
+      rodape={
+        <>
+          {onVoltar && (
+            <button onClick={onVoltar} className="btn-ghost btn btn-sm">
+              ← Voltar ao lote
+            </button>
           )}
-
-          {(confirmado || retomar.isSuccess) && (
-            <AcompanhamentoConteudo
-              carregando={acompanhar.isLoading}
-              status={statusAtual}
-              lote={acompanhar.data?.lote}
-              onRetomar={() => retomar.mutate()}
-              retomando={retomar.isPending}
-            />
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
           <button onClick={onClose} className="btn-ghost btn btn-sm">
             {confirmado || retomar.isSuccess ? 'Fechar' : 'Cancelar'}
           </button>
@@ -141,9 +144,23 @@ export function LoteEmissaoDialog({
               {confirmar.isPending ? 'Confirmando…' : `Confirmar emissão de ${preview.lote.snapshotTotalItens}`}
             </button>
           )}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {montarPreview.isPending && <p className="text-sm text-cc-muted">Montando o preview…</p>}
+
+      {preview && !confirmado && !retomar.isSuccess && <PreviewConteudo preview={preview} />}
+
+      {(confirmado || retomar.isSuccess) && (
+        <AcompanhamentoConteudo
+          carregando={acompanhar.isLoading}
+          status={statusAtual}
+          lote={acompanhar.data?.lote}
+          onRetomar={() => retomar.mutate()}
+          retomando={retomar.isPending}
+        />
+      )}
+    </Modal>
   );
 }
 

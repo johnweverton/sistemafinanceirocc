@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ContaEmissora, ExecucaoResultado } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
@@ -10,6 +10,7 @@ import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { LoteEmissaoDialog } from './LoteEmissaoDialog';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
+import { Modal } from '@/components/ui/Modal';
 
 function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -344,26 +345,16 @@ function EmitirBoletoDialog({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-cc-surface card w-full max-w-md shadow-2xl">
-        <div className="border-b border-cc-hairline px-6 py-4">
-          <h2 className="text-lg font-bold text-cc-ink">Emitir boleto</h2>
-        </div>
-        <div className="space-y-3 px-6 py-4">
-          <p className="text-sm text-cc-ink-2">
-            Emitir boleto de <strong>{brl(resultado.totalValor ?? 0)}</strong> para{' '}
-            <strong>{resultado.nome}</strong>?
-          </p>
-          <p className="rounded-lg border border-cc-hairline bg-cc-surface-2 px-4 py-3 text-sm text-cc-ink">
-            Empresa emissora:{' '}
-            <strong>{conta ? CONTA_EMISSORA_LABEL[conta] : 'carregando…'}</strong>
-          </p>
-          <p className="text-xs text-cc-muted">
-            O boleto sai registrado em nome da empresa acima e as notificações (WhatsApp/e-mail)
-            são enviadas ao médico automaticamente.
-          </p>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-cc-hairline px-6 py-4">
+    <Modal
+      titulo="Emitir boleto"
+      largura="md"
+      onClose={onCancel}
+      // Emissão em voo: Escape/backdrop não podem fechar a confirmação enquanto o boleto está
+      // sendo registrado no gateway.
+      emVoo={confirmando}
+      mensagemEmVoo="Aguarde a emissão terminar."
+      rodape={
+        <>
           <button onClick={onCancel} disabled={confirmando} className="btn-ghost btn btn-sm">
             Voltar
           </button>
@@ -375,9 +366,21 @@ function EmitirBoletoDialog({
           >
             {confirmando ? 'Emitindo…' : 'Confirmar emissão'}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="text-sm text-cc-ink-2">
+        Emitir boleto de <strong>{brl(resultado.totalValor ?? 0)}</strong> para{' '}
+        <strong>{resultado.nome}</strong>?
+      </p>
+      <p className="rounded-lg border border-cc-hairline bg-cc-surface-2 px-4 py-3 text-sm text-cc-ink">
+        Empresa emissora: <strong>{conta ? CONTA_EMISSORA_LABEL[conta] : 'carregando…'}</strong>
+      </p>
+      <p className="text-xs text-cc-muted">
+        O boleto sai registrado em nome da empresa acima e as notificações (WhatsApp/e-mail) são
+        enviadas ao médico automaticamente.
+      </p>
+    </Modal>
   );
 }
 
@@ -562,7 +565,13 @@ function Grupo({
 
 const MOTIVO_MIN = 5;
 
-/** Formulário inline de revisão — expande sob demanda, sem precisar de um modal novo. */
+/**
+ * Formulário inline de revisão — expande sob demanda, sem precisar de um modal novo.
+ * Story 12.1: NÃO vira `<Modal>` (não é um diálogo em overlay; transformá-lo em modal seria uma
+ * mudança de UX fora do escopo desta story — G-32/story 12.13 é quem mexe no conteúdo dele).
+ * O que entra aqui é só a semântica de disclosure que faltava: `aria-expanded`/`aria-controls` e
+ * foco indo para o campo ao expandir, mesma regra de foco inicial do `<Modal>` (G-38).
+ */
 function AcaoRevisar({
   pending,
   onConfirmar,
@@ -572,11 +581,39 @@ function AcaoRevisar({
 }) {
   const [aberto, setAberto] = useState(false);
   const [motivo, setMotivo] = useState('');
+  const painelId = useId();
+  const gatilhoRef = useRef<HTMLButtonElement>(null);
+  const motivoRef = useRef<HTMLTextAreaElement>(null);
+
+  // Foco no efeito (não no handler): ao fechar, o gatilho só volta a existir depois do render,
+  // então `gatilhoRef.current` ainda é null dentro do onClick. `jaAbriu` evita roubar o foco na
+  // primeira montagem, quando o painel nunca chegou a abrir.
+  const jaAbriu = useRef(false);
+  useEffect(() => {
+    if (aberto) {
+      jaAbriu.current = true;
+      motivoRef.current?.focus();
+    } else if (jaAbriu.current) {
+      gatilhoRef.current?.focus();
+    }
+  }, [aberto]);
+
+  function fechar() {
+    setAberto(false);
+    setMotivo('');
+  }
 
   if (!aberto) {
     return (
       <div className="mt-3 flex items-center justify-end border-t border-cc-hairline pt-3">
-        <button type="button" className="btn-secondary btn btn-sm" onClick={() => setAberto(true)}>
+        <button
+          ref={gatilhoRef}
+          type="button"
+          className="btn-secondary btn btn-sm"
+          aria-expanded={false}
+          aria-controls={painelId}
+          onClick={() => setAberto(true)}
+        >
           Revisar e liberar
         </button>
       </div>
@@ -584,8 +621,9 @@ function AcaoRevisar({
   }
 
   return (
-    <div className="mt-3 space-y-2 border-t border-cc-hairline pt-3">
+    <div id={painelId} className="mt-3 space-y-2 border-t border-cc-hairline pt-3">
       <textarea
+        ref={motivoRef}
         value={motivo}
         onChange={(e) => setMotivo(e.target.value)}
         placeholder="Motivo da liberação (obrigatório). Ex.: confirmado com o médico, aumento real de produção."
@@ -599,10 +637,7 @@ function AcaoRevisar({
           type="button"
           className="btn-ghost btn btn-sm"
           disabled={pending}
-          onClick={() => {
-            setAberto(false);
-            setMotivo('');
-          }}
+          onClick={fechar}
         >
           Cancelar
         </button>
