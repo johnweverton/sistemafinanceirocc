@@ -119,6 +119,13 @@ export const clientesContabilidadeService = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  // Story 12.3 (RS-1): quem já tem boleto ativo (emitido/pago) na competência, em qualquer
+  // execução. O diálogo de lote usa isso pra remover esses clientes do payload ANTES de calcular.
+  // A rota não cacheia de propósito — precisa refletir emissão feita há segundos.
+  comBoleto: (competencia: string) =>
+    apiFetch<{ clienteContabilidadeIds: string[] }>(
+      `/clientes-contabilidade/com-boleto?competencia=${encodeURIComponent(competencia)}`,
+    ),
 };
 
 export const clienteContabilidadeQueryKeys = {
@@ -127,4 +134,6 @@ export const clienteContabilidadeQueryKeys = {
   clienteHistorico: (id: string) => ['clientes-contabilidade', id, 'historico'] as const,
   clienteFaturamentos: (id: string) => ['clientes-contabilidade', id, 'faturamentos'] as const,
   clienteExecucoes: (id: string) => ['clientes-contabilidade', id, 'execucoes'] as const,
+  /** Chaveada por competência: trocar a competência refaz a consulta (a lista muda com ela). */
+  comBoleto: (competencia: string) => ['clientes-contabilidade', 'com-boleto', competencia] as const,
 };

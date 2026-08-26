@@ -247,6 +247,47 @@ export async function listarMedicosComBoletoAtivo(competencia: string): Promise<
   return ids;
 }
 
+/**
+ * Clientes contábeis que já têm boleto ativo (emitido/pago) para a competência informada, em
+ * QUALQUER execução — espelho exato de `listarMedicosComBoletoAtivo`, trocando `medico_id` por
+ * `cliente_contabilidade_id` (Story 12.3, risco RS-1).
+ *
+ * Motivo: o cálculo em lote de clientes contábeis (`POST /api/clientes-contabilidade/lote`) cria
+ * uma execução NOVA a cada disparo. Rodar o mesmo lote/competência duas vezes (por engano ou em
+ * duas sessões) gerava uma segunda linha de resultado inédita pro mesmo cliente e, com ela, um
+ * segundo boleto — cobrança duplicada. `buscarBoletoEmitido` não pega esse caso: ele só protege
+ * a MESMA linha de resultado.
+ *
+ * `cancelado` (e `falha`) NÃO contam como já emitido — mesma regra da consulta de médicos. É o
+ * que faz "cancelou e vai reemitir corrigido" continuar funcionando sem precisar de opt-in, com
+ * o bloqueio duro decidido pelo dono (Cenário A: não existe reemissão legítima na mesma
+ * competência sem cancelar a anterior).
+ */
+export async function listarClientesContabilidadeComBoletoAtivo(competencia: string): Promise<Set<string>> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos')
+    .select('execucao_resultados!inner(cliente_contabilidade_id, execucoes!inner(competencia))')
+    .in('status', ['emitido', 'pago'])
+    .eq('execucao_resultados.execucoes.competencia', competencia);
+  if (error) {
+    throw new ApiError(
+      500,
+      'Falha ao checar clientes contábeis com boleto já emitido na competência',
+      'DB_ERROR',
+      { error: error.message },
+    );
+  }
+  const ids = new Set<string>();
+  for (const row of (data ?? []) as unknown as {
+    execucao_resultados: { cliente_contabilidade_id: string | null };
+  }[]) {
+    const clienteId = row.execucao_resultados?.cliente_contabilidade_id;
+    if (clienteId) ids.add(clienteId);
+  }
+  return ids;
+}
+
 export interface CancelarBoletoParams {
   canceladoPor: string; // profiles.id de quem confirmou
   motivo: string;

@@ -10,7 +10,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClienteContabilidade } from '@cobranca/shared';
-import { clientesContabilidadeService } from '@/services/clientes-contabilidade';
+import { clientesContabilidadeService, clienteContabilidadeQueryKeys } from '@/services/clientes-contabilidade';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
 import { ApiClientError } from '@/lib/api-client';
 import { useToast } from '@/components/ui/Toast';
@@ -36,8 +36,47 @@ export function LoteContabilidadeDialog({
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
   const [mostrarEmissao, setMostrarEmissao] = useState(false);
 
-  const faixaFaturamento = useMemo(() => clientes.filter((c) => c.modoCobranca === 'faixa_faturamento'), [clientes]);
+  // Guarda de duplicidade (Story 12.3, risco RS-1): clientes que JÁ têm boleto ativo
+  // (emitido/pago) nesta competência, em qualquer execução. Sem isso, rodar o mesmo lote/mês duas
+  // vezes — por engano ou em duas sessões — gerava um segundo boleto pro mesmo cliente, porque
+  // cada disparo cria uma execução (e uma linha de resultado) NOVA, que a idempotência por
+  // `execucao_resultado_id` não pega. Mesmo desenho de NovaExecucao.tsx para médicos.
+  // Chaveado por competência: trocar o mês refaz a consulta e a lista de excluídos muda junto.
+  // Sem `staleTime` de propósito — precisa refletir uma emissão feita há segundos.
+  const comBoletoQ = useQuery({
+    queryKey: clienteContabilidadeQueryKeys.comBoleto(competencia),
+    queryFn: () => clientesContabilidadeService.comBoleto(competencia),
+    enabled: /^\d{4}-\d{2}$/.test(competencia),
+  });
+  const clientesComBoletoAtivo = useMemo(
+    () => new Set(comBoletoQ.data?.clienteContabilidadeIds ?? []),
+    [comBoletoQ.data],
+  );
+
+  // Bloqueio duro, sem opt-in nem exceção por cliente (decisão do dono): quem está em
+  // `jaEmitidos` simplesmente não entra no payload do cálculo. Cancelar o boleto anterior é o
+  // caminho legítimo — boleto `cancelado` não conta como ativo na consulta do servidor.
+  const { elegiveis, jaEmitidos } = useMemo(() => {
+    const elegiveis: ClienteContabilidade[] = [];
+    const jaEmitidos: ClienteContabilidade[] = [];
+    for (const c of clientes) {
+      if (clientesComBoletoAtivo.has(c.id)) jaEmitidos.push(c);
+      else elegiveis.push(c);
+    }
+    return { elegiveis, jaEmitidos };
+  }, [clientes, clientesComBoletoAtivo]);
+
+  // Só faz sentido pedir faturamento de quem vai ser calculado — quem foi excluído pela guarda
+  // não entra no lote, então também não entra no lançamento em massa.
+  const faixaFaturamento = useMemo(
+    () => elegiveis.filter((c) => c.modoCobranca === 'faixa_faturamento'),
+    [elegiveis],
+  );
   const precisaFaturamento = faixaFaturamento.length > 0 && !faturamentoLancado;
+  // Não dá pra "remover do payload antes do cálculo" sem saber quem remover: enquanto a checagem
+  // não responde, calcular fica bloqueado. (Tratamento de erro vs. vazio nos pontos de carga é
+  // escopo da story 12.6 — aqui fica só a linha mínima de estado.)
+  const guardaPronta = comBoletoQ.isSuccess;
 
   const lancarFaturamentos = useMutation({
     mutationFn: () => {
@@ -59,7 +98,11 @@ export function LoteContabilidadeDialog({
 
   const calcular = useMutation({
     mutationFn: () =>
-      clientesContabilidadeService.dispararLote({ competencia, clienteContabilidadeIds: clientes.map((c) => c.id) }),
+      // `elegiveis`, não `clientes`: quem já tem boleto ativo na competência fica FORA do payload.
+      clientesContabilidadeService.dispararLote({
+        competencia,
+        clienteContabilidadeIds: elegiveis.map((c) => c.id),
+      }),
     onSuccess: (r) => setExecucaoId(r.execucaoId),
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao calcular o lote', 'error'),
   });
@@ -79,6 +122,9 @@ export function LoteContabilidadeDialog({
 
   function fecharTudo() {
     void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucoes() });
+    // Reabrir o diálogo depois de emitir tem que enxergar os boletos recém-criados, senão o
+    // guard fica obsoleto justamente na 2ª rodada — que é o cenário que ele existe pra impedir.
+    void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.comBoleto(competencia) });
     onClose();
   }
 
@@ -93,7 +139,10 @@ export function LoteContabilidadeDialog({
         tituloPrefixo={`Lote ${competencia}`}
         onVoltar={() => setMostrarEmissao(false)}
         onClose={fecharTudo}
-        onAlgumEmitido={() => void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) })}
+        onAlgumEmitido={() => {
+          void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) });
+          void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.comBoleto(competencia) });
+        }}
       />
     );
   }
@@ -113,13 +162,17 @@ export function LoteContabilidadeDialog({
           <button onClick={fecharTudo} className="btn-ghost btn btn-sm">
             {execucaoId ? 'Fechar' : 'Cancelar'}
           </button>
-          {!execucaoId && !precisaFaturamento && (
+          {!execucaoId && !precisaFaturamento && elegiveis.length > 0 && (
             <button
               onClick={() => calcular.mutate()}
-              disabled={calcular.isPending}
+              disabled={calcular.isPending || !guardaPronta}
               className="btn-primary btn btn-sm"
             >
-              {calcular.isPending ? 'Calculando…' : `Calcular ${clientes.length} em lote`}
+              {calcular.isPending
+                ? 'Calculando…'
+                : !guardaPronta
+                  ? 'Verificando emissões…'
+                  : `Calcular ${elegiveis.length} em lote`}
             </button>
           )}
           {execucaoId && totalOk > 0 && (
@@ -140,7 +193,46 @@ export function LoteContabilidadeDialog({
         disabled={!!execucaoId}
       />
 
-      {!execucaoId && precisaFaturamento && (
+      {/* Guarda de duplicidade — mesmo tratamento visual do bloco de médicos em NovaExecucao.
+          Aparece ANTES do clique em calcular e some sozinho quando a competência muda pra um mês
+          em que ninguém foi cobrado ainda. Sem opt-in: não há como reincluir estes clientes. */}
+      {!execucaoId && jaEmitidos.length > 0 && (
+        <div className="rounded-lg border border-cc-hairline bg-cc-surface-2/60 p-4">
+          <h3 className="mb-2 flex items-center gap-1.5 font-medium text-cc-ink-2">
+            <CheckCircleIcon className="shrink-0 text-cc-muted" />
+            Já emitido nesta competência ({jaEmitidos.length})
+          </h3>
+          <p className="mb-3 text-xs text-cc-muted">
+            Estes clientes já têm boleto emitido/pago para {competencia} (de uma execução anterior) e foram
+            excluídos do lote. Para cobrar de novo, cancele o boleto anterior.
+          </p>
+          <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+            {jaEmitidos.map((c) => (
+              <div key={c.id} className="rounded bg-cc-surface-2 p-1.5 text-xs text-cc-ink-2">
+                {c.nome}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!execucaoId && comBoletoQ.isError && (
+        <p className="alert-error">
+          Não foi possível checar quem já tem boleto nesta competência — o cálculo fica bloqueado até a
+          checagem responder.
+        </p>
+      )}
+
+      {!execucaoId && elegiveis.length === 0 && jaEmitidos.length > 0 && (
+        <div className="rounded-lg border border-cc-hairline bg-cc-surface-2 px-4 py-3">
+          <p className="text-sm text-cc-ink">
+            Todos os clientes selecionados já têm boleto ativo em{' '}
+            <strong className="tabular">{competencia}</strong> — não há nada para calcular.
+          </p>
+        </div>
+      )}
+
+      {!execucaoId && elegiveis.length > 0 && precisaFaturamento && (
         <div className="space-y-3 rounded-lg border border-cc-hairline bg-cc-surface-2/50 p-4">
           <p className="text-sm text-cc-ink-2">
             {faixaFaturamento.length} cliente{faixaFaturamento.length !== 1 ? 's' : ''} no modo &ldquo;faixa de
@@ -174,10 +266,10 @@ export function LoteContabilidadeDialog({
         </div>
       )}
 
-      {!execucaoId && !precisaFaturamento && (
+      {!execucaoId && elegiveis.length > 0 && !precisaFaturamento && (
         <div className="rounded-lg border border-cc-hairline bg-cc-surface-2 px-4 py-3">
           <p className="text-sm text-cc-ink">
-            Pronto pra calcular <strong>{clientes.length}</strong> cliente{clientes.length !== 1 ? 's' : ''} da
+            Pronto pra calcular <strong>{elegiveis.length}</strong> cliente{elegiveis.length !== 1 ? 's' : ''} da
             competência <strong className="tabular">{competencia}</strong>.
           </p>
         </div>
@@ -219,5 +311,16 @@ export function LoteContabilidadeDialog({
         </div>
       )}
     </Modal>
+  );
+}
+
+/** Ícone SVG inline — mesmo padrão local usado em NovaExecucao/Sidebar (não há biblioteca de
+ * ícones compartilhada no projeto; consolidá-los não é escopo desta story). */
+function CheckCircleIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <path d="m9 11 3 3L22 4" />
+    </svg>
   );
 }

@@ -46,10 +46,19 @@ vi.mock('../../src/services/medicos', () => ({
 }));
 
 const mockDispararLote = vi.fn();
+// `comBoleto` é a guarda de duplicidade da story 12.3: o LoteContabilidadeDialog consulta quem já
+// tem boleto ativo na competência ANTES de deixar calcular. Aqui ela responde vazio — este arquivo
+// testa a casca do modal e o fluxo de emissão, não a guarda (coberta em LoteContabilidadeDialog.test).
+const mockComBoleto = vi.fn();
 vi.mock('../../src/services/clientes-contabilidade', () => ({
   clientesContabilidadeService: {
     dispararLote: (...a: unknown[]) => mockDispararLote(...a),
     lancarFaturamentoLote: vi.fn(),
+    comBoleto: (...a: unknown[]) => mockComBoleto(...a),
+  },
+  clienteContabilidadeQueryKeys: {
+    clientes: () => ['clientes-contabilidade'],
+    comBoleto: (competencia: string) => ['clientes-contabilidade', 'com-boleto', competencia],
   },
 }));
 
@@ -115,6 +124,7 @@ const clienteFixo = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockComBoleto.mockResolvedValue({ clienteContabilidadeIds: [] });
   mockCriarPreview.mockResolvedValue(previewCom('lote-1', 1, 950.89));
   mockConfirmar.mockResolvedValue({ lote: { id: 'lote-1', status: 'processando' } });
   mockStatus.mockResolvedValue({
@@ -195,7 +205,9 @@ describe('LoteEmissaoDialog aberto pelo lote contábil (AC 5 + AC 6)', () => {
     renderComProviders(<LoteContabilidadeDialog clientes={[clienteFixo]} onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-08' } });
-    fireEvent.click(screen.getByRole('button', { name: /Calcular 1 em lote/ }));
+    // `findBy`, não `getBy`: a guarda de duplicidade (12.3) segura o botão em "Verificando
+    // emissões…" até a checagem da competência responder — só então ele vira "Calcular N em lote".
+    fireEvent.click(await screen.findByRole('button', { name: /Calcular 1 em lote/ }));
 
     await waitFor(() =>
       expect(mockDispararLote).toHaveBeenCalledWith({
@@ -224,7 +236,9 @@ describe('LoteEmissaoDialog aberto pelo lote contábil (AC 5 + AC 6)', () => {
     mockResultados.mockResolvedValue([{ ...resultadoOk, id: 'rc1', nome: 'Clínica X', status: 'ok' }]);
     renderComProviders(<LoteContabilidadeDialog clientes={[clienteFixo]} onClose={onClose} />);
     fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-08' } });
-    fireEvent.click(screen.getByRole('button', { name: /Calcular 1 em lote/ }));
+    // `findBy`, não `getBy`: a guarda de duplicidade (12.3) segura o botão em "Verificando
+    // emissões…" até a checagem da competência responder — só então ele vira "Calcular N em lote".
+    fireEvent.click(await screen.findByRole('button', { name: /Calcular 1 em lote/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Emitir boletos em lote' }));
     await screen.findByRole('dialog');
 
@@ -240,7 +254,9 @@ describe('LoteEmissaoDialog aberto pelo lote contábil (AC 5 + AC 6)', () => {
     mockResultados.mockResolvedValue([{ ...resultadoOk, id: 'rc1', nome: 'Clínica X', status: 'ok' }]);
     renderComProviders(<LoteContabilidadeDialog clientes={[clienteFixo]} onClose={onClose} />);
     fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-08' } });
-    fireEvent.click(screen.getByRole('button', { name: /Calcular 1 em lote/ }));
+    // `findBy`, não `getBy`: a guarda de duplicidade (12.3) segura o botão em "Verificando
+    // emissões…" até a checagem da competência responder — só então ele vira "Calcular N em lote".
+    fireEvent.click(await screen.findByRole('button', { name: /Calcular 1 em lote/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Emitir boletos em lote' }));
     await screen.findByRole('dialog');
 
