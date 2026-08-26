@@ -65,7 +65,12 @@ export interface LancamentoFaturamentoLotePayload {
 
 export interface ResultadoLancamentoFaturamentoLote {
   lancados: number;
-  falhas: { clienteContabilidadeId: string; motivo: string }[];
+  /**
+   * Story 12.4 (AC 2): a API devolve `nome` junto do id — o diálogo de lote lista as falhas por
+   * nome do cliente, no mesmo formato de `ExclusaoLoteResultado.bloqueados`. `'—'` quando o
+   * servidor não conseguiu resolver o cliente.
+   */
+  falhas: { clienteContabilidadeId: string; nome: string; motivo: string }[];
 }
 
 export const clientesContabilidadeService = {

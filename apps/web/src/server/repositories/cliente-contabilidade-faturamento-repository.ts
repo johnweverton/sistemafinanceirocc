@@ -12,6 +12,7 @@ import {
   toClienteContabilidadeFaturamento,
   type ClienteContabilidadeFaturamentoRow,
 } from './mappers';
+import { listarClientesContabilidadePorIds } from './cliente-contabilidade-repository';
 
 /**
  * Lança (ou atualiza, se a competência já tiver um lançamento) o faturamento de um cliente
@@ -52,7 +53,13 @@ export interface LancamentoFaturamentoLote {
 
 export interface ResultadoLancamentoFaturamentoLote {
   lancados: number;
-  falhas: { clienteContabilidadeId: string; motivo: string }[];
+  /**
+   * Story 12.4 (AC 2): a falha carrega o `nome` do cliente, não só o UUID — quem lê a lista é o
+   * operador no diálogo de lote, e um UUID não diz de qual cliente é o valor que precisa ser
+   * redigitado. Mesmo formato de `ExclusaoLoteResultado.bloqueados` (`nome` + `motivo`), inclusive
+   * o `'—'` de fallback quando o cliente não pôde ser resolvido.
+   */
+  falhas: { clienteContabilidadeId: string; nome: string; motivo: string }[];
 }
 
 /**
@@ -73,10 +80,33 @@ export async function lancarFaturamentoLote(
       resultado.lancados += 1;
     } catch (e) {
       const motivo = e instanceof ApiError ? e.message : 'Falha ao lançar faturamento';
-      resultado.falhas.push({ clienteContabilidadeId: l.clienteContabilidadeId, motivo });
+      resultado.falhas.push({ clienteContabilidadeId: l.clienteContabilidadeId, nome: '—', motivo });
     }
   }
+  await resolverNomesDasFalhas(resultado.falhas);
   return resultado;
+}
+
+/**
+ * Preenche o `nome` das falhas numa query só, e SÓ quando houve falha (o caminho feliz — o normal —
+ * não paga round-trip nenhum). Resolver nome é enfeite de mensagem: se essa busca falhar, o lote
+ * responde com `'—'` no lugar do nome em vez de derrubar lançamentos que já deram certo.
+ */
+async function resolverNomesDasFalhas(
+  falhas: ResultadoLancamentoFaturamentoLote['falhas'],
+): Promise<void> {
+  if (falhas.length === 0) return;
+  try {
+    const clientes = await listarClientesContabilidadePorIds(
+      falhas.map((f) => f.clienteContabilidadeId),
+    );
+    const nomePorId = new Map(clientes.map((c) => [c.id, c.nome]));
+    for (const f of falhas) {
+      f.nome = nomePorId.get(f.clienteContabilidadeId) ?? '—';
+    }
+  } catch {
+    /* mantém o '—' — a falha do lançamento é a informação que importa. */
+  }
 }
 
 export async function listarFaturamentos(
