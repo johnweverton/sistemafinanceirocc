@@ -1,0 +1,931 @@
+# QA Gate — Story 12.5 (Composição do lote e progresso real do cálculo) — iteração 1 (final)
+storyId: "12.5"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-08-27"
+commit: "NÃO COMMITADO — revisão sobre a árvore de trabalho (base HEAD = 382a366)"
+epic: "12 — Sanitização do caminho de emissão (docs/architecture/epic-sanitizacao-emissoes.md), Fase 1 ALTA"
+verdict: CONCERNS
+iterations:
+  - n: 1
+    verdict: CONCERNS
+    issues:
+      [
+        REL-125-1 (medium),
+        TEST-125-1 (medium),
+        DOC-125-1 (low),
+        ARCH-125-1 (low),
+        REL-125-2 (low),
+        REQ-125-1 (info),
+        A11Y-125-1 (info),
+        MNT-125-1 (info),
+        OBS-125-P (positivo),
+      ]
+
+resumo_do_veredito: >
+  **CONCERNS — e não é CONCERNS de desconfiança: os 6 ACs estão entregues e travados por teste
+  discriminante.** Mutei o `src` em **5 pontos independentes** (AC 1-composição, AC 1-teto, AC 3/5,
+  AC 4, AC 5-persistência) e em **5 de 5** falharam **exatamente** os testes correspondentes, nem um
+  a mais nem um a menos. O débito herdado `DEB-12.4-A` está fechado nas **duas** metades que o gate
+  da 12.4 prescreveu (comentário reescrito + Escape/backdrop asseridos, com o caso negativo de
+  bônus). A decisão de arquitetura [D-1] (rota cria-e-responde + `retomar`) foi verificada na fonte
+  e **procede**: `criarExecucao` grava `status: 'processando'` (`execucao-repository.ts:83`), que é
+  exatamente o pré-requisito do guard de `retomar`, e os papéis das duas rotas são **idênticos**
+  (`['admin','colaborador']`) — não há o 403-no-meio-do-fluxo que eu procurei.
+  O que segura o PASS são **dois `medium`**, ambos achados meus e nenhum deles "falta de AC":
+  (1) **REL-125-1** — a mesma classe de beco sem saída que o próprio @dev encontrou e corrigiu para
+  o 404 continua **aberta para `status === 'erro'`**: o rastro em `sessionStorage` só é apagado em
+  `concluido`, o botão de calcular some com `!execucaoId`, o `CampoCompetencia` fica
+  `disabled={!!execucaoId}` e o ramo de erro do `ProgressoExecucao` **não tem botão de Reprocessar**.
+  Fechar e reabrir restaura o mesmo estado. Ele fechou uma das duas portas. **Provado por sonda
+  temporária que eu escrevi, rodei e apaguei** — não por leitura.
+  (2) **TEST-125-1** — a rota nova (`GET /clientes-contabilidade/faturamentos/lancados`) e o seu
+  repositório estão com **zero teste**, enquanto o precedente que o próprio @dev cita como "espelho
+  estrutural" ([D-2]) tem **dois arquivos** de teste. `requireRole`, o 400 de competência inválida e
+  o dedup ficam sem trava.
+  Nada disso é rework de comportamento entregue — são um caso de borda de recuperação e uma lacuna
+  de cobertura em superfície nova. **A fila `RS-9` está liberada: 12.6 pode abrir.**
+
+notes: >
+  **Contaminação da árvore, declarada antes de qualquer número.** Diferente dos gates 12.1–12.4,
+  esta revisão **não** roda sobre um commit: a 12.5 está **inteiramente não commitada**
+  (`git status --short` com 19 arquivos de `apps/web` sujos + 1 rota nova não rastreada), e a árvore
+  contém **também** a frente separada do lead (`server/gateway/mensagem-boleto.ts`,
+  `server/gateway/email-gateway.ts`, `server/emissao/emitir-boleto.ts`,
+  `reenviar_boleto/route.ts`, `tests/server/gateway/email-gateway.test.ts`). Conferi que os dois
+  conjuntos **não têm um único arquivo em comum** e não há aresta de import entre eles; a frente do
+  lead está fora do meu veredito, mas entra na aritmética da suíte — ver DOC-125-1, que é
+  precisamente onde o Dev Agent Record escorrega.
+  **Consequência operacional da árvore suja:** nas mutações eu **não** usei `git checkout --`
+  (destruiria o trabalho não commitado do @dev). Copiei os 3 arquivos para um diretório temporário
+  antes, restaurei a partir da cópia depois de cada mutação e fechei com `md5sum -c`: os 3 hashes
+  batem com o estado pré-revisão. `git status` não tem nenhum arquivo meu sobrando.
+  Comandos reexecutados por mim dentro de `apps/web`:
+  · `npx tsc --noEmit` → **exit 0**, sem saída.
+  · `npm run lint` (`next lint`) → "✔ No ESLint warnings or errors".
+  · `npx vitest run` (suíte inteira) → **133 arquivos / 1229 testes, todos verdes**, exit 0,
+    158,65s. Bate com o **Debug Log** (1229) e **não** com o Change Log da própria story (1228).
+  · `npx vitest run` nos 4 arquivos tocados → **63/63 verdes**.
+  · `npm run build` (`next build`, com `.next` limpo antes) → **exit 0**. Métrica verificável, no
+    formato que eu mesma recomendei em OBS-123-6: **77 → 78 arquivos de rota** (exatamente a rota
+    nova, nenhuma removida) e
+    `/api/clientes-contabilidade/faturamentos/lancados/route` presente no
+    `.next/server/app-paths-manifest.json`. Sem o `EINVAL readlink` de OneDrive desta vez, porque
+    limpei o `.next` **antes** — que é o mesmo diagnóstico dos gates 12.4/12.3, agora com a
+    profilaxia aplicada em vez de descoberta.
+  · CodeRabbit CLI **não executado** — `wsl` não instalado nesta máquina, `skip_if_not_installed`.
+    A revisão automatizada não aconteceu **em nenhuma das duas pontas** (nem @dev nem @qa); está
+    registrado como limitação, não como item cumprido.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rastreabilidade AC → código → teste (verificada, não relatada)
+# ─────────────────────────────────────────────────────────────────────────────
+rastreabilidade:
+  AC1_composicao_e_limites:
+    status: ATENDIDO
+    codigo: >
+      `LoteContabilidadeDialog.tsx:182-212` (`composicao` + `acimaDoTeto`) e `:564-620` (o painel).
+      "Pronto pra calcular N clientes" **não existe mais** no arquivo — conferido por grep, e o
+      teste tem a trava de ausência (`queryByText(/Pronto pra calcular/i)`).
+      Os números fecham por construção: `faixa` e `fixo` derivam **ambos** de `elegiveis`
+      (`:171-174` e `:192`), e `modoCobranca` é uma união de exatamente dois valores — logo
+      `faixa + fixo === elegiveis.length`, que é o número do botão. Não há um terceiro balde
+      silencioso.
+      `cicloAdicionalVencendoNaCompetencia` é chamada com a **mesma assinatura e a mesma ordem de
+      argumentos** de `GerarExecucao.tsx:31` (`competenciaBase, intervaloMeses, competencia`) —
+      comparei as duas chamadas lado a lado. Sem cópia, sem variante, sem inversão silenciosa de
+      parâmetro (que era o modo de falha barato aqui: três argumentos, dois deles strings).
+      Limites em `@cobranca/shared` ([D-5]) lidos pelo schema (422), pela rota (rate limit), pelo
+      orquestrador (alias) e pelo painel — fonte única de verdade, verificada nos 4 consumidores.
+    discriminancia_reproduzida: >
+      **Mutação E:** troquei `faturamentosLancadosQ.isSuccess ? (` por `true ? (`, que é exatamente
+      o defeito que a story proíbe ("nunca chutar valor no resumo pré-cálculo"). Resultado:
+      **2 failed | 39 passed**, e as duas falhas são literalmente
+      "AC 1: enquanto a consulta de faturamento não responde o painel NÃO chuta '0 lançado'" e
+      "AC 1: falha na consulta de faturamento vira 'não foi possível verificar', não um número
+      inventado". O teste mede o **conteúdo renderizado**, não o valor da flag.
+      **Mutação D (desenhada para pegar teste preguiçoso):** removi `|| acimaDoTeto` **só** do
+      `disabled`, deixando o **rótulo** "Acima do teto de 200" intacto — um teste que verificasse
+      apenas o texto teria passado. Resultado: **1 failed | 40 passed**, "AC 1 (G-13): acima do teto
+      o cálculo é barrado aqui, não com um 422 depois do clique". O teste afirma `toBeDisabled()`
+      **e** `expect(mockDispararLote).not.toHaveBeenCalled()` depois de um clique real. É a asserção
+      certa.
+  AC2_barra_de_selecao:
+    status: ATENDIDO
+    codigo: >
+      Duas frentes, como as Completion Notes descrevem, e as duas confirmadas.
+      (i) `ClientesContabilidadeManager.tsx:196-203` deriva `clientesSelecionadosInativos` e
+      `:325-334` imprime "· N inativo(s) não entra(m) no cálculo em lote" **na mesma barra** onde a
+      divergência aparece.
+      (ii) a prop `inativosSelecionados` leva a mesma lista para a última linha do resumo.
+    verificacao_extra_minha: >
+      Fui atrás do buraco óbvio: um id selecionado que **não** esteja em `clientesPorId` cairia em
+      nenhum dos dois baldes e a divergência voltaria sem explicação. **Não é alcançável**:
+      `clientesPorId` (`:189`) é montado a partir de `clientes` **inteiro**, não da lista filtrada
+      pela busca — então `ativos.length + inativos.length === selecionados.size` sempre. E os dois
+      lugares (barra e painel) leem a **mesma** derivação, então é impossível eles discordarem entre
+      si. Registro porque essa é a classe de bug que faria a AC 2 "passar no teste e mentir na tela".
+    cobertura: "2 `it` novos em `ClientesContabilidadeManager.test.tsx` — o positivo (3 selecionados · 1 inativo · botão (2)) e o de ausência (sem inativos a barra não ganha texto)."
+  AC3_progresso_real:
+    status: ATENDIDO
+    codigo: >
+      `:629-631` renderiza `<ProgressoExecucao execucaoId rotulo="Calculando clientes contábeis" />`
+      enquanto `!calculoConcluido`. Barra, `%`, `role="status"`/`aria-live`, limiar de travamento e
+      botão "Reprocessar" vêm **todos** do componente existente — nada reimplementado, que é o que a
+      seção **Testing** da story exigia. O teste prova o reuso pela via correta: assere a frase
+      "Isso pode levar alguns minutos…", que **só** existe em `ProgressoExecucao.tsx:93`.
+      Complementado no servidor por [D-4]: `processarLoteClientesContabilidade` grava progresso a
+      cada 5 pontos, `Math.min(99, …)` (nunca 100 daqui) e `.catch(() => {})` para que falha de
+      escrita de progresso não derrube o lote — as três propriedades **asseridas** nos 2 casos novos
+      do orquestrador (monotonicidade, teto de 99, `gravados.length <= ceil(100/PASSO)` e
+      `status === 'concluido'` mesmo com `atualizarProgresso` sempre lançando).
+    ponto_que_eu_conferi_e_que_ninguem_pediu: >
+      O diálogo abre um **segundo** `useQuery` na mesma `queryKey` que o `useExecucaoRealtime` usa
+      por dentro (`execucaoQueryKeys.execucao(id)`), só para decidir qual bloco mostrar. Rastreei se
+      isso duplica rede: **não duplica**. É o mesmo cache do react-query, e o `refetchInterval` de
+      3s vive no observer do hook (que só liga com `status === 'processando'`). O comentário do @dev
+      em `:319-323` descreve isso corretamente. Mas ver REL-125-1: é justamente o observer **sem**
+      `refetchInterval` que fica sem saída quando a consulta erra.
+    discriminancia_reproduzida: >
+      **Mutação B:** removi `await execucoesService.retomar(novoId)` do `mutationFn`. Resultado:
+      **2 failed | 39 passed** — "AC 3: a rota de lote cria a execução e o processamento vem em
+      seguida (retomar)" e "AC 5: o execucaoId sobrevive a um 'reload' no meio do cálculo". As duas
+      falhas certas, nenhuma colateral.
+  AC4_a_emitir_vs_total_geral:
+    status: ATENDIDO
+    codigo: >
+      `:404-408` separa `valorAEmitir` (`filter(status === 'ok')`) de `valorTotalGeral` (todos), e
+      `:648-656` mostra "A emitir (N ok)" como valor principal com "Total geral" como linha
+      secundária no mesmo card. O `enabled: !!execucaoId && calculoConcluido` da `resultadosQ`
+      (`:355`) é a peça que impede o resumo de aparecer como "Ok 0 · A emitir R$ 0,00" no meio do
+      processamento — e o teste do AC 3 trava isso pelo lado observável certo
+      (`expect(mockResultados).not.toHaveBeenCalled()` durante o cálculo).
+    discriminancia_reproduzida: >
+      **Mutação A:** apaguei o `.filter((r) => r.status === 'ok')` de `valorAEmitir`, restaurando o
+      comportamento pré-12.5. Resultado: **2 failed | 39 passed**, exatamente os dois `it` do
+      describe do AC 4 — inclusive o caso "lote 100% em alerta mostra R$ 0,00 a emitir", que é o
+      cenário concreto de G-08 (um "Total" que parecia cobrança).
+  AC5_execucaoid_recuperavel:
+    status: ATENDIDO
+    codigo: >
+      Sub-produto de [D-1] + `sessionStorage` chaveado (`CHAVE_LOTE_EM_ANDAMENTO`), restaurado em
+      `useEffect` de montagem (`:112-120`, com o cuidado de hidratação correto — o servidor não tem
+      `sessionStorage`), apagado no efeito de conclusão (`:335-337`) e em 404 (`:344-350`). Todo
+      acesso ao storage em `try/catch`, com `lerLoteEmAndamento` **validando o formato** antes de
+      confiar (`typeof execucaoId === 'string'` + regex de competência) — conteúdo corrompido vira
+      `null`, não crash. Isso é higiene que ninguém pediu e que eu registro como positivo.
+    verificacao_extra_minha: >
+      Conferi a estabilidade de `toast` (`Toast.tsx:33` é `useCallback`) porque ele está no array de
+      deps do efeito de 404: se fosse instável, o efeito re-dispararia em loop. Não é o caso. E o
+      efeito é auto-limitante por outro motivo também: `setExecucaoId(null)` muda a `queryKey` para
+      `execucao('')`, então `execucaoQ.error` deixa de existir na render seguinte.
+      Conferi o caso "conclui com o diálogo fechado": o rastro sobrevive, reabrir mostra o resumo do
+      lote concluído **e** apaga o rastro ali — a terceira abertura já monta um lote novo. É o
+      comportamento desejável e está coberto pelo `it` "lote concluído não é 'recuperado' na próxima
+      abertura".
+    discriminancia_reproduzida: >
+      **Mutação C:** transformei o `sessionStorage.setItem` de `gravarLoteEmAndamento` em no-op.
+      Resultado: **1 failed | 40 passed**, "AC 5: o execucaoId sobrevive a um 'reload' no meio do
+      cálculo (nada de execução órfã)". O teste faz `unmount()` + montagem nova **sem prop nenhuma
+      carregando o id** e ainda assere `mockDispararLote` chamado **1** vez — ou seja, prova que
+      recuperou em vez de disparar um lote novo. Asserção sobre o efeito de rede, não sobre estado
+      interno. É a camada certa.
+    ressalva: "Ver REL-125-1 — a recuperação está certa; o que falta é a SAÍDA quando não há o que recuperar."
+  AC6_deb_12_4_A:
+    status: ATENDIDO NAS DUAS METADES
+    metade_1_comentario: >
+      O comentário de `:485-493` foi **reescrito**, não apagado. O texto antigo ("Sobrevive ao
+      avanço pro passo de cálculo: quem falhou aqui vai virar alerta lá") — que se contradizia
+      sozinho, como registrei em OBS-124-1 — deu lugar a "Persistente no sentido de NÃO ser toast:
+      sobrevive ao avanço do passo 1 para o passo de cálculo e a quantas remontagens do passo 1 o
+      operador precisar", **nomeando o débito** e dizendo explicitamente o que o guard `!execucaoId`
+      faz e para onde a informação vai depois (a lista de alertas do resultado). É mais do que eu
+      pedi: eu sugeri uma frase, ele documentou a razão. Padrão interrompido.
+    metade_2_escape_backdrop: >
+      Os dois `it` que OBS-124-2 pediu existem (`Escape fecha`, `clique no backdrop fecha`, este
+      último usando o `data-testid="modal-backdrop"` que eu apontei que o `Modal` já expunha), mais
+      um terceiro que **não** foi pedido e que é o mais valioso dos três: o caso **negativo**, com o
+      lançamento de faturamento em voo, asserindo `onClose` **não** chamado **e** a mensagem
+      "Aguarde o processamento terminar." na tela. Ou seja, ele travou o `emVoo` nos dois sentidos,
+      que é justamente o que a mudança de `emVoo` desta story exigia.
+    nota: >
+      O `DEB-12.4-A` foi entregue **apesar de** o @po não ter acrescentado o item explicitamente às
+      ACs da 12.5 — a AC 6 já vinha na story original. Registro porque nos gates 12.2/12.3/12.4 eu
+      avisei três vezes que "enumeração de AC fechada não absorve item por herança"; aqui a AC
+      **estava** escrita e o item chegou. O mecanismo funciona quando é usado.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Os pontos que a lead pediu explicitamente que eu julgasse
+# ─────────────────────────────────────────────────────────────────────────────
+julgamento_d1_mudanca_de_contrato_da_rota:
+  pergunta: >
+    O @dev mudou o contrato de `POST /api/clientes-contabilidade/lote` (cria e responde; quem
+    processa é `POST /api/execucoes/{id}/retomar`, chamado em seguida pelo diálogo), citando o
+    achado de produção de 2026-08-05 sobre fire-and-forget na Vercel. A decisão procede? É segura?
+  decisao: >
+    **APROVADA, e o raciocínio se sustenta na fonte — não só na tabela do Dev Agent Record.** Fui
+    verificar as três premissas que a tabela afirma, e as três se confirmam.
+  status: "Decidida nesta revisão. Não volta pro @dev. Duas ressalvas registradas (REL-125-2, TEST-125-2)."
+  fundamentacao: >
+    **1. A opção (a) é mesmo inviável, e pelo motivo que ele dá.** Com a rota síncrona o
+    `execucaoId` só nasce quando a promise resolve — não há sujeito para o AC 5 e não há o que a
+    barra do AC 3 acompanhe durante os 300s. A story deixou isso em aberto ("Decisão de
+    implementação do @dev"); ele fechou com a leitura correta.
+
+    **2. A opção (b) é mesmo o achado de 2026-08-05, e (c) mesmo o evita.** Confirmei que em nenhum
+    ponto do caminho novo existe promise solta: `retomar` faz `await dispararPrimeiroLote(...)`
+    antes do `Response.json` (`retomar/route.ts`), e a rota de lote agora só faz
+    `iniciarLoteClientesContabilidade` + `Response.json`. Sempre há um request segurando a function.
+
+    **3. O pré-requisito escondido de `retomar` está satisfeito — e este era o ponto onde a decisão
+    poderia morrer em silêncio.** `retomar` tem um guard `if (execucao.status !== 'processando')
+    throw 422 EXECUCAO_NAO_RETOMAVEL`. Se `criarExecucao` gravasse `'pendente'`, **todo cálculo em
+    lote falharia em produção com um 422**, e os testes de componente **não pegariam** (o `retomar`
+    é dublê). Fui ao repositório: `execucao-repository.ts:83` grava literalmente
+    `status: 'processando'`. Premissa confirmada.
+
+    **4. Os papéis batem — e este era o segundo jeito de a decisão morrer em silêncio.** Se a rota
+    de lote aceitasse um papel que `retomar` recusa, esse operador criaria a execução e levaria 403
+    no passo seguinte, deixando uma execução travada em `processando` a cada tentativa. Conferi os
+    dois `requireRole` na fonte: `lote/route.ts:38` = `['admin','colaborador']`;
+    `retomar/route.ts` = `['admin','colaborador']`. **Idênticos.** (Note que a rota de leitura nova
+    e a `com-boleto` usam `['admin','colaborador','financeiro']` — mais amplo, e correto: são
+    leitura.) A afirmação "mesmos papéis" do Dev Agent Record é verdadeira.
+
+    **5. `retomar` é reuso legítimo, não uma rota espremida para caber.** O cursor é
+    `contarResultados`, derivado do banco — a idempotência não é convenção, é estrutural, e já era
+    o destino do botão "Reprocessar". Os comentários das duas rotas e o JSDoc do serviço foram
+    atualizados para descrever **os dois chamadores**, que é a mesma classe de correção
+    comentário-vs-código do AC 6. Coerência de conduta, registrada como positiva.
+
+    **6. A consequência declarada é honesta e o saldo é positivo.** "Cliente morre entre criar e
+    processar ⇒ execução em `processando` com 0 resultados" é pior que zero, mas melhor que o
+    estado anterior: antes a **mesma** falha acontecia (a function era suspensa no meio dos 300s) e
+    era **invisível e sem identificador**. Agora aparece no diálogo, no histórico, e tem
+    "Reprocessar" depois de 6 min. O @dev escreveu isso no comentário da rota em vez de escondê-lo.
+  ressalvas_que_acompanham_a_aprovacao:
+    - "REL-125-2 — o rate limit de `retomar` (5/min) passou a ser consumido pelo caminho NORMAL."
+    - "TEST-125-2 (dentro de TEST-125-1) — mudança de contrato de rota sem teste de rota. Não havia antes tampouco; o consumidor é único (`grep dispararLote` confirma) e o fim a fim continua coberto pelo orquestrador. Aceito, registrado."
+julgamento_d3_rotulo_do_progressoexecucao:
+  pergunta: >
+    O épico (§2, linha 170-172) lista `ProgressoExecucao` na coluna "Reaproveitado (sem mudar)". O
+    @dev acrescentou uma prop opcional `rotulo`. É aceitável ou é um desvio a registrar?
+  decisao: >
+    **ACEITÁVEL — e é a escolha certa das três disponíveis.** Mas **é** um desvio, e eu registro,
+    por um motivo que o @dev não viu: ele colide com a **AC 1 da 12.11**.
+  fundamentacao: >
+    **Por que aceito.** As alternativas eram (i) exibir "Processando médicos" num lote de clientes
+    contábeis — mentira na tela, e a 12.11 existe justamente para caçar esse vocabulário; ou (ii)
+    duplicar barra + `%` + detecção de travamento, que a seção **Testing** desta story **proíbe
+    textualmente** ("não duplicar lógica de detecção de travamento"). Cumprir a letra da tabela do
+    épico exigiria violar a letra da própria story. Entre uma tabela de planejamento e um critério
+    de teste da story em execução, o segundo manda.
+    A extensão é **estritamente aditiva**: parâmetro opcional com default igual à string anterior.
+    Verifiquei os **dois** chamadores existentes na fonte — `NovaExecucao.tsx:1176` e
+    `app/(dashboard)/execucoes/[id]/page.tsx:15` — e nenhum passa `rotulo`. Zero mudança de
+    comportamento, como o Dev Agent Record afirma.
+  o_que_registro_e_que_o_dev_nao_viu: >
+    **A AC 1 da 12.11 diz, textualmente: "'Pagador' no lugar de 'médico' em `RelatorioGrupos.tsx:246,
+    :439,:229` e `ProgressoExecucao.tsx:62`".** A linha `:62` era exatamente a string
+    `Processando médicos`. Hoje `:62` não existe mais como alvo: a linha renderiza `{rotulo}` e o
+    texto migrou para o **valor default do parâmetro** (`:19`). O @dev da 12.11 que procurar pela
+    linha citada **não vai achar o que a AC descreve** — e, se não achar, o vocabulário fica.
+    A boa notícia é que o desenho **facilita** a 12.11 em vez de atrapalhar: basta trocar o default
+    por "Processando pagadores", e o `rotulo="Calculando clientes contábeis"` da 12.5 continua certo
+    e não precisa de exceção. Só a instrução precisa ser reescrita.
+  lacuna_de_protecao: >
+    **Não existe `tests/components/ProgressoExecucao.test.tsx`** — conferido, o diretório não tem o
+    arquivo — e nenhum teste do repositório assere a string "Processando médicos" (grep em `tests/`
+    → zero). Ou seja, a preservação do default para os dois chamadores existentes está verificada
+    **por leitura minha**, não por asserção. É lacuna pré-existente (o componente nunca teve teste),
+    mas esta story acabou de dar a ele um parâmetro configurável, o que aumenta a superfície.
+    Ver ARCH-125-1.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Achados
+# ─────────────────────────────────────────────────────────────────────────────
+issues:
+  - id: REL-125-1
+    severity: medium
+    category: code
+    status: debito-registrado
+    titulo: "Execução que termina em `erro` prende o diálogo pelo resto da vida da aba — o @dev fechou a porta do 404 e deixou a do `erro` aberta"
+    description: >
+      **Achado desta revisão, provado por sonda temporária que eu escrevi, rodei e apaguei** (não
+      por leitura). O @dev encontrou sozinho, na autocrítica, que um rastro apontando para uma
+      execução inexistente **prendia** o diálogo, e corrigiu — mas a correção é
+      `execucaoQ.error instanceof ApiClientError && execucaoQ.error.status === 404`, com o
+      comentário explicando que restringir a 404 é deliberado. O raciocínio do "só 404" está
+      **certo** (falha de rede transitória não pode limpar um resultado que está na tela). O que
+      ficou de fora é um estado que **não é transitório**: `status === 'erro'`.
+      Rastreei as quatro condições que se combinam, todas na fonte:
+      · o rastro só é apagado em `if (calculoConcluido) gravarLoteEmAndamento(null)` (`:335-337`) —
+        e `calculoConcluido` é `status === 'concluido'`, ponto;
+      · o botão de calcular está sob `{!execucaoId && …}` (`:417`) — não existe;
+      · `CampoCompetencia` está `disabled={!!execucaoId}` (`:444`) — trocar de mês também não é
+        saída;
+      · o ramo de erro do `ProgressoExecucao` (`:106-110`) é **só um `<p role="alert">** ("A
+        execução encontrou um erro. Tente reprocessar a competência.") — o botão **Reprocessar**
+        existe **exclusivamente** no ramo `processando` + `travada`. A tela manda reprocessar e não
+        oferece como.
+      Resultado: só resta "Fechar" — e reabrir restaura o mesmo rastro, no mesmo estado. **A sonda
+      confirmou os três fatos**: o rastro continua em `sessionStorage` depois do erro, a remontagem
+      volta ao mesmo bloco de erro sem botão de calcular, e nenhum "Reprocessar" aparece.
+      **Segunda porta, mesma família:** se `execucoesService.detalhe` falhar de forma **persistente**
+      com algo que não seja 404 (500 do banco, por exemplo), os dois observers erram, `data` fica
+      `undefined`, `calculoConcluido` é false, o `ProgressoExecucao` renderiza "Aguardando dados..."
+      e o `refetchInterval` **não liga** — porque a condição é `q.state.data?.status ===
+      'processando'` e `data` é `undefined`. Mesmo beco, sem nem a mensagem de erro.
+      **Enquadramento justo, nas duas direções.** (a) **Não há perda de dado**: a execução existe no
+      banco, aparece no histórico, e a saída é abrir uma aba nova (`sessionStorage` é por aba) — por
+      isso `medium` e não `high`. (b) **Mas é uma regressão de recuperabilidade**: antes da 12.5 o
+      `dispararPrimeiroLote` engolia o erro, a rota devolvia o id assim mesmo e o diálogo mostrava
+      um resumo vazio — enganoso, porém **escapável**. A 12.5 troca informação boa (agora o erro é
+      dito) por saída ruim. O saldo líquido continua positivo; o item é fechar a porta que sobrou.
+    recommendation: >
+      Uma linha, no mesmo efeito que já existe: apagar o rastro também quando o estado é **terminal
+      e não recuperável** — `if (calculoConcluido || execucaoQ.data?.status === 'erro')
+      gravarLoteEmAndamento(null)`. E, para dar saída de verdade (não só na próxima abertura), um
+      botão "Começar um lote novo" que faça `setExecucaoId(null)` quando `execucaoQ.data?.status ===
+      'erro'`. Duas asserções acompanham: (i) depois do erro o `sessionStorage` está limpo;
+      (ii) remontar oferece o botão de calcular.
+      **Roteamento:** `DEB-12.5-A` → **12.6** ("erro vs. vazio nos pontos de carga"), que é a dona
+      declarada deste arquivo para tratamento de erro e já é a próxima da fila `RS-9`. **Exige
+      acréscimo explícito do @po** à AC 1 **e** à File List da 12.6 — a AC 1 da 12.6 enumera 4
+      pontos de carga e este estado **não é um deles**. Terceiro gate consecutivo em que peço
+      acréscimo explícito para a 12.6 (ver DEB-12.4-B e OBS-123-4a, ambos ainda pendentes de @po).
+      **Não abrir commit avulso** — arquivo em contenção `RS-9`.
+  - id: TEST-125-1
+    severity: medium
+    category: tests
+    status: debito-registrado
+    titulo: "A rota nova e o repositório novo estão com ZERO teste — enquanto o \"espelho estrutural\" que o próprio @dev cita tem DOIS arquivos de teste"
+    description: >
+      Achado desta revisão, medido e não estimado. A decisão [D-2] justifica a rota nova dizendo, com
+      razão, que ela é "espelho estrutural de `/clientes-contabilidade/com-boleto` (12.3): mesma
+      forma de resposta, mesmo `force-dynamic`, mesmo `staleTime: 0` no cliente, mesmos papéis de
+      leitura". Verifiquei o espelhamento **do código** e ele é fiel, linha por linha (mesmo
+      `querySchema`, mesmo 400, mesmos `requireRole(['admin','colaborador','financeiro'])`).
+      **O espelhamento parou no código.** O precedente da 12.3 tem:
+      · `tests/server/clientes-contabilidade/com-boleto-route.test.ts`
+      · `tests/server/repositories/boleto-repository-clientes-contabilidade-com-boleto.test.ts`
+      A 12.5 tem **nenhum dos dois**. Fica sem trava: (a) o `requireRole` da rota — superfície
+      autenticada nova, e o único lugar do diff em que o controle de acesso é declarado; (b) o 400
+      de `competencia` ausente/malformada; (c) o dedup `[...new Set(ids)]` do repositório.
+      Sobre (c), registro o que ninguém perguntou: o dedup é **defensivo** e provavelmente morto,
+      porque `clientes_contabilidade_faturamentos` tem `unique (cliente_contabilidade_id,
+      competencia)` (migration 0031, fato já apurado no gate da 12.4). Não é problema — é código
+      barato que sobrevive a uma mudança de constraint. Só não está exercitado.
+      O painel **em si** está bem coberto pelo lado do cliente (pendente, erro e sucesso da consulta,
+      todos com `it` dedicado e discriminantes por mutação). A lacuna é estritamente de servidor.
+    recommendation: >
+      Copiar os dois arquivos do precedente da 12.3 trocando o alvo — é literalmente o mesmo
+      esqueleto: `requireRole` chamado com a lista certa, 400 sem `competencia`, 400 com formato
+      inválido, caminho feliz devolvendo `{ clienteContabilidadeIds }`, e no repositório o dedup +
+      a propagação de `ApiError(500, 'DB_ERROR')`. Custo baixo, e o precedente elimina qualquer
+      dúvida de forma.
+      **Roteamento:** `DEB-12.5-B` → **@po decide o dono**. Cabe naturalmente na 12.6 (que já vai
+      abrir o arquivo e tratar o estado de erro desta mesma consulta), mas é teste de **servidor** e
+      não colide com a contenção `RS-9` do componente — pode virar commit próprio sem custo de fila.
+      É a diferença relevante em relação ao DEB-12.5-A.
+  - id: DOC-125-1
+    severity: low
+    category: process
+    status: debito-registrado
+    titulo: "Os números do Dev Agent Record não fecham: 1228 vs 1229, \"+22 casos\" que são +20, e +28 de delta atribuídos à story quando 4 são da frente do lead"
+    description: >
+      Achado desta revisão, por contagem própria arquivo a arquivo (`git show HEAD:<arquivo>` vs.
+      árvore, contando `it(`), não por leitura do relato.
+      **(a) Contradição interna.** O Debug Log diz "1229"; o Change Log da mesma story diz "1228
+      verdes". Rodei: **1229** (133 arquivos), exit 0. O Debug Log está certo, o Change Log não.
+      **(b) O delta está inflado.** O Debug Log escreve "delta da 12.4: 1201 → 1229 = **+28**",
+      apresentando os 28 como resultado desta story. Medi por arquivo:
+      · `LoteContabilidadeDialog.test.tsx` 21 → 41 = **+20**
+      · `ClientesContabilidadeManager.test.tsx` 4 → 6 = **+2**
+      · `execucao-orchestrator-lote-contabilidade.test.ts` 7 → 9 = **+2**
+      · `LoteEmissaoDialog.test.tsx` 7 → 7 = **0** (só os dublês foram corrigidos, como ele descreve)
+      · `tests/server/gateway/email-gateway.test.ts` 10 → 14 = **+4** ← **frente do lead, não é 12.5**
+      Ou seja: **+24 são da 12.5** e +4 são da correção separada de mensagem de boleto que o lead
+      declarou. 24 + 4 = 28, a aritmética fecha — mas a atribuição não.
+      **(c) A File List erra o próprio número.** Ela diz "+22 casos da 12.5" em
+      `LoteContabilidadeDialog.test.tsx`; são **+20** (contei os `it` do bloco novo um a um: 8 de
+      composição + 7 de progresso/AC5 + 2 de AC 4 + 3 de AC 6).
+      **Por que `low` e não nota de rodapé.** Nenhum dos três erra para menos — ele não inflou o
+      trabalho de propósito, e a honestidade do registro em outras frentes desta story é notável
+      (ver OBS-125-P). O problema é que o gate seguinte usa esses números como linha de base: o gate
+      da 12.4 estabeleceu o hábito de conferir "delta de testes bate com o Change Log", e um delta
+      contaminado por outra frente quebra a conferência da 12.6. Numa árvore que contém **duas
+      frentes ao mesmo tempo**, "rodei a suíte e deu X" deixa de ser evidência atribuível.
+    recommendation: >
+      @dev: reconciliar o Change Log (1229) e a File List (+20) e marcar o delta como
+      "**+24 desta story** (+4 na árvore vêm da frente de mensagem de boleto, fora do escopo)".
+      Regra para as próximas stories da fila, enquanto a árvore tiver mais de uma frente: **contar o
+      delta por arquivo tocado pela story**, não pelo total da suíte. É a única contagem atribuível.
+  - id: ARCH-125-1
+    severity: low
+    category: architecture
+    status: debito-registrado
+    titulo: "A prop `rotulo` é aceita, mas quebra a instrução literal da AC 1 da 12.11 (`ProgressoExecucao.tsx:62`) e não tem teste protegendo o default"
+    description: >
+      Ver `julgamento_d3_rotulo_do_progressoexecucao` para a aprovação e o raciocínio. O que fica
+      como débito são as duas consequências:
+      **(1) A 12.11 perdeu o alvo.** A AC 1 da 12.11 manda trocar "médico" por "Pagador" em
+      `ProgressoExecucao.tsx:62`; essa linha agora é `{rotulo}` e o texto vive no **default do
+      parâmetro**. Instrução que aponta para o lugar errado, num épico que já perdeu itens
+      exatamente assim.
+      **(2) O default não está travado.** Não existe `ProgressoExecucao.test.tsx` (verificado) e
+      nenhum teste do repositório assere "Processando médicos" (grep → zero). Que
+      `NovaExecucao.tsx:1176` e `execucoes/[id]/page.tsx:15` continuam com o texto original está
+      verificado **por leitura minha**. É lacuna pré-existente, mas a story acabou de tornar a
+      string configurável — o custo de um erro futuro subiu.
+    recommendation: >
+      `DEB-12.5-C` → **12.11**. @po: reescrever a AC 1 da 12.11 de "`ProgressoExecucao.tsx:62`" para
+      "**o valor default da prop `rotulo`** de `ProgressoExecucao` (localizar pelo texto
+      'Processando médicos', não pelo número da linha)" e registrar na Dev Note que o
+      `rotulo="Calculando clientes contábeis"` do lote contábil **já está correto** e não deve ser
+      tocado. Sem isso, o item some no Dev Agent Record da 12.11.
+      Opcional, junto: um `it` mínimo asserindo o default — sem `rotulo`, a tela diz o texto neutro.
+  - id: REL-125-2
+    severity: low
+    category: code
+    status: debito-registrado
+    titulo: "O rate limit de `retomar` (5/min) passou a ser consumido pelo caminho normal de cálculo, e a tela só anuncia o limite do lote (3/min)"
+    description: >
+      Achado desta revisão; o @dev registrou o fato nas "Divergências" e eu confirmo o número na
+      fonte (`retomar/route.ts`: `createRateLimiter('execucoes-retomar', { limit: 5, windowMs:
+      60_000 })`, chaveado por `sessao.userId`). O que acrescento é a **interação**, que ele não
+      desdobrou: agora **todo** cálculo em lote gasta 1 das 5 retomadas. Com os 3 cálculos/min do
+      teto, sobram 2 "Reprocessar" na mesma janela — a folga que ele descreve. Mas o pior caso é
+      pior do que parece: o operador que estourou o minuto e recebe **429 no `retomar`** (não no
+      lote) cai no toast genérico de `calcular.onError`, com a execução já **criada e em
+      `processando` com 0 resultados**. A recuperação existe — "Reprocessar" do `ProgressoExecucao`
+      — mas só aparece **6 minutos** depois (`LIMIAR_TRAVADA_MS`), e a janela do rate limit é de 1
+      minuto. Cinco minutos de tela parada em 0% para um limite que já expirou.
+      Também vale registrar que o painel anuncia "no máximo 3 cálculos por minuto" e **não** o teto
+      de retomadas — o que é defensável (é o limite que o operador controla), mas deixa de fora o
+      único limite que pode falhar **no meio** do fluxo em vez de antes dele.
+    recommendation: >
+      Nenhuma ação nesta story — o número está calibrado e o cenário exige o operador estourar o
+      próprio teto anunciado. Registrar junto do teto do lote: **se `LOTE_CONTABILIDADE_MAX_POR_MINUTO`
+      subir, o limite de `retomar` tem de subir junto** (hoje a folga é 5 − 3 = 2). Se alguém quiser
+      polir sem custo: no `onError` do `calcular`, quando o erro for 429, dizer "aguarde um minuto e
+      use Reprocessar" em vez do texto genérico. Cosmético.
+  - id: REQ-125-1
+    severity: info
+    category: requirements
+    status: verificado-sem-acao
+    titulo: "\"V com adicional semestral vencendo — não incluído neste lote\": o CLIENTE está no lote; o que fica fora é o ADICIONAL"
+    description: >
+      Registro de precisão de linguagem, e a responsabilidade é da **story**, não do @dev: a frase é
+      reprodução **literal** da AC 1 ("V com adicional semestral vencendo em {competência} — não
+      incluído neste lote, gere individualmente"). Ele fez o certo em não reescrever uma AC durante
+      a implementação.
+      O ponto: `composicao.adicionalVencendo` filtra `elegiveis` — ou seja, esses V clientes **estão
+      sendo calculados** (a mensalidade deles entra no lote); o que não entra é o **boleto avulso do
+      adicional** (decisão D9, `execucao-orchestrator.ts:817,845`). Um operador lendo "1 com
+      adicional semestral vencendo em 2026-06 — não incluído neste lote" pode concluir que aquele
+      cliente ficou de fora e emitir a mensalidade dele de novo, individualmente — que é exatamente
+      a duplicidade que a 12.3 existe para impedir (a guarda pegaria, mas depois do susto).
+      Mitigação real já presente: a linha vem em `text-cc-warning` e nomeia os clientes, e a linha de
+      cima já contabilizou esses mesmos clientes em "faixa"/"fixo" — quem somar percebe.
+    recommendation: >
+      Nenhuma ação na 12.5. `DEB-12.5-D` → **12.14** (`adicional-semestral-dois-modos`), dona
+      declarada do assunto: ao mexer no vocabulário do adicional, trocar por algo como "**o adicional
+      semestral** de N cliente(s) vence em {competência} e **não entra no cálculo em lote** — gere
+      individualmente (nomes)". Sujeito explícito. Cosmético, não corretivo.
+  - id: A11Y-125-1
+    severity: info
+    category: code
+    status: debito-registrado
+    titulo: "O painel de composição muda de \"verificando…\" para os números em silêncio — novo candidato a anúncio assistivo que nenhuma AC da 12.12 enumera"
+    description: >
+      Consequência do AC 1, na mesma família do `DEB-12.4-C` que eu registrei no gate anterior. O
+      painel (`:564-620`) é `<h3>` + `<ul>` sem nenhuma live region: quando `faturamentosLancadosQ`
+      responde, o texto troca de "(verificando quais já têm faturamento lançado…)" para "(1 com
+      faturamento lançado · 1 pendente)" **sem anúncio**. Para leitor de tela, a informação que a
+      story existe para dar — a composição — chega em silêncio, e o operador que decide a partir
+      dela não sabe que ela mudou.
+      **A AC 5 da 12.12 enumera 6 pontos de carregamento e este não é um deles** (a story foi escrita
+      antes de o painel existir). Mesmo padrão de "enumeração fechada não absorve item novo por
+      herança" que já custou itens em 12.1, 12.2 e 12.3.
+      Registro também uma **inconsistência menor de conduta**, sem julgá-la como erro: no gate da
+      12.4 anotei que o @dev acertou em **não** adicionar `role="alert"` neste arquivo por ser escopo
+      da 12.12; aqui ele adicionou um (`:614`, no aviso de teto). O caso é diferente e o uso é
+      **correto** — é um aviso que aparece em reação a uma condição e merece assertividade —, mas as
+      duas escolhas juntas mostram que a fronteira "a11y é da 12.12" está sendo aplicada por
+      intuição. Não peço reversão: `role="alert"` ali é melhoria.
+    recommendation: >
+      `DEB-12.5-E` → **12.12**. @po: acrescentar **explicitamente** o painel de composição do lote à
+      AC 5 (ou como AC nova), junto do bloco de falhas que o `DEB-12.4-C` já pediu — os dois estão no
+      mesmo arquivo e resolvem com o mesmo `role="status" aria-live="polite"`. Quarto pedido
+      consecutivo de acréscimo explícito neste épico; os três anteriores (DEB-12.4-B → 12.6,
+      DEB-12.4-C → 12.12, OBS-123-4a → 12.6) **continuam pendentes de @po**.
+  - id: MNT-125-1
+    severity: info
+    category: code
+    status: verificado-sem-acao
+    titulo: "`LoteContabilidadeDialog.tsx` foi de 457 para 710 linhas (+253) — o deslocamento acumulado do épico passou de 450 linhas"
+    description: >
+      Medição minha, atualizando OBS-124-6. O arquivo tinha **326** linhas antes da 12.3, **457**
+      depois da 12.4 e agora tem **710** — **+253 líquidas só nesta story**, o maior salto da cadeia.
+      Somado, o deslocamento desde a redação do épico passa de **450 linhas**, e a maior parte das
+      inserções está no meio do componente, onde as stories seguintes vão trabalhar.
+      Aferições concretas: a AC 1 da **12.15** cita `:128-143`; a AC 6 da **12.12** cita `:130-140`;
+      a AC 5 da 12.12 cita `:167`; a AC 1 da **12.6** cita `:73-79`. **Nenhuma dessas faixas aponta
+      mais para o que descreve.** Arquivos e descrições continuam corretos — só os números não.
+      O crescimento em si é proporcional ao que foi entregue (painel de composição + progresso +
+      recuperação + resumo novo) e o arquivo continua legível, com os comentários explicando **por
+      quê** em vez de **o quê**. Não é sinal de inchaço; é sinal de que `RS-9` está funcionando como
+      previsto e cobrando o preço previsto.
+    recommendation: >
+      Sem ação de código. @dev das próximas da fila (12.6, 12.8): tratar **toda** referência de linha
+      deste arquivo como indicativa e localizar pelo trecho descrito. Vai piorar de novo na 12.6.
+  - id: OBS-125-P
+    severity: info
+    category: process
+    status: verificado-sem-acao
+    titulo: "Registro positivo: a autocrítica do @dev encontrou um beco sem saída real, e ele o corrigiu COM teste antes de eu chegar"
+    description: >
+      Registro porque é o comportamento que eu quero ver repetido, e porque ele muda o tom deste
+      gate. O rastro em `sessionStorage` apontando para uma execução inexistente (404) prendia o
+      diálogo — um defeito que **nenhum** dos ACs cobria, que os testes existentes não pegariam e
+      que só aparece semanas depois em produção. Ele achou sozinho, corrigiu, **restringiu a correção
+      a 404 com justificativa escrita** (falha de rede transitória não pode limpar um resultado que
+      está na tela — raciocínio correto) e cobriu com teste.
+      Que eu tenha encontrado a porta gêmea ainda aberta (REL-125-1) não diminui isso: ele resolveu a
+      metade mais difícil de enxergar (rastro restaurado de uma sessão anterior) e documentou o
+      critério que me permitiu achar a outra rapidamente. Uma correção bem justificada facilita a
+      revisão seguinte; uma correção silenciosa não.
+      Somo ao registro: o `lerLoteEmAndamento` **valida o formato** do que leu do storage antes de
+      confiar (tipo do id + regex da competência), em vez de fazer `JSON.parse` e sair usando.
+      Ninguém pediu; é o que impede um `sessionStorage` adulterado ou de uma versão antiga de virar
+      crash na montagem.
+    recommendation: "Nenhuma. Manter o padrão."
+
+# ─────────────────────────────────────────────────────────────────────────────
+qualidade_dos_testes:
+  veredito: "Discriminantes por prova — 5/5 mutações produziram exatamente as falhas esperadas, zero colateral"
+  analise: >
+    **+24 testes desta story** (20 de componente no diálogo, 2 no Manager, 2 no orquestrador) —
+    ver DOC-125-1 para a reconciliação do número. Arquivo do diálogo: **41 casos**, dobrando os 21
+    da 12.4. Suíte inteira reexecutada por mim: **133 arquivos / 1229 testes**, exit 0.
+    · **Prova de discriminância, o item que sustenta o veredito.** Não confiei no @dev nem na minha
+      leitura: mutei o `src` em 5 pontos independentes e rodei o arquivo a cada vez. Resultado:
+      `valorAEmitir` sem o `filter(ok)` ⇒ **2 falhas**, os dois `it` do AC 4;
+      remover `await execucoesService.retomar` ⇒ **2 falhas**, AC 3 e AC 5-reload;
+      `gravarLoteEmAndamento` sem `setItem` ⇒ **1 falha**, AC 5-reload;
+      remover `|| acimaDoTeto` do `disabled` ⇒ **1 falha**, AC 1 (G-13)-teto;
+      `isSuccess ?` → `true ?` ⇒ **2 falhas**, os dois `it` de "não chuta número".
+      Em **nenhuma** das 5 houve falha colateral nem falha a menos: o mapeamento AC↔teste é **exato**.
+      Árvore restaurada a partir de cópia (não de `git checkout`, que destruiria trabalho não
+      commitado) e conferida por `md5sum -c` no fim.
+    · **Duas mutações foram desenhadas para pegar teste preguiçoso, e as duas pegaram.** No teto,
+      removi só o `disabled` e deixei o rótulo "Acima do teto de 200" intacto — um teste de texto
+      teria passado; o que existe assere `toBeDisabled()` e a **não-chamada** de `dispararLote` após
+      um clique. No painel, forcei o ramo de sucesso com a query pendente — um teste que só olhasse
+      "aparece o painel" teria passado; o que existe compara o **texto renderizado** e afirma o
+      `not.toContain('com faturamento lançado ·')`.
+    · **Asserções sobre o efeito de rede, não sobre estado interno.** O AC 3 assere
+      `toHaveBeenCalledWith('exec-1')` no `retomar`; o AC 5 assere `mockDispararLote` chamado **1**
+      vez após remontar (recuperou, não redisparou); o AC 1 assere `mockFaturamentosLancados`
+      chamado **2** vezes após lançar faturamento (invalidação da query). É a camada certa em todos.
+    · **`ProgressoExecucao` testado por reuso, não por mock.** O hook `useExecucaoRealtime` **não**
+      foi mockado — só o cliente Supabase virou dublê. Isso é o que transforma "reaproveitei o
+      componente" em fato verificável: o teste assere a frase "Isso pode levar alguns minutos…", que
+      só existe no componente reaproveitado. Um `vi.mock` do `ProgressoExecucao` teria tornado o AC 3
+      inverificável e é a saída que quase todo mundo toma.
+    · **Trava de ausência preservada e ampliada.** Os `not.toBeInTheDocument()` do Cenário A da 12.3
+      (`:187-188`, checkbox e "emitir mesmo assim") continuam **intactos** — verifiquei, é critério
+      de reprovação herdado. A 12.5 acrescenta os seus: `queryByText(/Pronto pra calcular/i)` ausente
+      (o texto que a AC 1 substitui não voltou), `/A emitir/` ausente durante o cálculo,
+      `mockResultados` **não** chamado antes de concluir, "Emitir boletos em lote" ausente no lote
+      100% alerta, e a barra sem explicação quando não há inativos.
+    · **Regressão do arquivo vizinho tratada do jeito certo.** Os 4 casos quebrados em
+      `LoteEmissaoDialog.test.tsx` (`vi.mock` do módulo inteiro sem `importOriginal`) foram
+      corrigidos **atualizando o dublê**: contei os `it` antes e depois — **7 → 7**, nenhuma asserção
+      removida, nenhuma afrouxada. As 3 asserções da 12.4 que dependiam do texto "Pronto pra
+      calcular" foram **reancoradas no botão de calcular**, que é o mesmo sinal observável ("o passo
+      avançou") por outro seletor — a intenção do teste da 12.4 está preservada. Este era o ponto
+      onde a story poderia ter tornado testes verdes por mudança de asserção em vez de mudança de
+      comportamento (**critério de reprovação declarado no gate da 12.4**); conferi um a um e **não
+      é o caso**.
+    · **Lacunas correspondentes aos achados:** a rota e o repositório novos, sem teste algum
+      (TEST-125-1); o estado terminal `erro` sem teste de recuperação (REL-125-1 — existe um `it`
+      que prova que o erro é **comunicado**, nenhum que prove que dá para **sair** dele); e o default
+      do `rotulo` (ARCH-125-1).
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      **Rota nova auditada linha a linha contra o precedente.** `GET
+      /api/clientes-contabilidade/faturamentos/lancados` faz `requireRole(['admin','colaborador',
+      'financeiro'])` **antes** de qualquer leitura, valida `competencia` por regex Zod
+      (`/^\d{4}-\d{2}$/`) e devolve 400 sem ela — exatamente os mesmos papéis, o mesmo schema e a
+      mesma ordem de `com-boleto/route.ts`. Sem SQL cru (`.eq()` parametrizado do builder Supabase).
+      O erro de banco vira `ApiError(500,…,'DB_ERROR')` com a mensagem em `details` — mesmo padrão do
+      repositório vizinho.
+      **A mudança de papel que eu fui procurar e não achei:** a rota de lote e a `retomar` exigem
+      **exatamente** o mesmo par `['admin','colaborador']` — não há operador capaz de criar uma
+      execução e incapaz de mandá-la processar. Era o modo de falha silencioso mais provável de
+      [D-1] e ele não existe.
+      **Superfície de leitura, avaliada e aceita:** a rota devolve os ids de **todos** os clientes com
+      faturamento na competência, não só os da seleção do chamador — diferente da resolução de nomes
+      da 12.4, que só resolvia ids que o próprio chamador enviou. Não é exposição real: os três
+      papéis já listam a carteira inteira em `GET /clientes-contabilidade`, e o retorno é só um array
+      de UUIDs, sem valor de faturamento, sem nome, sem documento. **O valor do faturamento nunca sai
+      desta rota** — que é o dado sensível aqui. Idêntico ao que `com-boleto` já faz desde a 12.3.
+      Nenhum `dangerouslySetInnerHTML`; tudo interpolado no JSX novo (`c.nome` dos adicionais,
+      contagens, `brl()`) é escapado pelo React. `sessionStorage` guarda **só** `{ competencia,
+      execucaoId }` — nenhum dado de negócio, nenhum valor, nenhum token — e o que é lido de lá é
+      **validado por formato** antes de usado. `sessionStorage` e não `localStorage` é a escolha
+      certa: o rastro morre com a aba.
+  performance:
+    status: PASS
+    notes: >
+      **Custo novo, contado:** (1) 1 GET a mais por montagem do diálogo e por troca de competência
+      (`faturamentosLancados`, `staleTime: 0` deliberado, mesma razão do `comBoleto` da 12.3 — o
+      passo 1 acabou de escrever nessa tabela), numa consulta de uma coluna só sem join; (2)
+      **≤ 20 escritas de progresso por lote** no teto de 200 clientes ([D-4], `Math.floor(pct)` com
+      passo de 5), contra 1 antes. Conferi que o teste **assere o teto** de escritas
+      (`gravados.length <= ceil(100/PASSO)`), não só que existem escritas — é a asserção que impede
+      alguém de "melhorar" o passo para 1 e multiplicar por 20 as escritas em `execucoes`.
+      **Custo que eu fui verificar e que NÃO existe:** o `useQuery` extra do diálogo compartilha a
+      `queryKey` do `useExecucaoRealtime`, então não há segundo fetch nem segundo canal Realtime — é
+      um observer a mais do mesmo cache. E `resultadosQ` agora só dispara com a execução concluída
+      (`enabled: !!execucaoId && calculoConcluido`), o que **elimina** os fetches parciais que o
+      cálculo assíncrono teria produzido: líquido, provavelmente menos requisições que antes.
+      Os derivados novos (`composicao`, `comFaturamentoLancado`) são `useMemo` O(n) sobre uma coleção
+      limitada a 200 pelo schema. `next build` exit 0 com `.next` limpo; bundle de
+      `/clientes-contabilidade` em **8,38 kB / 190 kB** de First Load, sem alerta de tamanho.
+  reliability:
+    status: CONCERNS
+    notes: >
+      **É aqui que a story ganha muito e perde um pouco, e é por isso que o gate é CONCERNS.**
+      Ganhos concretos, todos travados por teste: (a) o `execucaoId` existe desde o primeiro instante
+      e sobrevive a fechar/reabrir o diálogo — a execução órfã invisível dos 300s acabou; (b) o
+      progresso é **real**, gravado no servidor durante o lote, e falha ao gravá-lo **não derruba o
+      lote** (teste dedicado); (c) o `emVoo` deixou de bloquear o fechamento assim que o id existe —
+      correto, porque a partir daí fechar não é destrutivo, e o lançamento de faturamento (escrita
+      **sem** rastro consultável) continua bloqueando; (d) o resumo pós-cálculo deixou de somar
+      alertas no valor "a emitir"; (e) o painel **nunca chuta** número — "verificando…" e "não foi
+      possível verificar" são estados de primeira classe, com teste cada.
+      Perda: **REL-125-1**. O estado terminal `erro` (e a falha persistente de `detalhe`) não tem
+      saída — o rastro persiste, o botão de calcular não existe, a competência está travada e o ramo
+      de erro do `ProgressoExecucao` não oferece "Reprocessar". A saída é abrir aba nova. É a mesma
+      classe de defeito que o @dev corrigiu para 404; falta a porta gêmea. Sem perda de dado, com
+      contorno óbvio para quem sabe que `sessionStorage` é por aba — e não óbvio para o operador.
+      `tsc`, lint, **1229 testes**, build e 5 mutações: todos reexecutados por mim, todos verdes.
+      **`RS-1` continua REDUZIDO, NÃO FECHADO** — esta story não mexeu nas camadas 1 e 3 do
+      `DEB-12.3-A`, que seguem sem dono. Quem consolidar o Épico 12 não pode escrever "RS-1 fechado".
+  maintainability:
+    status: PASS
+    notes: >
+      **Reuso em vez de invenção nos quatro pontos onde havia tentação**, e nos quatro eu confirmei
+      na fonte: `ProgressoExecucao` + `useExecucaoRealtime` (barra, `%`, `role="status"`, limiar de
+      travamento e "Reprocessar" — nada reimplementado), `cicloAdicionalVencendoNaCompetencia` (a
+      MESMA função de `GerarExecucao.tsx`, mesma ordem de argumentos, sem variante), `retomar` (rota
+      existente, não rota nova) e o desenho de `com-boleto` como molde da rota nova. Zero componente
+      novo, zero utilitário de formatação novo, **zero token e zero `.css`** — conferido por grep no
+      `git status` (nenhum `.css`, nenhum `docs/design-system.md`, nenhuma migration), que é o
+      critério de escopo D4 do épico.
+      **Regressão da 12.2 (critério herdado): zero.** Grep nas linhas `+` do diff de `apps/web/src`
+      por `function brl|function normalizarBusca|function competenciaAtual|toLocaleString('pt-BR')|
+      toFixed|<input type="text"> de competência` → **nenhuma ocorrência**. Segue importando `brl` de
+      `@/lib/formato` e usando `<CampoCompetencia>`.
+      [D-5] é a melhoria estrutural silenciosa desta story e merece registro: o `200` estava escrito
+      em dois lugares e o `3` num terceiro; agora os quatro consumidores (schema/422, rota/rate
+      limit, orquestrador/`LOTE_MUITO_GRANDE`, painel/aviso) leem de `@cobranca/shared`, com o alias
+      `LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS` preservado para não quebrar quem já importava. Um
+      limite que a tela "acha que sabe" seria pior que nenhum — e o AC 1 obrigava a tela a saber.
+      Comentários novos explicam **por quê**: o de `:485-493` (o `DEB-12.4-A`), o do topo da rota de
+      lote (a tabela de decisão de [D-1] resumida onde ela é lida), o do `catch {}` do storage e o de
+      `:319-323` sobre o segundo observer da mesma query. As `[AUTO-DECISION]` estão todas com razão
+      declarada, o que barateia a próxima revisão.
+      Débito de manutenção real: a rota/repositório sem teste (TEST-125-1) e o crescimento do arquivo
+      (MNT-125-1).
+
+# ─────────────────────────────────────────────────────────────────────────────
+limitacao_da_verificacao_manual:
+  status: "NÃO EXECUTADA — nem pelo @dev, nem por mim. Registrado como limitação, não como item cumprido."
+  o_que_o_dev_declarou: >
+    "Sem verificação manual no browser (não há servidor de dev rodando nesta sessão)". Declaração
+    honesta, mesmo padrão que elogiei em OBS-124-7 e que mantenho como positivo.
+  o_que_eu_fiz_de_fato: >
+    **Não subi o app no navegador.** Este ambiente de revisão não tem navegador. No lugar: li o
+    caminho inteiro no código, rodei os testes de componente (jsdom/Testing Library), o `next build`,
+    **5 mutações** para provar que os testes reagem e **1 sonda temporária** para provar um defeito
+    que nenhum teste cobria (REL-125-1). Não vou carimbar como feito o que não foi feito.
+  o_que_a_cobertura_de_componente_NAO_compensa:
+    - >
+      **A barra de progresso se mexendo de verdade.** jsdom renderiza `style={{ width: '42%' }}` e o
+      teste confirma o número — mas o caminho completo (servidor grava a cada 5 pontos → Postgres
+      Changes → `invalidateQueries` → refetch → nova largura) atravessa Realtime do Supabase, que
+      está **mockado**. O `refetchInterval` de 3s é o fallback e também não é exercitado. Se o
+      Realtime não estiver publicando a tabela `execucoes` para este canal, a barra ficaria parada em
+      0% até o `retomar` responder — e **nenhum teste pegaria**. Risco avaliado como baixo por
+      precedente (o mesmo componente já roda em produção no fluxo médico, com a mesma assinatura),
+      não por verificação.
+    - >
+      **O caminho de rate limit real.** `assertRateLimit` é in-memory por instância; em serverless o
+      comportamento efetivo depende de quantas instâncias atendem o usuário. Fora do escopo desta
+      story (pré-existente), mas o painel agora **anuncia** o número — se o limite efetivo divergir
+      do anunciado, a tela vira a fonte da mentira que [D-5] existe para evitar.
+    - >
+      **O empilhamento visual do `ProgressoExecucao` dentro do `<Modal>`** e o comportamento de foco
+      quando o bloco de progresso substitui o bloco de composição no meio do fluxo (o elemento focado
+      pode desaparecer sob o operador). Território da 12.1/12.12, não observado aqui.
+  recomendacao: >
+    Uma passada manual de ~4 minutos antes do deploy, cobrindo só o que jsdom não vê: (i) abrir o
+    lote com ≥3 clientes, calcular, e confirmar **visualmente** que a barra sai de 0% e **anda**
+    (é o objeto literal do título da story) — se ficar parada e pular para 100%, o Realtime/polling
+    não está chegando e a entrega é decorativa; (ii) fechar o diálogo no meio do cálculo e reabrir,
+    conferindo que volta a acompanhar a mesma execução; (iii) recarregar a página (F5) no meio do
+    cálculo, mesma conferência. O item (i) é o único que eu classificaria como **recomendado antes do
+    deploy**, e não apenas desejável.
+
+# ─────────────────────────────────────────────────────────────────────────────
+debitos_tecnicos_do_epico:
+  - id: DEB-12.5-A
+    severity: medium
+    category: code
+    titulo: "Saída para execução em estado terminal `erro` (e para falha persistente de `detalhe`)"
+    origem: "REL-125-1 desta revisão"
+    dono_proposto: "**12.6** — dona declarada de \"erro vs. vazio nos pontos de carga\" neste arquivo, e próxima da fila `RS-9`"
+    verificacao_do_roteamento: >
+      Conferido na fonte (regra herdada dos gates 12.2/12.3/12.4): a File List proposta da 12.6
+      inclui `LoteContabilidadeDialog.tsx` e o teste correspondente, e o assunto (estado de erro numa
+      consulta deste diálogo) é literalmente o tema da story. O roteamento é válido em termos de
+      arquivo **e** de tema.
+    recomendacao: >
+      @po: acrescentar **explicitamente** à AC 1 **e** à File List da 12.6 — não confiar em herança.
+      A AC 1 da 12.6 enumera 4 pontos de carga e **nenhum** é o estado terminal da execução do lote.
+      Este épico já perdeu itens exatamente assim em 12.1, 12.2 e 12.3.
+      **Aviso acumulado, terceiro gate consecutivo:** a 12.6 já deveria ter recebido `DEB-12.4-B`
+      (terceiro ramo de rótulo) e `OBS-123-4a` (`comBoletoQ` fora da enumeração). Se os três forem
+      acrescentados juntos, resolvem-se com uma passada só no arquivo. Se nenhum for acrescentado,
+      os três morrem no Dev Agent Record da 12.6.
+  - id: DEB-12.5-B
+    severity: medium
+    category: tests
+    titulo: "Teste de rota + teste de repositório para `faturamentos/lancados` (o precedente da 12.3 tem os dois)"
+    origem: "TEST-125-1 desta revisão"
+    dono_proposto: "@po decide — cabe na 12.6, mas **não** está sob contenção `RS-9` (é teste de servidor, arquivos novos)"
+    avaliacao: >
+      Diferente do DEB-12.5-A, este **não** toca o componente em contenção: são dois arquivos de
+      teste **novos** em `tests/server/`. Pode virar commit próprio a qualquer momento, sem custo de
+      fila. É o argumento para não deixá-lo esperando a 12.6.
+    recomendacao: >
+      Copiar o esqueleto de `tests/server/clientes-contabilidade/com-boleto-route.test.ts` e de
+      `tests/server/repositories/boleto-repository-clientes-contabilidade-com-boleto.test.ts`,
+      trocando o alvo. Cobrir: `requireRole` com os 3 papéis, 400 sem `competencia`, 400 com formato
+      inválido, caminho feliz, dedup e a propagação de `DB_ERROR`.
+  - id: DEB-12.5-C
+    severity: low
+    category: requirements
+    titulo: "A AC 1 da 12.11 aponta para `ProgressoExecucao.tsx:62`, que deixou de ser o alvo"
+    origem: "ARCH-125-1 desta revisão"
+    dono_proposto: "**12.11** — correção de redação da própria AC, feita pelo @po antes de a story abrir"
+    recomendacao: >
+      @po: reescrever a AC 1 da 12.11 para apontar ao **valor default da prop `rotulo`** (localizar
+      pelo texto "Processando médicos"), e registrar em Dev Notes que
+      `rotulo="Calculando clientes contábeis"` do lote contábil já está correto e **não** deve ser
+      alterado. Opcional: um `it` travando o default.
+  - id: DEB-12.5-D
+    severity: info
+    category: requirements
+    titulo: "\"não incluído neste lote\" sem sujeito explícito — é o adicional que fica fora, não o cliente"
+    origem: "REQ-125-1 desta revisão"
+    dono_proposto: "**12.14** (`adicional-semestral-dois-modos`)"
+    recomendacao: "Trocar a frase por uma com sujeito explícito ao mexer no vocabulário do adicional. Cosmético."
+  - id: DEB-12.5-E
+    severity: info
+    category: code
+    titulo: "Painel de composição sem live region — novo candidato a anúncio assistivo, fora da enumeração da 12.12"
+    origem: "A11Y-125-1 desta revisão"
+    dono_proposto: "**12.12** — agrupar com `DEB-12.4-C` (bloco de falhas), mesmo arquivo, mesma correção"
+    recomendacao: "@po: acréscimo explícito à AC 5 da 12.12. Quarto pedido consecutivo deste tipo no épico."
+  - id: DEB-12.4-A
+    severity: low
+    status: "**FECHADO** nesta revisão"
+    titulo: "Comentário do bloco de falhas + asserções de Escape/backdrop"
+    atualizacao_desta_revisao: >
+      Entregue nas **duas** metades, conforme `rastreabilidade.AC6_deb_12_4_A`. O comentário foi
+      reescrito nomeando o débito e descrevendo o comportamento real do guard `!execucaoId`; as
+      asserções de Escape e backdrop existem, mais o caso negativo com `emVoo` que eu não havia
+      pedido. **Pode ser marcado como resolvido no registro do épico.**
+  - id: DEB-12.4-B
+    severity: low
+    category: code
+    status: "AINDA PENDENTE DE @po — reafirmado neste gate"
+    titulo: "Terceiro ramo de rótulo: competência não informada ≠ verificação pendente ≠ erro"
+    atualizacao_desta_revisao: >
+      **Sem mudança e agora com mais um ocupante.** O ternário de rótulo do botão de calcular ganhou
+      um quarto ramo nesta story (`acimaDoTeto`), mas continua **sem** ramo para `isError` (OBS-123-4a)
+      e sem ramo para `!enabled` (OBS-124-3): com `competencia === ''` os botões continuam
+      desabilitados exibindo "Verificando emissões…" sem que nada esteja sendo verificado. A 12.5 não
+      pioro nem melhorou; só cresceu ao redor.
+    recomendacao: "Inalterada — @po precisa acrescentar `comBoletoQ` à AC 1 e à File List da 12.6, agora junto de DEB-12.5-A. Terceiro gate consecutivo com este pedido."
+  - id: DEB-12.4-C
+    severity: info
+    category: requirements
+    status: "AINDA PENDENTE DE @po — reafirmado e AMPLIADO neste gate"
+    titulo: "Anúncio assistivo do bloco de falhas — e agora também do painel de composição"
+    atualizacao_desta_revisao: "Ver DEB-12.5-E: o épico ganhou um segundo alvo no mesmo arquivo, com a mesma correção. Acrescentar os dois juntos à AC 5 da 12.12."
+  - id: DEB-12.3-A
+    severity: medium
+    category: architecture
+    status: "AINDA SEM DONO — reafirmado neste gate"
+    titulo: "Guarda de servidor por `(cliente_contabilidade_id, competência)` — o resíduo de `RS-1`"
+    atualizacao_desta_revisao: >
+      **Sem mudança.** A 12.5 não tocou nas camadas 1 (corrida entre abas/operadores) nem 3
+      (calcular → calcular → emitir os dois). `RS-1` segue **REDUZIDO, NÃO FECHADO**. Se alguém
+      escrever "RS-1 fechado" ao consolidar o Épico 12, este gate e os da 12.3/12.4 são a
+      contraprova.
+      Observação nova e relevante: a 12.5 **facilitou** a camada 3 sem querer — como o `execucaoId`
+      agora existe desde o primeiro instante e fica em `sessionStorage`, um segundo cálculo na mesma
+      aba encontra o rastro e não redispara. Não é a guarda transacional que o débito pede (não
+      protege entre abas nem entre operadores), mas estreita a janela.
+    recomendacao: "Inalterada — @po/dono precisa abrir a story nova. Não implementar dentro de 12.6 ou 12.8 por iniciativa própria."
+  - id: DEB-12.3-C
+    severity: low
+    status: "AINDA SEM DONO — reafirmado neste gate"
+    titulo: "O fluxo MÉDICO (`NovaExecucao.tsx`) continua sendo o menos seguro dos dois"
+    atualizacao_desta_revisao: >
+      **A distância aumentou de novo.** Depois da 12.5, o lado contábil tem painel de composição
+      pré-cálculo, limites visíveis antes do clique, progresso real, `execucaoId` recuperável e
+      separação "a emitir" vs "total geral". O lado médico não tem nenhuma das cinco coisas, e
+      continua com o comentário de cache que a 12.3 corrigiu do lado contábil. O @dev fez certo em
+      não tocar (fora de escopo, `RS-8`/rebase).
+    recomendacao: "Inalterada — @po/@sm precisa de decisão registrada: story de paridade, absorção em DEB-12.3-A, ou aceitação formal da assimetria."
+  - id: DEB-12.2-A
+    severity: low
+    status: "AINDA SEM DONO — reafirmado neste gate"
+    titulo: "7º campo de competência (`<input>` de texto livre) em `RecebiveisManager.tsx:191`"
+    atualizacao_desta_revisao: "Sem mudança. Nenhuma story aberta do Épico 12 é dona desse arquivo; o roteamento sugerido à época (12.18) está errado. Continua dependendo de decisão do @po."
+
+# ─────────────────────────────────────────────────────────────────────────────
+frente_alheia_na_arvore:
+  veredito: "Fora do escopo do veredito, verificada como não-colidente."
+  o_que_e: >
+    O lead declarou uma frente separada na mesma árvore (`server/gateway/mensagem-boleto.ts`,
+    `server/gateway/email-gateway.ts`, `server/emissao/emitir-boleto.ts`,
+    `api/execucoes/resultados/[id]/reenviar_boleto/route.ts`, `tests/server/gateway/
+    email-gateway.test.ts`) — diferenciação do texto da mensagem de boleto entre cobrança médica e
+    honorários contábeis por tipo de pagador. **Não avaliei contra os ACs da 12.5.**
+  o_que_eu_confirmei: >
+    · **Interseção de arquivos: zero.** Nenhum dos 5 arquivos da frente alheia aparece na File List
+      da 12.5, e nenhum dos 15 arquivos da 12.5 aparece na frente alheia.
+    · **Interseção de import: nenhuma aresta.** A 12.5 vive em `components/clientes-contabilidade`,
+      `services`, `orchestrator`, `repositories/cliente-contabilidade-faturamento-repository` e 3
+      rotas; a frente alheia vive em `server/gateway` + `server/emissao` + 1 rota de reenvio. O
+      `execucao-orchestrator.ts` é o único arquivo grande tocado pela 12.5 e ele **não** importa
+      `mensagem-boleto`/`email-gateway`.
+    · **Nada quebrado:** suíte inteira verde (1229), `tsc` exit 0, build exit 0 — com as duas frentes
+      na árvore ao mesmo tempo.
+  unica_consequencia_para_a_12_5: >
+    Os **+4 testes** de `email-gateway.test.ts` entram no total da suíte e foram atribuídos à 12.5 no
+    Debug Log. Ver DOC-125-1. É a única contaminação, e é de contabilidade, não de comportamento.
+
+impacto_no_sequenciamento: >
+  **CONCERNS sem rework bloqueante. A fila `RS-9` avança: 12.6 está liberada para abrir.** Ordem
+  obrigatória mantida — **12.3 → 12.4 → 12.5 → 12.6** (+ 12.8 na mesma contenção), com a fila
+  estendida do arquivo (12.12 / 12.15 / 12.16 / 12.17) inalterada.
+  **A 12.6 herda três itens, e é a última chance dos dois primeiros:** `DEB-12.5-A` (saída do estado
+  `erro` — o único `medium` de código deste gate), `DEB-12.4-B` (terceiro ramo de rótulo) e
+  `OBS-123-4a` (`comBoletoQ` fora da enumeração da AC 1). Os três são o **mesmo tema** — "esta tela
+  não distingue erro de vazio de não-disparado" — e resolvem-se com uma passada só. **Os três exigem
+  acréscimo explícito do @po à AC 1 e à File List da 12.6**; é o terceiro gate consecutivo em que
+  peço isso e a AC 1 continua com a mesma enumeração de 4 pontos.
+  Avisos para quem abrir a 12.6:
+  · o arquivo cresceu **+253 linhas líquidas** (457 → **710**) e o deslocamento acumulado desde a
+    redação do épico passa de **450** — tratar **toda** referência de linha como indicativa e
+    localizar pelo trecho descrito (MNT-125-1);
+  · o insumo já está pronto: `faturamentosLancadosQ` e `execucaoQ` são exatamente os dois pontos de
+    carga novos que a 12.6 vai querer tratar, e os dois já têm `isError`/`isSuccess` expostos;
+  · **`emVoo` mudou de semântica** (`calcular.isPending && !execucaoId`): quem mexer no fechamento do
+    diálogo precisa saber que fechar durante o cálculo passou a ser **deliberadamente permitido**, e
+    que há 3 testes travando isso nos dois sentidos.
+  **Critérios de reprovação herdados, ainda vigentes e verificados como intactos neste gate:**
+  (a) qualquer opt-in / checkbox de reinclusão / "emitir mesmo assim" que devolva ao payload um
+  cliente já emitido viola o Cenário A da 12.3 — os testes de ausência (`:187-188`) continuam lá,
+  **não removê-los**; (b) qualquer `brl`/`normalizarBusca`/`competenciaAtual` local reintroduzido, ou
+  `<input type="text">` de competência novo, é regressão direta da 12.2; (c) tornar verde um teste da
+  12.4 por mudança de asserção em vez de mudança de comportamento é reprovação — a 12.5 **reancorou**
+  3 asserções (texto removido pela AC 1 → botão de calcular) e eu conferi uma a uma que a intenção
+  foi preservada; quem repetir a manobra na 12.6 será conferido do mesmo jeito.
+  **Critérios de reprovação novos, a partir deste gate:**
+  (d) o AC 4 (só `ok` soma em "A emitir") e o `enabled: … && calculoConcluido` da `resultadosQ` são
+  comportamento travado — as duas mutações correspondentes são discriminantes por verificação minha;
+  (e) o `execucaoId` **não** pode voltar a ser criado depois do processamento (seria desfazer o AC 5);
+  (f) `ProgressoExecucao` **não** pode ser mockado nos testes deste diálogo — é o mock que tornaria o
+  AC 3 inverificável, e hoje só o cliente Supabase é dublê.
+  Pendências que **não** bloqueiam a fila mas precisam de decisão do @po antes do fechamento do
+  épico: `DEB-12.3-A` (sem dono; é o que impede declarar `RS-1` fechado), `DEB-12.3-C` (sem dono),
+  `DEB-12.2-A` (sem dono), o dono de `DEB-12.5-B` (teste de servidor, fora da contenção) e os
+  acréscimos explícitos de `DEB-12.5-A`/`DEB-12.4-B`/`OBS-123-4a` à **12.6**, `DEB-12.5-C` à
+  **12.11**, `DEB-12.5-D` à **12.14** e `DEB-12.4-C`/`DEB-12.5-E` à **12.12**.
+  Ação recomendada antes do deploy (não bloqueante para o gate): a passada manual de ~4 minutos de
+  `limitacao_da_verificacao_manual.recomendacao`, em especial o item (i) — confirmar que a barra
+  **anda**. É o único ponto em que a entrega desta story pode estar decorativa sem nenhum teste
+  perceber.

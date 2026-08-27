@@ -1,0 +1,365 @@
+# QA Gate — Story 12.2 (Moléculas compartilhadas e formato pt-BR) — iteração 1 (final)
+storyId: "12.2"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-08-25"
+commit: 79e4acf
+epic: "12 — Sanitização do caminho de emissão (docs/architecture/epic-sanitizacao-emissoes.md), Fase 0"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [OBS-122-1 (low, débito), OBS-122-2 (low, débito de roteamento), OBS-122-3 (info), OBS-122-4 (info), OBS-122-5 (info)]
+notes: >
+  AC 1-7 verificados contra o diff real de `79e4acf`, não contra o relato do @dev. Comandos
+  reexecutados por mim nesta revisão, dentro de `apps/web`: `npx tsc --noEmit` (exit 0),
+  `npm run lint` ("No ESLint warnings or errors"), `npx vitest run` (**130 arquivos / 1164 testes,
+  130 passed / 1164 passed**) e `npm run build` (exit 0, 24 rotas) — batem **exatamente** com o
+  reportado no Dev Agent Record. Árvore conferida antes de rodar: `HEAD` é `79e4acf` e
+  `git status --short` não tem nenhum arquivo de `apps/web` sujo, então a suíte reflete o commit
+  revisado e não estado de trabalho local. `RS-8` (rebase) confirmado pela topologia real:
+  `79e4acf → daaa36d → 7803dc0`, sem merge nem conflito com a 12.1.
+  AC 1: `lib/formato.ts` entrega `brl()` (`toLocaleString('pt-BR', currency BRL`) e
+  `normalizarBusca()` (NFD + remoção de U+0300–U+036F + `toLowerCase`), ambos funções puras, com
+  JSDoc que documenta o espaço não quebrável do `toLocaleString` — detalhe que salva quem escrever
+  o próximo teste.
+  AC 2: `competenciaAtual()` entrou **em `lib/competencia.ts`**, ao lado de `competenciaAnterior`,
+  como a nota de reuso "grounded" do épico exigia — não em arquivo novo.
+  AC 3: os 6 pontos editáveis conferidos um a um no diff — `NovaExecucao.tsx` (3 modos, incluindo o
+  que precisava preservar `name="competencia"`, e o @dev preservou), `LoteContabilidadeDialog`,
+  `GerarExecucao`, `FaturamentoEEmissao`. `HistoricoExecucoes.tsx:167` intocado, como o @po fixou.
+  AC 4: **verificado por conta própria, não pelo grep do @dev.** Contei as duplicações no commit
+  ANTERIOR: `git grep -c -E "function brl\(|const brl = \(" 79e4acf~1 -- 'apps/web/src/**'` = **18**,
+  `function normalizarBusca\(` = **6**, `function competenciaAtual\(` = **3**. Hoje
+  `rg 'function (brl|normalizarBusca|competenciaAtual)' apps/web/src` devolve **só as 3 definições
+  em `lib/`** — mais `brlCompacto` em 3 arquivos de gráfico, que é outra função (rótulo compacto de
+  eixo) e está corretamente intocada.
+  AC 5: os 5 pontos enumerados migrados + 1 **toast** que a AC não listava e que imprimia
+  "R$ 250.00" na tela (`FaturamentoEEmissao.tsx:63`) — achado do @dev, correto e valioso. O
+  `toFixed` que sobrou em `apps/web/src` é: `SyncModal.tsx:152` (percentual, não moeda),
+  `server/engine/**` (port 1:1 do Python, fora de escopo por decisão do épico) e
+  `server/emissao/emitir-boleto.ts:128` — ver OBS-122-1.
+  AC 6: os 3 `<input>` de texto de `NovaExecucao` viraram `type="month"`; o valor inválido não
+  chega mais ao estado. Os testes pré-existentes de `NovaExecucao.test.tsx` e
+  `FaturamentoEEmissao.test.tsx` continuam usando `getByLabelText('Competência')` **sem alteração**
+  e passam — sinal forte de que a associação rótulo↔campo sobreviveu à migração (smoke real dos
+  consumidores, ainda que o @dev não tenha escrito testes novos para eles).
+  D4 (restrição do épico): `git show 79e4acf --name-only` não devolve nenhum `.css`, nenhum
+  `docs/design-system.md` e nenhum `server/engine/**`; o único doc tocado é a própria story.
+  Anti-self-review: revisão ativa. Recontei as duplicações no commit anterior em vez de aceitar o
+  número do @dev (e achei 27, não 26 — OBS-122-3), rastreei o campo de `RecebiveisManager` até o
+  `.eq()` do repositório para julgar "filtro vs. dado", conferi a File List da 12.18 real em vez do
+  relato (o roteamento sugerido pelo @dev está errado — OBS-122-2) e encontrei um `toFixed` de
+  moeda que chega à tela e que o @dev não registrou (OBS-122-1).
+decisoes_do_dev_avaliadas:
+  - id: D-1
+    assunto: "Escopo da AC 4 ampliado — 11 duplicações mapeadas vs. 27 reais em `apps/web/src`"
+    veredito: ACEITA
+    justificativa: >
+      A leitura literal do @dev é a correta, e **não** por generosidade de interpretação: a mesma
+      cláusula universal aparece no **critério de pronto do próprio épico** para a 12.2
+      (`epic-sanitizacao-emissoes.md`, §Fase 0): *"nenhuma cópia local de
+      `brl`/`competenciaAtual`/`normalizarBusca` no `apps/web/src`"*. Ou seja, o quantificador
+      universal e o escopo `apps/web/src` não são invenção da story — são texto do épico, repetido
+      na AC 4. O parêntese "(11 duplicações → 4 utilitários)" é herdado da auditoria
+      (`ux-gaps-emissoes.md`, R-12: "as 4+3+4 duplicações"), que se declara limitada ao **caminho de
+      emissão**. Uma **contagem estimada** não pode estreitar uma **cláusula normativa
+      universalmente quantificada** — se pudesse, a AC 4 ficaria literalmente descumprida no dia da
+      entrega, com 15+ cópias vivas ao lado do utilitário novo.
+      Verifiquei também a premissa (b) do @dev em vez de aceitá-la: extraí todas as linhas `+`/`-`
+      dos 21 arquivos de consumidor e **todos os corpos removidos são byte-a-byte idênticos** ao
+      canônico (`v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })`, ou a variante
+      `(v ?? 0)`; e `normalizarBusca` com o mesmo NFD + classe de combining marks). Cada arquivo
+      "extra" é literalmente `apaga a função, adiciona o import`. Delta de comportamento: zero.
+      **Não é scope creep e não é regressão** — é a AC executada como escrita. Registrado para o
+      @po: o diff (33 arquivos de código) é maior que a File List proposta (~10), e isso é
+      consequência prevista da cláusula, não desvio.
+  - id: D-2
+    assunto: "`brl` aceita `number | null | undefined`, não só `number` (letra da AC 1)"
+    veredito: ACEITA
+    justificativa: >
+      Alargar um parâmetro é seguro por contravariância — todo chamador que passava `number`
+      continua compilando e produzindo exatamente o formato que a AC 1 descreve (`brl(1480.56)` →
+      "R$ 1.480,56", travado por teste). Confirmei no `79e4acf~1` que **4 das 18 cópias** já tinham
+      a assinatura nulável com `(v ?? 0)` embutido (`HistoricoExecucoes:11`,
+      `HistoricoExecucoesPorMedico:12`, `ExtratoManager:24`, `RecebiveisManager:15`): unificar na
+      assinatura estrita obrigaria a espalhar `?? 0` pelo JSX dessas 4 telas, mudança cosmética com
+      risco de esquecer um ponto. A implementação é superconjunto da pedida, com teste dedicado para
+      `null`/`undefined`.
+  - id: D-3
+    assunto: "`competenciaAtual()` lê o relógio LOCAL; `competenciaAnterior()` continua em UTC"
+    veredito: ACEITA
+    justificativa: >
+      **Intencional, documentado e testado — não é bug introduzido.** Três verificações
+      independentes: (1) as 3 cópias eliminadas usavam `getFullYear()/getMonth()` (locais) no
+      `79e4acf~1` — é port 1:1, o @dev não introduziu leitura nova nem "consertou" nada de
+      passagem; (2) o JSDoc de `competenciaAtual` explica o porquê e termina com o aviso operacional
+      certo ("as duas leituras são deliberadas; não unificar sem revisar os dois chamadores"), e o
+      cabeçalho do arquivo foi atualizado para dizer que cada função documenta qual relógio lê —
+      quem abrir o arquivo daqui a seis meses não vai "corrigir" a assimetria por engano;
+      (3) existe teste dedicado (`competencia.test.ts`, "segue o calendário LOCAL do operador, não o
+      UTC") com o caso 31/08 21h em UTC-3, que quebraria se alguém trocasse por `getUTCMonth()`.
+      O raciocínio de fundo confere: `competenciaAtual` só pré-preenche campo em componente
+      `'use client'` (os 3 consumidores são client components, conferido), e em UTC-3 o dia 31 às
+      21h já é o mês seguinte em UTC — o campo abriria errado exatamente na virada do mês, que é
+      quando o fechamento acontece. `competenciaAnterior` roda no cron, em servidor UTC.
+      A assimetria é a resposta certa; unificar seria o bug.
+  - id: D-4
+    assunto: "Removido o apoio 'Formato: AAAA-MM (Ex: 2026-05)', `placeholder`, `maxLength` e `font-mono`"
+    veredito: ACEITA
+    justificativa: >
+      Sob `<input type="month">` o navegador renderiza um seletor mm/aaaa; instruir "digite AAAA-MM"
+      passaria a ser instrução errada, e `maxLength`/`placeholder` não têm efeito em `type="month"`.
+      O teste `CampoCompetencia.test.tsx` inclusive **trava a ausência** desses atributos, o que
+      impede a volta silenciosa do padrão antigo. Nenhum teste dependia dos textos removidos
+      (conferido: os testes de `NovaExecucao` sempre selecionaram o campo por `getByLabelText`).
+  - id: D-5
+    assunto: "Guardas de regex de disparo mantidas onde estavam"
+    veredito: ACEITA
+    justificativa: >
+      Conferido no código: `NovaExecucao` (`competenciaValida`, `:346`, além de `:180` e `:232`)
+      mantém `/^\d{4}-\d{2}$/`; `GerarExecucao.tsx:69` e `FaturamentoEEmissao.tsx:86` mantêm
+      `/^\d{4}-(0[1-9]|1[0-2])$/`. Continuam necessárias para o caso "campo vazio" (`type="month"`
+      entrega `''` quando o operador limpa) e deixaram de ser a única barreira contra mês
+      inexistente. Ver OBS-122-4 para a nota de defesa em profundidade no servidor.
+  - id: ACHADO-FORA-DE-ESCOPO
+    assunto: "7º campo de competência em `RecebiveisManager.tsx:191` não migrado"
+    veredito: ACEITA COM RESSALVA (a exclusão está certa; a justificativa e o roteamento estão errados)
+    justificativa: >
+      **A exclusão é correta e confirmada.** Rastreei o campo ponta a ponta em vez de aceitar o
+      rótulo "filtro": `useState('')` (`:118`) → `filtros.competencia = competencia || undefined`
+      (`:144`) → `queryKey`/`recebiveisService.listar` (`:149-152`) → `GET /api/recebiveis` →
+      `recebiveis-repository.ts:26`, que faz apenas `query.eq('competencia', filtros.competencia)`.
+      **Em nenhum ponto o valor é persistido nem vira competência de faturamento** — é filtro de
+      leitura puro. Não deveria ter entrado no escopo da 12.2: ACs 3 e 6 enumeram 6 pontos, e o
+      `[AJUSTE @po 2026-08-25]` fechou essa lista deliberadamente.
+      **Ressalva 1 — a analogia do @dev não se sustenta.** O @dev justificou dizendo que "o mesmo
+      raciocínio que tirou o `<select>` de `HistoricoExecucoes.tsx:167` se aplica". Não se aplica:
+      o de `HistoricoExecucoes` é um `<select>` de competências **já existentes**, e trocá-lo por um
+      seletor de mês livre **mudaria comportamento** — esse é o motivo real da exclusão dele. O de
+      `RecebiveisManager` é um `<input>` de **texto livre** cujo contrato de valor é idêntico ao do
+      `<CampoCompetencia>` (`AAAA-MM` ou `''`): migrá-lo **não** mudaria comportamento nenhum. A
+      exclusão se sustenta só pela enumeração fechada das ACs, não pelo paralelo com
+      `HistoricoExecucoes`. Corrigir o registro importa para que a próxima story não herde um
+      raciocínio inválido.
+      **Ressalva 2 — o roteamento sugerido é factualmente errado:** ver OBS-122-2.
+issues:
+  - id: OBS-122-1
+    severity: low
+    category: code
+    status: debito-registrado
+    titulo: "`toFixed(2)` de moeda sobrevivente que CHEGA à tela: `server/emissao/emitir-boleto.ts:128`"
+    description: >
+      Achado desta revisão, não registrado pelo @dev. O @dev fechou a AC 5 com
+      `grep toFixed apps/web/src/components apps/web/src/app` — escopo que **exclui `server/`**.
+      Rodei o grep em `apps/web/src` inteiro e sobrou um caso de moeda fora do `server/engine`:
+      `validarResultadoParaEmissao` monta
+      `` `Valor do resultado (R$ ${Number(resultado.total_valor).toFixed(2)}) está abaixo do mínimo
+      aceito pelo gateway (R$ 5,00).` `` e lança como `ApiError` 422 `VALOR_ABAIXO_MINIMO`.
+      Confirmei que essa string **é renderizada**: `GerarExecucao.tsx:127` e
+      `RelatorioGrupos.tsx:135` fazem `toast(e.message, 'error')` cru na emissão individual. Ou
+      seja, numa emissão abaixo do mínimo a tela mostra literalmente
+      "Valor do resultado (R$ 4.50) está abaixo do mínimo aceito pelo gateway (R$ 5,00)" — os dois
+      formatos, errado e certo, na **mesma frase**. É exatamente o defeito que a AC 5 nomeia.
+      Não reprova o gate: a AC 5 enumera os 5 pontos de G-27 (todos em componentes) e todos foram
+      migrados, e a auditoria nunca varreu `server/`. Mas há uma **assimetria de escopo do @dev**
+      digna de registro: para a AC 4 ele varreu `server/` (e corrigiu `gateway/email-gateway.ts`);
+      para a AC 5, não. O caminho de lote está protegido — `LoteEmissaoDialog.tsx:13` traduz
+      `VALOR_ABAIXO_MINIMO` para mensagem própria já em pt-BR —, então o vazamento é só na emissão
+      individual.
+    recommendation: >
+      Uma linha: importar `brl` de `@/lib/formato` em `server/emissao/emitir-boleto.ts` e trocar
+      `R$ ${Number(...).toFixed(2)}` por `${brl(Number(resultado.total_valor))}`. **Absorver na
+      12.13**, que já é a story do "texto do mínimo do gateway" (AC 3, e cita `VALOR_ABAIXO_MINIMO`
+      nas Dev Notes) — exige acrescentar `apps/web/src/server/emissao/emitir-boleto.ts` à File List
+      dela. **Não abrir story própria** e **não reabrir a 12.2**.
+  - id: OBS-122-2
+    severity: low
+    category: requirements
+    status: debito-registrado
+    titulo: "O débito do campo de `RecebiveisManager` foi roteado para uma story que não abre esse arquivo"
+    description: >
+      Achado desta revisão. O @dev encerrou o achado fora de escopo com *"sugiro decidir junto com
+      12.18 (avisos de carteira/lista), que já mexe nessa tela"*. **12.18 não mexe nessa tela.**
+      Conferido na fonte, não no relato: a File List de
+      `docs/stories/12.18.avisos-carteira-lista.story.md` (`:50-51`) e o épico (§12.18) listam
+      `components/clientes-contabilidade/ClientesContabilidadeManager.tsx`, `lib/reajuste-anual.ts`,
+      `lib/adicional-semestral.ts` e `app/api/clientes-contabilidade/route.ts` — nenhum
+      `RecebiveisManager`. São duas telas "Manager" diferentes (`/clientes-contabilidade` vs.
+      `/recebiveis`) e o @dev trocou uma pela outra.
+      Pior: `grep -l RecebiveisManager docs/stories/12.*.story.md` devolve **apenas 12.1 (já
+      fechada) e a própria 12.2**. Nenhuma story aberta do Épico 12 é dona desse arquivo — do jeito
+      que está, o débito **não tem para onde ir** e morre no Dev Agent Record.
+      Insumo extra de decisão, que reforça o valor da migração e que ninguém registrou: como o campo
+      é texto livre e a `queryKey` muda a cada tecla, toda competência parcial ("2", "20", "202")
+      **falha o `recebiveisQuerySchema`** (`app/api/recebiveis/route.ts:12`) e devolve **HTTP 400**
+      (`:31-33`) enquanto o operador digita. Isso é **pré-existente, não regressão da 12.2**, mas
+      trocar por `<CampoCompetencia>` elimina os 400s de graça, além de matar o 7º padrão de
+      competência do repositório.
+    recommendation: >
+      @po/@sm: decidir o destino explicitamente, não por herança. Opção preferida — acrescentar
+      `components/recebiveis/RecebiveisManager.tsx:191` à **File List e a um AC da 12.18**
+      (prioridade BAIXA, sem `[DEP]`, tema "listas/carteira" compatível), registrando que é
+      ampliação consciente de escopo. Opção alternativa — item de backlog autônomo de ~15 min. O
+      que **não** pode é ficar como está, apontando para uma story que não abre o arquivo.
+  - id: OBS-122-3
+    severity: info
+    category: requirements
+    status: verificado-sem-acao
+    titulo: "A contagem de duplicações é 27, não 26 (erro de aritmética que vai virar métrica do épico)"
+    description: >
+      Recontei no commit anterior em vez de aceitar o número: `79e4acf~1` tinha **18** cópias de
+      `brl` (17 `function` + 1 arrow em `email-gateway.ts:124`), **6** de `normalizarBusca` e **3**
+      de `competenciaAtual`. 18 + 6 + 3 = **27**. A story ([D-1], Completion Notes), o Change Log e
+      a mensagem do commit `79e4acf` dizem "26". A implementação está **certa** — todas as 27 foram
+      eliminadas e restaram 3 definições canônicas; o erro é só no texto. Registro porque a story e
+      a mensagem de commit são o registro durável, e a métrica "N duplicações → 4 utilitários" tende
+      a ser citada de volta no fechamento do Épico 12.
+    recommendation: >
+      Sem ação de código e sem reabrir a story. Se o @po/@sm consolidar métricas do épico, usar
+      **27 → 4** (`brl`, `normalizarBusca`, `competenciaAtual`, `CampoCompetencia`).
+  - id: OBS-122-4
+    severity: info
+    category: security
+    status: verificado-sem-acao
+    titulo: "AC 6 fecha na UI; o contrato do servidor continua aceitando mês 13"
+    description: >
+      A AC 6 pede que seja "impossível **digitar** `2026-13`" — e isso está cumprido: o
+      `<input type="month">` impede o valor inválido de chegar ao estado, com teste. Mas
+      `server/validation/execucao-schema.ts:5` e `:94` (e o filtro
+      `app/api/recebiveis/route.ts:12`) validam com `/^\d{4}-\d{2}$/`, que aceita `2026-13` de um
+      cliente que não seja o navegador. Note o contraste: `cliente-contabilidade-schema.ts:35` já
+      usa o regex forte `/^\d{4}-(0[1-9]|1[0-2])$/`. **Pré-existente, fora de todas as ACs da 12.2
+      e não tocado por ela** — não é regressão nem bloqueio. Registro só para que ninguém leia a
+      métrica "é impossível digitar 2026-13" como garantia de contrato de API.
+    recommendation: >
+      Sem ação nesta story. Se alguma story da Fase 1 abrir `execucao-schema.ts`, alinhar o regex
+      com o de `cliente-contabilidade-schema.ts` é troca de uma linha, com o schema forte já
+      existente como modelo.
+  - id: OBS-122-5
+    severity: info
+    category: tests
+    status: verificado-sem-acao
+    titulo: "O toast corrigido do `FaturamentoEEmissao` não tem asserção de teste"
+    description: >
+      O melhor achado do @dev na AC 5 — o toast `Faturamento lançado. Valor calculado: R$ 250.00`
+      (`FaturamentoEEmissao.tsx:63`) — foi corrigido para `brl()` mas **não ganhou teste**.
+      `FaturamentoEEmissao.test.tsx` exercita o lançamento e a competência, mas não afirma o texto
+      do toast; a única asserção do gênero na suíte é a do `GerarExecucao` (`Valor calculado:
+      R$ 1.200,00`). Se uma refatoração futura voltar ao template cru, nenhum teste quebra.
+      Não bloqueia: `brl()` em si está travado por 7 testes em `formato.test.ts`.
+    recommendation: >
+      Uma linha na próxima story que abrir `FaturamentoEEmissao.test.tsx` (12.13 abre o arquivo de
+      produção pela AC 1, e 12.6 abre o de teste). Não justifica reabrir a 12.2.
+qualidade_dos_testes:
+  veredito: "Corrigidos para o formato certo, não re-skinados para passar"
+  analise: >
+    Os dois testes que o @dev diz que "já documentavam o bug" foram conferidos linha a linha:
+    · `DetalheCliente.test.tsx` — era `getByText('R$ 250.00')` (igualdade exata com o formato
+      ERRADO); virou `getByText((t) => t.replace(/\s/g, ' ') === 'R$ 250,00')`, que continua sendo
+      **igualdade de string inteira**, só tolerando o espaço não quebrável do `toLocaleString`.
+      Rigor preservado, valor esperado corrigido — não foi afrouxado para regex nem substring.
+    · `GerarExecucao.test.tsx:114` — era `getByText(/R\$ 1200.00/)`, uma **regex de substring**;
+      virou igualdade de string inteira com `'Valor calculado: R$ 1.200,00'`. Ou seja, o teste ficou
+      **mais rígido** do que era: agora trava também o separador de milhar e o rótulo em volta.
+    · `formato.test.ts` fecha o argumento de forma independente das telas: afirma
+      `brl(1480.56) === 'R$ 1.480,56'` e, na linha seguinte, afirma explicitamente que
+      `` `R$ ${(1480.56).toFixed(2)}` === 'R$ 1480.56' ``. O bug fica **documentado** no teste, não
+      apagado — quem ler entende o que mudou e por quê.
+    · Cobertura nova: 13 testes em `formato.test.ts` (milhar, milhão, zero, negativo, arredondamento
+      de meio centavo, nulável, 6 famílias de diacríticos, ausência deliberada de `trim`),
+      5 em `competenciaAtual` (zero à esquerda, virada de dezembro, mês 0 → "01", `vi.setSystemTime`,
+      fuso local) e 9 em `CampoCompetencia` (inclui travar a **ausência** de `maxLength`/`placeholder`
+      e a não colisão de `id` entre os 3 campos de `NovaExecucao`). Total 27 novos — o @dev reportou
+      22, subcontagem inofensiva.
+    · Ressalva honesta, já registrada pelo próprio @dev no cabeçalho do teste: o jsdom não implementa
+      a máscara do controle nativo `month`, então "2026-13 é impossível" é garantido pelo navegador,
+      não provado pela suíte. O teste observa o que dá para observar (o atributo `type="month"` e a
+      sanitização de `value` do jsdom) e **diz isso em voz alta** em vez de fingir cobertura — é a
+      postura certa.
+  smoke_dos_consumidores: >
+    O @dev não escreveu testes novos para os 6 consumidores migrados, mas a cobertura existe de
+    forma mais convincente: `NovaExecucao.test.tsx` (5 pontos) e `FaturamentoEEmissao.test.tsx`
+    (2 pontos) selecionam o campo por `getByLabelText('Competência')` e **não foram alterados neste
+    commit** — passam contra o `<CampoCompetencia>` novo exatamente como passavam contra o
+    `<input>` antigo. Teste inalterado que continua verde depois da troca do componente é evidência
+    de não-regressão melhor que teste escrito junto com a mudança.
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      Nenhuma superfície de autenticação/autorização tocada. `normalizarBusca` e `brl` são funções
+      puras, sem `dangerouslySetInnerHTML`, sem interpolação em SQL. `brl` no
+      `server/gateway/email-gateway.ts` interpola número formatado em HTML de e-mail — mesmo valor
+      e mesma posição de antes, sem mudança de superfície. Nota informativa em OBS-122-4 (regex de
+      competência do servidor), pré-existente e fora de escopo.
+  performance:
+    status: PASS
+    notes: >
+      27 funções locais viraram 3 importadas — bundle levemente menor, não maior. `npm run build`
+      exit 0 nas 24 rotas, sem alerta de tamanho. `useId` no `CampoCompetencia` é a API oficial do
+      React 18 para id estável em SSR, sem custo de render.
+  reliability:
+    status: PASS
+    notes: >
+      Guardas de disparo preservadas (D-5, conferidas no código) e o campo vazio continua tratado.
+      A troca por `type="month"` reduz o espaço de entrada inválida em vez de aumentá-lo.
+      1164 testes verdes, incluindo toda a suíte de servidor/orquestrador que não foi tocada.
+  maintainability:
+    status: PASS
+    notes: >
+      É o objetivo da story e foi entregue com folga. Os três arquivos novos/alterados de `lib/` e
+      `ui/` carregam JSDoc que explica **o porquê**, não o quê — inclusive as duas armadilhas que
+      custariam meia hora a quem vier depois (o espaço não quebrável do `toLocaleString` e a
+      assimetria local/UTC deliberada). O comentário de escopo em `CampoCompetencia` ("nenhuma
+      regra de negócio de competência mora aqui — decisão D2-A") protege o componente do próximo
+      consumidor com pressa.
+debitos_tecnicos_do_epico:
+  - id: DEB-12.2-A
+    severity: low
+    category: requirements
+    titulo: "7º campo de competência (filtro) em `RecebiveisManager.tsx:191` está sem dono no épico"
+    origem: "Achado fora de escopo do @dev + OBS-122-2 desta revisão"
+    avaliacao: >
+      Julgamento do @qa: gap **real, pequeno e genuinamente fora do escopo da 12.2** — as ACs 3 e 6
+      enumeram 6 pontos e o `[AJUSTE @po]` fechou a lista. O @dev fez o certo em não tocar. O
+      problema não é a exclusão, é que o destino apontado (12.18) **não abre esse arquivo**, e
+      nenhuma outra story aberta do Épico 12 abre. Sem decisão explícita, o item evapora.
+      Impacto se ficar: um `<input>` de texto livre de competência continua existindo em
+      `apps/web/src` depois de uma story cujo objetivo declarado era "um único padrão de
+      competência"; e os HTTP 400 por competência parcial (pré-existentes) continuam.
+      Risco de corrigir: praticamente nulo — contrato de valor idêntico (`AAAA-MM` ou `''`), sem
+      persistência, sem mudança de comportamento observável além de deixar de aceitar lixo.
+    recomendacao: >
+      @po/@sm: acrescentar explicitamente à **12.18** (File List + um AC), assumindo a ampliação de
+      escopo, **ou** abrir item de backlog autônomo. Decidir de forma registrada; não herdar do Dev
+      Agent Record. **Não abrir story própria só para isso** e **não reabrir a 12.2**.
+  - id: DEB-12.2-B
+    severity: low
+    category: code
+    titulo: "`R$ ${toFixed(2)}` na mensagem de `VALOR_ABAIXO_MINIMO` chega à tela"
+    origem: "Achado desta revisão (OBS-122-1)"
+    recomendacao: >
+      **Absorver na 12.13** (dona do "texto do mínimo do gateway"), acrescentando
+      `apps/web/src/server/emissao/emitir-boleto.ts` à File List dela. Troca de uma linha para
+      `brl()`. Ideal que a 12.13 aproveite e afirme a mensagem num teste, já que ela hoje é o único
+      lugar do repo onde os dois formatos de moeda aparecem na mesma frase.
+  - id: DEB-12.2-C
+    severity: info
+    category: requirements
+    titulo: "Métrica do épico: 27 duplicações → 4 utilitários (não 11, nem 26)"
+    origem: "Achado desta revisão (OBS-122-3)"
+    recomendacao: >
+      @po/@sm: ao consolidar as métricas de saída do Épico 12, usar **27 → 4**. A auditoria
+      (`ux-gaps-emissoes.md`, R-12) diz "4+3+4 = 11" porque só varreu o caminho de emissão, e o
+      Dev Agent Record diz "26" por erro de soma. Documentação, sem impacto em código.
+impacto_no_sequenciamento: >
+  Nenhum bloqueio. **A Fase 0 está fechada**: 12.1 PASS + 12.2 PASS, sem contenção entre elas
+  (conferido: `79e4acf` não conflita com `daaa36d`, arquivos e responsabilidades disjuntos onde se
+  cruzam). As stories que declaram `[DEP] 12.2` — **12.4, 12.5, 12.9, 12.15, 12.16** — estão
+  liberadas para abrir: `<CampoCompetencia>`, `brl()`, `normalizarBusca()` e `competenciaAtual()`
+  existem, estão testados e são os únicos padrões vivos no `apps/web/src`. Vale o alerta ao @sm/@dev
+  das próximas stories: **qualquer `brl`/`normalizarBusca`/`competenciaAtual` local reintroduzido a
+  partir daqui é regressão direta da AC 4 desta story**, e o mesmo vale para `<input>` de texto de
+  competência. Os débitos DEB-12.2-A/B/C são todos low/info; A e B precisam de **decisão de
+  roteamento do @po** (A não tem dono hoje), mas nenhum deles segura a Fase 1.

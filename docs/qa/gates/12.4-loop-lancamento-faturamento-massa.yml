@@ -1,0 +1,825 @@
+# QA Gate — Story 12.4 (Fechar o loop do lançamento de faturamento em massa) — iteração 1 (final)
+storyId: "12.4"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-08-26"
+commit: 382a366
+epic: "12 — Sanitização do caminho de emissão (docs/architecture/epic-sanitizacao-emissoes.md), Fase 1 ALTA"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [OBS-124-1 (low), OBS-124-2 (low), OBS-124-3 (low), OBS-124-4 (info), OBS-124-5 (info), OBS-124-6 (info), OBS-124-7 (info)]
+resumo_do_veredito: >
+  **PASS, e não é PASS de cortesia.** Os 5 ACs estão implementados como escritos, o débito herdado
+  `DEB-12.3-B` foi fechado exatamente na forma que o gate da 12.3 prescreveu (as duas linhas, no
+  arquivo certo), e — o que sustenta o veredito — **os testes são discriminantes por verificação
+  própria, não por relato**: mutei o código em 4 pontos independentes (AC 1, AC 4, AC 5-staleTime,
+  AC 5-guardaPronta) e em cada caso falharam **exatamente** os testes correspondentes, nem um a
+  mais nem um a menos. O bug de fluxo do `RS-3` ("100% de falha declara o passo 1 concluído") está
+  morto e travado por teste. O que sobrou é `low`/`info` e nada exige rework: um comentário que
+  promete mais persistência do que o `!execucaoId` entrega (OBS-124-1), uma afirmação de 3 saídas
+  seguras com 1/3 asserida (OBS-124-2) e um rótulo que mente na competência vazia (OBS-124-3, que é
+  a mesma raiz do OBS-123-4a já roteado para a 12.6). **A fila `RS-9` está liberada: 12.5 pode
+  abrir.**
+notes: >
+  Árvore conferida ANTES de rodar qualquer coisa: `git rev-parse HEAD` = `382a366` e
+  `git status --short -- apps/web` **vazio** (só stories/gates/docs não versionados sujos). Ou seja,
+  tudo que rodei reflete o commit revisado, sem contaminação — inclusive os arquivos de
+  `apps/web/src` que apareciam sujos no início da sessão já estavam commitados.
+  Comandos reexecutados por mim dentro de `apps/web`:
+  · `npx tsc --noEmit` → exit 0, sem saída.
+  · `npm run lint` → "✔ No ESLint warnings or errors".
+  · `npx vitest run` (suíte inteira) **duas vezes**: run 1 → **133 arquivos / 1201 testes, 133
+    passed / 1201 passed**, exit 0; run 2 → **133 / 1201**, exit 0. Bate **exatamente** com o Dev
+    Agent Record e com o delta do gate da 12.3 (133 arquivos / 1186 testes → **+15 testes**, sem
+    arquivo novo, que é o "15 testes novos/atualizados" do Change Log).
+  · `npm run build` → ver `episodio_do_build` (falhou na 1ª por artefato stale de `.next`, verde
+    depois de limpar; **não é código**).
+  AC 1: `setFaturamentoLancado(true)` saiu do topo do `onSuccess` (`:125-141`) e só roda depois do
+  `if (resultado.lancados === 0) { …; return; }`. O toast de 0 lançados virou `'error'`. Verificado
+  por **mutação**: trocando a guarda por `if (false)` (que reproduz o comportamento pré-12.4), a
+  suíte do diálogo fica `1 failed | 20 passed` e a falha é literalmente
+  "AC 1: 100% de falha NÃO avança — a tela continua no passo 1". Não é teste vazio.
+  AC 2: contrato de `falhas[]` agora é `{ clienteContabilidadeId, nome, motivo }` nas **três**
+  camadas (repositório `:56-59`, service `:66-72`, componente). Consumidores conferidos por mim com
+  grep próprio (`lancarFaturamentoLote|ResultadoLancamentoFaturamentoLote|\.falhas`): existem
+  **exatamente dois** — a rota (`route.ts:18-24`, que faz `Response.json(resultado)` e por isso
+  repassa o campo novo sem uma linha de mudança) e o diálogo. Mudança **aditiva**, ninguém quebra.
+  Confirmei também que a rota realmente não mudou: `git ls-tree` conta **77 arquivos de rota em
+  `382a366~1` e 77 em `382a366`**, e o build lista `ƒ /api/clientes-contabilidade/faturamentos/lote`.
+  O bloco de falhas (`:309-331`) replica o padrão de `ClientesContabilidadeManager.tsx:265-285`
+  (`alert-*` + `<p className="font-medium">` de resumo + `<ul className="mt-2 list-disc space-y-1
+  pl-4 text-xs">` com `nome: motivo`) — comparei os dois lado a lado. Divergência única e
+  justificada: o Manager usa `success|warning`, aqui é `error|warning`, porque 100% de falha é
+  estado de erro e não aviso. Melhoria sobre o padrão copiado, não desvio.
+  AC 3: `pendentesRetry: string[] | null` + `alvosFaturamento` (`:95-98`) e — o ponto que importa —
+  o **payload** (`lancamentosValidos`, `:102-113`) passou a derivar de `alvosFaturamento`, não de
+  `faixaFaturamento`. Isso é o que garante que "Tentar de novo" não reenvia quem já foi lançado, e
+  o teste prova pelo lado observável correto:
+  `expect(mockLancarFaturamentoLote).toHaveBeenNthCalledWith(2, '2026-06', [{ clienteContabilidadeId:
+  'cc-2', faturamento: 9000 }])` — asserção sobre o payload da 2ª chamada, não sobre estado interno.
+  AC 4: ver `julgamento_ac4_limpa_e_pergunta`. Verificado por mutação: comentando o
+  `setFaturamentos({})` de `trocarCompetencia`, falha exatamente 1 teste ("AC 4: trocar a
+  competência com valores digitados limpa os campos e pede confirmação").
+  AC 5: ver `julgamento_ac5_deb_12_3_b` — reproduzi as duas metades por mutação independente.
+  Restrição de escopo (D4 do épico): `git show 382a366 --name-only` devolve **6 arquivos** — 3 de
+  código em `apps/web/src`, 2 de teste e a própria story. **Nenhum `.css`, nenhum
+  `docs/design-system.md`**, nenhuma migration, nenhum token, nenhum `NovaExecucao.tsx`, nenhuma
+  rota. Confirmado por grep no `--name-only` (`\.css|design-system` → vazio).
+  Regressão da 12.2 (critério herdado): grep nas linhas `+` do diff de `apps/web/src` por
+  `function brl|function normalizarBusca|function competenciaAtual|toLocaleString\('pt-BR'|
+  type="text"` → **zero**. O componente segue importando `brl` de `@/lib/formato`,
+  `competenciaAtual` de `@/lib/competencia` e usando `<CampoCompetencia>` — inclusive o
+  `ConfirmDialog` novo formata com `brl(numero)`, não com um `toFixed` local.
+  Regressão da 12.3 (Cenário A — critério de reprovação declarado no gate anterior): os testes de
+  **ausência** continuam intactos, `LoteContabilidadeDialog.test.tsx:123-124`
+  (`queryByRole('checkbox')` e `queryByText(/emitir mesmo assim/i)`, ambos `not.toBeInTheDocument()`).
+  Nenhum controle de reinclusão, opt-in, checkbox ou "emitir mesmo assim" foi introduzido; o
+  `dispararLote` continua recebendo `elegiveis` (`:174-177`). **Cenário A preservado.**
+  Anti-self-review: não aceitei nenhum número nem nenhuma afirmação do Dev Agent Record sem
+  reproduzir. Além das 4 mutações, fui atrás de (a) o que acontece com competência vazia
+  (OBS-124-3), (b) o pior caso do `.in()` de resolução de nomes (OBS-124-4), (c) o destino dos
+  valores já lançados numa troca de mês (OBS-124-5), (d) se o flake relatado pelo @dev é
+  estruturalmente atribuível ao que ele diz (`analise_do_flake_relatado`) e (e) se o `ConfirmDialog`
+  por cima do `Modal` realmente bloqueia o campo de competência por baixo (bloqueia — ver
+  `modal_dentro_de_modal`).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Os pontos que a lead pediu explicitamente que eu julgasse
+# ─────────────────────────────────────────────────────────────────────────────
+julgamento_ac4_limpa_e_pergunta:
+  pergunta: >
+    A AC 4 dizia "limpa os valores **OU** pede confirmação explícita". O @dev fez as duas coisas:
+    sempre limpa (estado seguro por padrão) e oferece um `ConfirmDialog` para reaproveitar os
+    valores na competência nova, listando `nome: R$ valor`. Cumpre a intenção da AC? É aceitável
+    ter ido além da letra (que sugeria "ou" exclusivo)?
+  decisao: >
+    APROVADO — e o "ou" da AC não era exclusivo. O desenho entregue **domina estritamente** as duas
+    alternativas isoladas e é o único que fecha o `RS-3` sem custo operacional.
+  status: "Decidido nesta revisão. Não é desvio, não volta pro @dev, não reabre a 12.4."
+  fundamentacao: >
+    **1. A própria AC descreve este desenho, não os dois alternativos.** O parêntese da AC 4 é
+    literalmente `("manter os 12 valores digitados para 2026-08?")`. Uma pergunta cuja resposta
+    afirmativa é *manter* só faz sentido se o padrão for *não manter* — ou seja, a AC já pressupõe
+    limpeza como estado base e confirmação como via de exceção. Ler o "ou" como exclusivo obrigaria
+    a descartar o exemplo que a própria AC dá. O @dev implementou o exemplo.
+
+    **2. Cada alternativa isolada é pior, e por motivos diferentes.**
+    · *Só limpar:* seguro, mas destrói trabalho sem recurso. Quem digitou 12 valores e percebeu que
+      errou o mês tem que redigitar 12 valores — e o comportamento previsível de um operador
+      castigado por trocar de mês é **não trocar de mês**, ou trocar e redigitar às pressas. A
+      mitigação de `RS-3` viraria um incentivo a `RS-3`.
+    · *Só perguntar:* a pergunta "manter ou descartar?" tem que ter um comportamento para
+      Escape/backdrop/desistência, e o comportamento natural de "confirmar para descartar" é
+      **manter** — isto é, o caminho passivo cai no lado perigoso. É a mesma inversão de modo de
+      falha que este épico já rejeitou uma vez.
+
+    **3. A direção da falha está certa, e é o mesmo princípio que já aprovei na 12.3.** O gate da
+    12.3 aceitou D-1 (guarda que falha **fechada**) com o argumento de que a saída ambígua deve cair
+    no lado seguro. Aqui vale idêntico: `onCancel`, Escape e backdrop **todos** convergem em
+    `setTrocaCompetencia(null)` — e os valores já foram zerados antes do diálogo aparecer, então
+    nenhum desses caminhos precisa "lembrar de limpar". O estado perigoso (12 valores do mês
+    anterior no mês novo) exige um clique afirmativo num botão cujo rótulo **nomeia a competência
+    de destino**: `Manter os 1 valores em 2026-07`. Não dá pra cair nele por inércia.
+
+    **4. O consentimento é informado, não cego.** O `ConfirmDialog` recebe `itens` com
+    `nome: R$ valor` de cada lançamento (`:430-434`), usando `brl()` do `@/lib/formato` da 12.2.
+    Isso responde à objeção que eu levantaria contra qualquer "manter os valores": operador que
+    confirma sem saber *o que* está mantendo. Aqui ele vê a lista.
+
+    **5. O custo de "ir além" é ~20 linhas e zero superfície nova.** Reusa `ConfirmDialog`
+    (componente já existente, `tone="neutral"` — o tom certo: não é ação destrutiva irreversível, e
+    o `tone` evita o aviso "NÃO PODE ser desfeita" que seria falso aqui). Nenhum componente novo,
+    nenhum token, nada de `docs/design-system.md`. Não invade escopo de 12.5, 12.12 nem 12.15.
+
+    **6. Prova de que não é fachada.** O teste "AC 4: confirmar 'manter' reaproveita os valores na
+    competência nova" não se contenta em ver o campo preenchido: ele clica em lançar e afirma
+    `toHaveBeenCalledWith('2026-07', [{ clienteContabilidadeId: 'cc-1', faturamento: 4500 }])` —
+    a competência do **payload**, que é onde `RS-3` se materializa. É a asserção certa.
+  ressalvas_que_acompanham_a_aprovacao:
+    - >
+      **Não confundir com o rascunho proibido pela 12.15.** As Dev Notes da 12.15 vetam rascunho em
+      `localStorage` justamente por "valor de um mês reaparecendo em outro (`RS-3`)". O que a 12.4
+      entrega é o oposto disso em três eixos: é **em sessão** (nada persistido), **por ocorrência**
+      (uma confirmação por troca, não uma regra permanente) e **itemizado** (o operador vê os
+      valores). Registro para que ninguém cite a 12.4 como precedente para reabrir o rascunho — e
+      para que ninguém confunda o `ConfirmDialog` com a funcionalidade vetada e tente removê-lo.
+    - >
+      Confirmado o "manter", **nada na tela marca que aqueles valores vieram de outro mês**. A
+      mitigação existente é indireta mas real: a competência nova está no campo logo acima e o texto
+      de apoio do passo diz "lance o faturamento de **2026-07** pra cada um". Aceito como
+      suficiente; se o @po quiser reforço, o lugar natural é o painel de composição da **12.5**
+      (AC 1), não uma correção aqui.
+    - >
+      Só o **Cancelar** está travado por teste; Escape e backdrop não. São seguros por construção
+      (ver OBS-124-2) mas não por asserção.
+julgamento_ac5_deb_12_3_b:
+  pergunta: >
+    Confirmar que `comBoletoQ` usa `staleTime: 0` (não o global de 30s), que o comentário incorreto
+    foi corrigido, que o botão de lançar respeita `!guardaPronta`, e **reproduzir por conta própria**
+    a afirmação do @dev de que o teste do AC 5 é discriminante.
+  decisao: "CONFIRMADO nas três partes, com a discriminância reproduzida por mutação — não por leitura."
+  status: "`DEB-12.3-B` FECHADO. Pode ser marcado como resolvido no registro do épico."
+  verificacao_1_staletime:
+    codigo: "`LoteContabilidadeDialog.tsx:64-69` — `staleTime: 0` dentro do `useQuery` de `comBoleto`, e SÓ ali."
+    global_intocado: >
+      `app/providers.tsx` **não** aparece no `--name-only` do commit. O default global segue
+      `staleTime: 30_000` + `refetchOnWindowFocus: false` para o app inteiro, como devia — o débito
+      pedia sobrescrita local, não mudança global (que teria efeito colateral em 100% das telas).
+    comentario_corrigido: >
+      O comentário mentiroso da 12.3 ("Sem `staleTime` de propósito") foi **substituído**, não
+      apagado: `:60-63` agora diz que o padrão do app é 30s, que o `force-dynamic` só desliga o cache
+      HTTP e não o do react-query, e qual era a janela concreta ("reabrir o diálogo logo depois de
+      uma emissão servia a lista antiga por até 30s"). É a correção que OBS-123-2 pediu, com a
+      distinção HTTP-vs-cliente explicitada em vez de subentendida.
+    discriminancia_reproduzida: >
+      **Feito por mim, não aceito por relato.** Removi a linha `staleTime: 0` do componente e rodei
+      `npx vitest run tests/components/LoteContabilidadeDialog.test.tsx`:
+      resultado **`1 failed | 20 passed (21)`**, e a falha é exatamente
+      "AC 5 (DEB-12.3-B): a guarda ignora o staleTime global — reabrir o diálogo revalida", com
+      `AssertionError: expected "spy" to be called 2 times, but got 1 times`. Com a linha de volta,
+      21/21. Arquivo restaurado com `git checkout --` e `git status -- apps/web` vazio depois.
+      **Não é falso-positivo**, e o mecanismo do teste é o correto: ele injeta um `QueryClient` com
+      `staleTime: 30_000` (cópia declarada do `app/providers.tsx`) **compartilhado entre as duas
+      montagens** e conta as chamadas de `comBoleto`. Sem a sobrescrita local, a 2ª montagem serve
+      o cache fresco e não refaz a chamada; com ela, refaz. O teste mede o comportamento observável
+      (nº de fetches) e não o valor da opção — que é o jeito certo de testar isto.
+  verificacao_2_guardapronta:
+    codigo: >
+      `:362` — `disabled={lancarFaturamentos.isPending || !guardaPronta || lancamentosValidos.length === 0}`,
+      e `:365-371` dá ao botão o mesmo rótulo-que-explica-o-disabled já usado por "Calcular"
+      ("Verificando emissões…"). Fecha exatamente OBS-123-4b: antes, `disabled` só tinha
+      `isPending`, então durante o carregamento/erro da guarda `elegiveis === clientes` e dava pra
+      lançar faturamento (escrever no banco) para cliente que a guarda ia excluir.
+    discriminancia_reproduzida: >
+      Removi `|| !guardaPronta` do `disabled` (deixando o rótulo intacto, que é o cenário de
+      regressão mais traiçoeiro — o botão continua *dizendo* "Verificando emissões…") e rodei o
+      arquivo: **`2 failed | 19 passed (21)`**, e as duas falhas são precisamente
+      "AC 5: lançar faturamento espera a guarda de duplicidade responder" e
+      "AC 5: guarda que falhou também bloqueia o lançamento (falha fechada, não aberta)".
+      Ou seja, os testes travam o `disabled` de verdade, não o texto. Restaurado em seguida.
+    cobertura_dos_dois_modos: >
+      Registro positivo: há teste para a guarda **pendente** (`mockComBoleto.mockReturnValue(new
+      Promise(() => {}))`) **e** para a guarda **em erro** (`mockRejectedValue`). O segundo é o que
+      importa — é ele que prova que o botão de lançar herdou o "falha fechada" do D-1 da 12.3, e não
+      só o "aguarde". A inconsistência entre D-1 e D-2 apontada em OBS-123-4b está resolvida nos
+      dois estados.
+julgamento_resolucao_de_nomes_best_effort:
+  pergunta: >
+    A resolução de nomes de `falhas[]` é feita em uma query só, best-effort (cai pra `'—'` em vez
+    de derrubar o lote). É escolha segura? Lançamentos bem-sucedidos podem ser perdidos por causa
+    de uma falha ao buscar nomes?
+  decisao: "SEGURA, e é a escolha certa. Lançamento bem-sucedido é impossível de perder por esta via."
+  fundamentacao: >
+    **Por que é impossível perder lançamento.** Os `upsert` já aconteceram e estão **commitados**
+    antes de `resolverNomesDasFalhas` ser chamada (`:78-86`: o loop de lançamento termina, depois a
+    resolução). A função é `Promise<void>`, **muta o array in-place** e envolve tudo num
+    `try { … } catch { /* mantém o '—' */ }`. Não há `throw`, não há `return` alternativo, não há
+    caminho em que `resultado.lancados` seja alterado. Rastreei também a única fonte de erro real
+    (`listarClientesContabilidadePorIds` faz `throw new ApiError(500, …)` quando o Supabase devolve
+    `error`) — e esse throw morre no `catch`. O contrato "o que já deu certo continua contado" é
+    estrutural, não convencional.
+    **E está travado por teste**, que é o que separa "é seguro hoje" de "continua seguro depois":
+    `cliente-contabilidade-faturamento-repository.test.ts` tem o caso
+    "busca de nomes falhando não derruba o lote — os lançamentos que deram certo continuam contados",
+    com `estado.falhaAoBuscarClientes = true` e `expect(r.lancados).toBe(1)`. Alguém que "melhore" o
+    catch para propagar o erro quebra esse teste na hora.
+    **Por que a assimetria de custo está do lado certo.** Nome é *enfeite de mensagem*; lançamento é
+    *escrita de receita*. Trocar uma escrita confirmada por uma mensagem bonita seria o inverso da
+    prioridade. O fallback `'—'` é o mesmo já usado por `ExclusaoLoteResultado.bloqueados`, então o
+    front não precisa de ramo novo e o operador nunca vê UUID cru (travado pelo teste do componente:
+    `expect(screen.queryByText(/cc-2/)).not.toBeInTheDocument()`).
+    **Por que "uma query só" e "só quando há falha" também estão certos.** `if (falhas.length === 0)
+    return` antes de qualquer I/O: o caminho feliz — o normal — **não paga round-trip nenhum**, e
+    isso está afirmado no teste (`expect(estado.buscasDeClientes).toBe(0)` no lote 100% ok, e
+    `toBe(1)` na falha parcial, o que trava também a ausência de N+1). Reusa
+    `listarClientesContabilidadePorIds`, que já existia — não é função nova para este caso.
+  ressalva: "Ver OBS-124-4: o pior caso do `.in()` (200 ids) é justamente onde o best-effort é mais provável de ser exercido. O desenho já absorve, mas vale registrar."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verificações pontuais e limitações
+# ─────────────────────────────────────────────────────────────────────────────
+limitacao_da_verificacao_manual:
+  status: "NÃO EXECUTADA — nem pelo @dev, nem por mim. Registrado como limitação, não como item cumprido."
+  o_que_a_story_pedia: >
+    A seção "Complexidade e Riscos" da 12.4 diz textualmente: "@qa deve testar o caminho 'digitar
+    valores → trocar competência → confirmar/cancelar' explicitamente". O @dev, honestamente,
+    marcou `[ ]` na verificação manual do DoD e delegou.
+  o_que_eu_fiz_de_fato: >
+    **Não subi o app no navegador e não exercitei o fluxo à mão.** Este ambiente de revisão não tem
+    navegador disponível. O que fiz no lugar: li o caminho inteiro no código, rodei os testes de
+    componente (jsdom/Testing Library), executei o `next build` e — para não depender da leitura —
+    **mutei o código** nos 4 pontos críticos para provar que os testes reagem. Não vou carimbar como
+    feito o que não foi feito.
+  o_que_a_cobertura_de_componente_compensa: >
+    Boa parte, e de forma verificável. As 4 ramificações do AC 4 estão cobertas:
+    (a) trocar com valores → campos limpos + confirmação com `nome: R$ valor`;
+    (b) **Cancelar** → confirmação some, campos seguem vazios;
+    (c) **Confirmar** → valores voltam **e o POST subsequente vai para a competência NOVA**
+        (asserção de payload, a que realmente prova o `RS-3`);
+    (d) sem valores digitados → troca direta, sem confirmação.
+    A mutação do `setFaturamentos({})` prova que (a) não é vácuo.
+  o_que_a_cobertura_de_componente_NAO_compensa:
+    - >
+      **Empilhamento visual do modal-dentro-de-modal.** jsdom não avalia `z-index` nem pintura. Os
+      dois modais são `fixed inset-0 z-50`; o `ConfirmDialog` fica por cima só porque monta depois
+      no DOM (é o 2º filho do fragmento). Se isso estivesse errado, **nenhum teste pegaria**. Risco
+      avaliado como baixo por precedente, não por verificação: o mesmo par `Modal` → `ConfirmDialog`
+      já roda em produção (`SyncModal`, citado em `Modal.tsx:31`) e a 12.3 já entregou
+      `LoteContabilidadeDialog` → `LoteEmissaoDialog`.
+    - >
+      **Foco e ordem de leitura reais** ao abrir/fechar a confirmação. Por construção (`Modal.tsx:
+      122-138`) o foco vai para o 1º focável do `ConfirmDialog` e volta ao gatilho (o `<input
+      type="month">`) no unmount, e isso é território testado da 12.1 — mas não foi observado aqui.
+    - >
+      **O seletor nativo de `<input type="month">`** (incluindo o botão de limpar, que é o que
+      produz OBS-124-3). `fireEvent.change` não é o mesmo que o picker do Chrome.
+  recomendacao: >
+    Uma passada manual de ~3 minutos antes do deploy, cobrindo só o que jsdom não vê: abrir o lote
+    com ≥2 clientes de faixa, digitar valores, trocar o mês, e conferir **visualmente** que (i) a
+    confirmação aparece POR CIMA do diálogo de lote e o campo de competência atrás não responde a
+    clique, (ii) Escape e clique no backdrop fecham a confirmação deixando os campos vazios, e
+    (iii) limpar o campo de mês não deixa a tela num beco (OBS-124-3). Nada disso é bloqueante para
+    o gate — é confirmação de renderização, e a lógica já está travada por teste.
+modal_dentro_de_modal:
+  veredito: "Correto — e o cenário de 'trocar a competência com a confirmação aberta' é INALCANÇÁVEL, verificado no código."
+  analise: >
+    Fui atrás de um bug de estado que este desenho *poderia* ter: com o `ConfirmDialog` aberto, se o
+    operador trocasse a competência **de novo**, o `trocaCompetencia.para` do diálogo ficaria
+    obsoleto (o rótulo nomearia o mês errado). Rastreei e **não é alcançável**, por duas barreiras
+    independentes: (1) o `ConfirmDialog` renderiza um backdrop `fixed inset-0` depois do `Modal` do
+    lote no DOM, então o clique no `<input type="month">` de baixo atinge o backdrop; (2)
+    `Modal.tsx:141-180` prende `Tab`/`Shift+Tab` dentro do painel do topo da `pilhaDeModais`, então
+    o campo também não é alcançável por teclado. Registro o raciocínio porque a ausência do bug aqui
+    depende do `pilhaDeModais` da 12.1 continuar existindo — quem mexer no `Modal` precisa saber
+    que há consumidor dependendo disso.
+episodio_do_build:
+  veredito: "Falha de ambiente, NÃO de código. Build verde confirmado."
+  o_que_aconteceu: >
+    Meu 1º `npm run build` saiu com exit 1 e
+    `Error: EINVAL: invalid argument, readlink '…\\apps\\web\\.next\\server\\app-paths-manifest.json'`,
+    com o stack inteiro dentro de `next/dist/lib/recursive-delete.js` — ou seja, o Next falhou
+    **limpando o `.next` antigo**, antes de compilar uma linha. É o sintoma conhecido de artefato
+    stale em pasta sincronizada por OneDrive (reparse point / placeholder de nuvem), e este
+    repositório vive em `C:\Users\carme\OneDrive\…`. Apaguei o `.next` e rodei de novo:
+    **exit 0**, `✓ Compiled successfully`, `✓ Generating static pages (59/59)`.
+    Registro em vez de omitir, porque quem repetir a verificação vai esbarrar nisso.
+  avisos_do_build: >
+    `⚠ Compiled with warnings` é **pré-existente e de terceiro**: `@supabase/realtime-js/…/
+    websocket-factory.js` usa `process.versions`, não suportado no Edge Runtime. Nada a ver com esta
+    story e presente em qualquer build do repositório.
+  metrica_verificavel: >
+    Seguindo a recomendação que eu mesma deixei em OBS-123-6 (parar de citar "N rotas"): **0 rotas
+    adicionadas, 0 removidas** — `git ls-tree -r --name-only` conta 77 `route.ts` em `382a366~1` e
+    77 em `382a366`. `ƒ /api/clientes-contabilidade/faturamentos/lote` continua server-rendered on
+    demand no build.
+analise_do_flake_relatado:
+  relato_do_dev: >
+    "1ª execução teve 1 falha por timeout de 5s em `tests/server/gateway/boleto-emissao.test.ts`
+    ('retorna 403 quando feature flag está desligada'). Rodado isolado: 11/11 verde; 2ª execução
+    completa: 133/133 verde. Flake de contenção de CPU, não regressão."
+  eu_reproduzi: "NÃO. Rodei a suíte inteira duas vezes e obtive 133/1201 verde nas DUAS. O flake não apareceu para mim em nenhuma das execuções."
+  veredito: "Atribuição do @dev ACEITA como não-relacionada — sustentada por evidência estrutural, não por confiança."
+  fundamentacao: >
+    Não me contentei com "não reproduzi, então tudo bem" — isso deixaria em aberto se o flake é
+    consequência desta story. Três fatos independentes fecham a questão:
+    · **Sem interseção de código.** O diff de `382a366` toca 3 arquivos de `apps/web/src`
+      (`LoteContabilidadeDialog.tsx`, `services/clientes-contabilidade.ts`,
+      `cliente-contabilidade-faturamento-repository.ts`). O teste flakeado exercita
+      `@/app/api/boletos/emitir/route` — caminho de emissão de boleto, sem nenhuma aresta com
+      lançamento de faturamento contábil. `git log` do arquivo de teste: último toque em `0d4bf47`
+      ("emissao em lote com idempotencia corrigida"), muito antes do Épico 12.
+    · **A forma do teste explica o timeout sem precisar de regressão.** É o **primeiro `it` do
+      arquivo** e a primeira coisa que ele faz é `await import('@/app/api/boletos/emitir/route')` —
+      um import dinâmico que força o Vite a transformar o grafo inteiro da rota do Next **dentro**
+      do timeout de 5s do próprio teste. É o formato clássico de custo de cold start atribuído ao
+      caso de teste em vez do setup; sob contenção de CPU, estoura.
+    · **O total nunca mudou.** 1201 testes nas duas execuções minhas e na 2ª do @dev — o flake é de
+      *tempo*, não de contagem ou de asserção.
+    Não recomendo ação. Se voltar a incomodar, o conserto é mover o `await import` para um
+    `beforeAll` ou dar `testTimeout` maior a esse arquivo — mas isso é higiene de suíte, não desta
+    story, e não vou inflar o escopo da 12.4 com isso.
+contencao_rs9:
+  veredito: "ÍNTEGRA. A 12.5 está liberada para abrir."
+  analise: >
+    A "Nota de sequenciamento (RS-9)" da 12.5 exige que a 12.4 feche o gate de @qa antes. Este gate
+    está fechado, com `PASS` e **sem rework pendente para o @dev**. Ordem mantida:
+    **12.3 → 12.4 → 12.5 → 12.6** (+ 12.8), com a fila estendida do arquivo (12.12 / 12.15 / 12.16 /
+    12.17) inalterada.
+    Conferi que a 12.4 **não invadiu** o escopo de quem vem depois:
+    · **12.5** — o bloco "Pronto pra calcular N clientes" (`:376-383`) está **intacto**, palavra por
+      palavra; é literalmente o que a AC 1 da 12.5 vai substituir pelo resumo de composição. Nenhuma
+      barra de progresso, nenhum `ProgressoExecucao`, nenhum toque no card "Total" (`:400-403`, que
+      é a AC 4 da 12.5).
+    · **12.15** — nenhum contador "X de Y preenchidos", nenhuma ordenação por pendentes, e o
+      `max-h-52` da lista (`:340`) segue exatamente como estava (AC 3 da 12.15). O rótulo
+      "Digite ao menos um faturamento" **não** é o contador da AC 1 da 12.15: é rótulo de estado
+      desabilitado, binário, não progressivo. Não colide.
+    · **12.12** — nenhum `role="status"`/`role="alert"` novo foi adicionado (ver DEB-12.4-C, que é
+      justamente o efeito colateral disso).
+    · **12.6** — nenhum tratamento de erro-vs-vazio novo nos pontos de carga.
+    Positivo para a 12.5: o estado que a 12.4 introduziu (`ultimoLancamento`, `pendentesRetry`) é
+    exatamente o insumo de que a AC 1 da 12.5 precisa para escrever
+    "X em faixa de faturamento (**Y lançado · Z pendente**)". A 12.4 não só não atrapalhou como
+    deixou o dado pronto.
+
+# ─────────────────────────────────────────────────────────────────────────────
+decisoes_do_dev_avaliadas:
+  - id: D-1
+    assunto: "AC 4 implementada como 'limpa E pergunta' em vez de 'limpa OU pergunta'"
+    veredito: ACEITA
+    justificativa: "Ver `julgamento_ac4_limpa_e_pergunta` — desenho dominante, alinhado ao princípio de modo de falha já aprovado na 12.3 (D-1), com 3 ressalvas registradas."
+  - id: D-2
+    assunto: "Resolução de `nome` no repositório (1 query, só quando há falha, best-effort com `'—'`)"
+    veredito: ACEITA
+    justificativa: >
+      Ver `julgamento_resolucao_de_nomes_best_effort`. Acrescento o que o @dev não registrou e que
+      reforça a decisão: resolver no **servidor** (e não no front, que já tem os nomes na tela) é o
+      que mantém o contrato correto para qualquer consumidor futuro da rota — o front só conhece os
+      clientes da seleção atual, e uma falha pode, em teoria, vir de um id que não está mais na
+      lista renderizada (ex.: cliente removido da seleção entre o clique e a resposta). Resolver no
+      front teria produzido `undefined` exatamente nesse caso.
+  - id: D-3
+    assunto: "[AUTO-DECISION] Botão desabilitado com rótulo 'Digite ao menos um faturamento' quando não há valor válido"
+    veredito: ACEITA
+    justificativa: >
+      Raciocínio correto e confirmado na fonte: `lancarFaturamentoLoteSchema` tem
+      `.min(1, 'Informe ao menos um lançamento')`, então lista vazia produzia um **422 morto** — e,
+      sob a regra nova do AC 1, um 422 nunca faria o passo avançar de qualquer jeito. Trocar um erro
+      inútil por um estado desabilitado que **diz o que falta** é melhora estrita, e segue o padrão
+      de rótulo-que-explica-o-disabled que a 12.3 já estabeleceu no botão "Calcular".
+      Verifiquei que não engole o caso legítimo de `faturamento = 0`: o filtro é
+      `faturamentos[id]?.trim() && !Number.isNaN(…) && l.faturamento >= 0`, ou seja, `"0"` digitado
+      é **válido** (`trim()` de `"0"` é truthy). Só string vazia é excluída. Correto — zero é um
+      faturamento possível.
+  - id: D-4
+    assunto: "[AUTO-DECISION] Bloco de falhas visível apenas enquanto `!execucaoId`"
+    veredito: ACEITA — com correção de comentário pendente (OBS-124-1)
+    justificativa: >
+      A **decisão** está certa e por um motivo que o @dev não chegou a escrever: depois do cálculo,
+      quem teve o faturamento não lançado aparece no painel de resultados como `alerta`, com nome e
+      motivo (`:405-415`, `<strong>{r.nome}</strong>: {r.alertas[0]}`). Ou seja, a informação **não
+      se perde** — ela muda de forma, e a forma nova é a autoritativa (vem do cálculo, não do
+      lançamento). Manter os dois blocos ao mesmo tempo é que seria confuso, e um "Tentar de novo"
+      pós-cálculo seria inócuo (lançar faturamento depois não muda resultado já produzido).
+      O que **não** está certo é o comentário `:305-308`, que promete o contrário do que o código
+      faz. Ver OBS-124-1.
+  - id: D-5
+    assunto: "Rota `faturamentos/lote/route.ts` mantida na File List como 'verificado, sem alteração'"
+    veredito: ACEITA — e é a forma certa de registrar
+    justificativa: >
+      A File List proposta trazia a rota com a ressalva "se necessário repassar `nome`". O @dev
+      verificou, concluiu que não era necessário (`Response.json(resultado)` repassa o objeto
+      inteiro) e **manteve a linha no registro marcando-a como verificada-sem-alteração**, em vez de
+      apagá-la silenciosamente. Confirmei o fato (a rota não está no `--name-only`; 77 → 77 arquivos
+      de rota). Registrar "olhei e não precisou" é mais útil que uma File List enxuta, porque impede
+      o próximo revisor de refazer a mesma investigação.
+
+# ─────────────────────────────────────────────────────────────────────────────
+issues:
+  - id: OBS-124-1
+    severity: low
+    category: code
+    status: debito-registrado
+    titulo: "O comentário do bloco de falhas promete uma persistência que o `!execucaoId` nega — mesmo defeito que o AC 5 desta story existiu para corrigir"
+    description: >
+      Achado desta revisão. O comentário em `LoteContabilidadeDialog.tsx:305-308` diz:
+      "*Sobrevive ao avanço pro passo de cálculo: quem falhou aqui vai virar alerta lá, e o operador
+      precisa continuar enxergando quem foi.*" Mas a condição de render, 1 linha abaixo, é
+      `{!execucaoId && ultimoLancamento && …}` — o bloco **desaparece exatamente quando** as falhas
+      viram alerta, que é o momento que o comentário diz estar cobrindo.
+      A ambiguidade está em "passo de cálculo": se for lido como o estado "Pronto pra calcular", o
+      comentário é verdadeiro; se for lido como o painel de resultados, é falso. A segunda oração
+      ("vai virar alerta lá") só faz sentido na segunda leitura, então o comentário se contradiz
+      sozinho. O mesmo escorregão está no comentário do teste (`:299`, "Persistente: sobrevive ao
+      avanço para o passo de cálculo") enquanto a asserção ao lado verifica a presença de
+      "Pronto pra calcular" — ou seja, o teste mede a 1ª leitura e o comentário descreve a 2ª.
+      **O comportamento está certo** — é decisão documentada ([AUTO-DECISION] do @dev) e eu a aprovei
+      (D-4), inclusive porque a informação sobrevive em outra forma (alertas do resultado, `:405-415`).
+      O problema é só o registro. Levanto como `low` e não como nota de rodapé por uma razão
+      específica: **é literalmente a mesma classe de defeito que motivou o AC 5 desta story** — um
+      comentário local afirmando uma garantia que o código não dá (OBS-123-2 da 12.3). Esta story
+      corrigiu um comentário mentiroso e introduziu outro, menor. O padrão merece ser interrompido.
+    recommendation: >
+      Uma frase. Trocar por algo como: "Persiste enquanto o passo 1 está na tela (some ao entrar no
+      resumo do lote — lá as falhas reaparecem como `alerta` do resultado, `:405-415`)". Roteado em
+      `DEB-12.4-A` para a **12.5**, que já vai reescrever essa região do componente. **Não** abrir
+      commit só para isto — o arquivo está na fila `RS-9` e um commit de comentário custaria uma
+      rodada de contenção inteira por uma linha.
+  - id: OBS-124-2
+    severity: low
+    category: tests
+    status: debito-registrado
+    titulo: "\"Cancelar/Escape/backdrop caem no lado seguro\": 3 saídas afirmadas, 1 travada por teste"
+    description: >
+      Achado desta revisão. As Completion Notes afirmam (AC 4) que "Cancelar/Escape/backdrop caem no
+      lado seguro (campos em branco)". Verifiquei a afirmação por composição e ela é **verdadeira**:
+      `ConfirmDialog` passa `onClose={onCancel}` ao `Modal` e `emVoo={confirmando}` é `false` aqui,
+      então `Modal.tentarFechar` (`:108-114`) chama `onCancel` direto tanto no Escape (`:147-150`)
+      quanto no `mousedown` do backdrop (`:184-187`); `onCancel` é `() => setTrocaCompetencia(null)`
+      e os valores já foram zerados antes do diálogo montar. As três saídas convergem, de fato.
+      **Mas só o "Cancelar" tem asserção.** Escape e backdrop dependem de o `Modal` continuar se
+      comportando assim — e o `Modal` está na fila de mais 5 stories (12.12, 12.15, 12.16, 12.17 e a
+      própria 12.16 do `DEB-12.1-A`, que quer travar o scroll do `<body>`). Numa story cujo risco
+      declarado é `RS-3` e cujo desenho inteiro se apoia em "toda saída ambígua é segura", deixar
+      2/3 das saídas sem trava é a lacuna que eu apontaria mesmo num commit impecável.
+      Não rebaixa o gate: o comportamento **é** correto hoje, e a asserção que falta protege contra
+      regressão futura, não contra defeito presente.
+    recommendation: >
+      Dois `it` curtos no `LoteContabilidadeDialog.test.tsx`, reusando o setup de `preencher()` que
+      já existe: (a) `fireEvent.keyDown(document, { key: 'Escape' })` com a confirmação aberta →
+      confirmação some **e** `getAllByRole('spinbutton')[0]` segue `toHaveValue(null)`;
+      (b) `fireEvent.mouseDown` no `data-testid="modal-backdrop"` do topo → idem. O `Modal` já expõe
+      o `data-testid` necessário. Roteado em `DEB-12.4-A`.
+  - id: OBS-124-3
+    severity: low
+    category: code
+    status: debito-registrado
+    titulo: "Competência vazia deixa os DOIS botões desabilitados sob o rótulo falso \"Verificando emissões…\", sem bloco de erro"
+    description: >
+      Achado desta revisão, rastreado no código. `CampoCompetencia` é um `<input type="month">` e o
+      seletor nativo **permite limpar o campo** (`e.target.value === ''`, documentado no próprio
+      JSDoc do componente: "AAAA-MM ou '' quando o operador limpa"). Com `competencia === ''`:
+      · `comBoletoQ` tem `enabled: false` (a regex `/^\d{4}-\d{2}$/` não casa) → o status fica
+        `pending`, nunca `success` nem `error`;
+      · logo `guardaPronta === false`, mas `comBoletoQ.isError === false`;
+      · resultado: "Calcular" **e** "Lançar faturamentos e continuar" ficam desabilitados exibindo
+        **"Verificando emissões…"**, e o `<p className="alert-error">` de falha da guarda (`:289-294`)
+        **não** aparece, porque não houve erro. A tela afirma estar verificando algo que nem foi
+        disparado.
+      Enquadramento justo, em duas direções:
+      · **Não é regressão — é melhora com verruga.** Antes desta story o botão de lançar estava
+        *habilitado* nesse estado e o clique produzia um 422 do `competenciaSchema`. Trocar um erro
+        por um disabled é estritamente melhor; só o rótulo ficou errado.
+      · **Não é achado novo, é a mesma raiz do OBS-123-4a**, que eu já levantei no gate da 12.3
+        ("rótulo que mente depois da falha, sem ramo para `isError`") e roteei para a 12.6. O AC 5
+        desta story fez o botão de lançar **herdar** o `guardaPronta` — e, junto, herdar o defeito de
+        rotulagem. Herança correta do gate: o pedido do `DEB-12.3-B` era exatamente `|| !guardaPronta`,
+        e o @dev entregou isso. Não é desvio.
+      · A recuperação é trivial e óbvia (escolher um mês de novo, no campo logo acima), então o
+        impacto operacional é quase nulo.
+    recommendation: >
+      **→ 12.6**, somado ao OBS-123-4a que já está roteado para lá. Quando a 12.6 for tratar
+      "erro vs. vazio" neste arquivo, o ternário de rótulo precisa de **três** ramos, não dois:
+      pendente real (`isFetching`), erro (`isError` → "Não foi possível verificar" + ação de retry)
+      e **não-disparado** (`!enabled` → "Escolha a competência"). Registrado em `DEB-12.4-B`.
+      **Atenção ao roteamento (padrão recorrente deste épico):** a AC 1 da 12.6 enumera 4 pontos de
+      carga e o `comBoletoQ` **continua fora dela** — é o mesmo aviso que deixei no gate da 12.3 e
+      que ainda não foi endereçado. Enumeração fechada não absorve item novo por herança. Se o @po
+      não acrescentar explicitamente o ponto da guarda à AC 1 **e** à File List da 12.6, tanto
+      OBS-123-4a quanto este item morrem no Dev Agent Record.
+  - id: OBS-124-4
+    severity: info
+    category: code
+    status: verificado-sem-acao
+    titulo: "O pior caso do `.in()` de resolução de nomes (200 ids) é exatamente o caso em que o nome mais importa — e o best-effort já absorve"
+    description: >
+      Achado desta revisão, registrado porque é o tipo de coisa que só aparece no dia ruim.
+      `lancarFaturamentoLoteSchema` permite `.max(200)` lançamentos. Se **todos** falharem,
+      `resolverNomesDasFalhas` monta um `.in('id', ids)` com 200 UUIDs, que o PostgREST serializa na
+      **query string** (~7,8 kB só de ids). Isso flerta com o limite de header/URL de proxies
+      (`large_client_header_buffers` costuma ser 8 kB), e um 414/400 nessa chamada é plausível.
+      A ironia estrutural vale registro: o caso de maior risco de estourar a URL é o mesmo caso em
+      que a lista de nomes é mais útil ao operador (200 clientes falhados).
+      **Por que fica como `info` e sem ação:** o desenho *já* trata isso corretamente. O `try/catch`
+      converte o erro em `'—'` e os lançamentos continuam contados — que é precisamente o cenário do
+      teste "busca de nomes falhando não derruba o lote". A degradação é para "UUID→'—'", não para
+      perda de dado. Além disso, "200 lançamentos, 100% falhando" implica indisponibilidade do banco,
+      e nesse estado a lista de nomes é o menor dos problemas. A carteira real (~120 boletos/mês,
+      número da migration 0037) está uma ordem de grandeza abaixo.
+    recommendation: >
+      Nenhuma ação nesta story. Se algum dia a carteira crescer a ponto de lotes de 200 virarem
+      rotina — que é, aliás, o **mesmo gatilho de 50 clientes** que a D7 do épico define para a
+      12.15 — o conserto é fatiar o `.in()` em blocos de ~50. Registrar junto ao gatilho da D7 em vez
+      de criar item solto.
+  - id: OBS-124-5
+    severity: info
+    category: code
+    status: verificado-sem-acao
+    titulo: "Depois de um lançamento bem-sucedido os valores continuam em `faturamentos` — trocar o mês oferece carregar valores JÁ LANÇADOS descritos como \"digitados\""
+    description: >
+      Achado desta revisão. `lancarFaturamentos.onSuccess` não limpa `faturamentos` (de propósito: o
+      AC 3 depende disso para que "Tentar de novo" não obrigue a redigitar). Consequência: depois de
+      lançar 2026-06 com sucesso, trocar para 2026-07 encontra `digitados.length > 0` e abre o
+      `ConfirmDialog` oferecendo "manter" valores que **já foram lançados no mês anterior**, com a
+      mensagem "Você tinha N valor(es) de faturamento digitado(s)…" — tecnicamente verdadeiro
+      (foram digitados) mas incompleto (também foram gravados).
+      **Por que não é defeito.** (a) Chegar ao estado perigoso exige **dois** atos afirmativos
+      distintos: confirmar "Manter os N valores em 2026-07" e depois clicar em lançar. (b) A lista
+      itemizada mostra os valores. (c) Reaproveitar o faturamento do mês anterior como ponto de
+      partida é, para clientes `faixa_faturamento`, um fluxo **legítimo** e provavelmente desejado —
+      não uma armadilha. (d) `clientes_contabilidade_faturamentos` tem
+      `unique (cliente_contabilidade_id, competencia)` (migration 0031), então não há duplicação:
+      no pior caso grava-se um valor errado no mês novo, corrigível relançando.
+      Registro para que ninguém "conserte" isto limpando `faturamentos` no `onSuccess` — isso
+      quebraria o AC 3.
+    recommendation: >
+      Nenhuma ação. Se o @po quiser precisão de linguagem, o lugar é a 12.5 (que já vai distinguir
+      "lançado" de "pendente" no resumo de composição): a mensagem poderia diferenciar valores
+      pendentes de valores já lançados. Melhoria cosmética, não correção.
+  - id: OBS-124-6
+    severity: info
+    category: requirements
+    status: debito-registrado
+    titulo: "`DEB-12.3-D` cresceu: o deslocamento acumulado de linhas em `LoteContabilidadeDialog.tsx` já passa de 200"
+    description: >
+      Consequência mecânica, medida por mim: o arquivo foi de **326 linhas** (`382a366~1`) para
+      **457** (`382a366`) — **+131 líquidas**, quase todas antes do meio do componente. Somado às
+      ~+92 da 12.3, o deslocamento acumulado desde a redação do épico passa de **200 linhas**.
+      Exemplos aferidos agora: a AC 1 da **12.15** cita `LoteContabilidadeDialog.tsx:128-143` para o
+      passo de faturamento, que hoje está em **`:333-374`**; a AC 6 da **12.12** cita `:130-140`
+      para os inputs, hoje **`:341-354`**; a AC 5 da 12.12 cita `:167`. **Arquivos e descrições
+      continuam corretos — só os números não.**
+    recommendation: >
+      Sem ação de documento obrigatória; é `RS-9` funcionando como previsto. @dev das próximas
+      stories da fila (12.5 em diante): tratar toda referência de linha deste arquivo como
+      **indicativa** e localizar pelo trecho descrito, nunca pelo número. Vai piorar a cada story da
+      cadeia.
+  - id: OBS-124-7
+    severity: info
+    category: process
+    status: verificado-sem-acao
+    titulo: "Registro positivo: o @dev marcou `[ ]` na verificação manual em vez de assumir que build verde equivale a fluxo testado"
+    description: >
+      Registro porque é o comportamento que eu quero ver repetido. O DoD da story tinha um item de
+      verificação em navegador; o @dev **não o marcou**, escreveu explicitamente "não subi o app
+      local nem exercitei o fluxo no browser" e delegou ao @qa o caminho que a própria story pedia.
+      A alternativa comum — marcar `[x]` porque "os testes passam e o build compila" — é como um
+      gate acaba assinando cobertura que não existe.
+      A honestidade tem um custo real e ele está registrado em `limitacao_da_verificacao_manual`: eu
+      **também** não pude rodar o navegador, então o item continua em aberto. Um `[x]` falso teria
+      fechado o assunto com uma mentira; o `[ ]` honesto o mantém visível para quem fizer o deploy.
+    recommendation: "Nenhuma. Manter o padrão."
+
+# ─────────────────────────────────────────────────────────────────────────────
+qualidade_dos_testes:
+  veredito: "Discriminantes por prova, não por alegação — 4/4 mutações produziram exatamente as falhas esperadas"
+  analise: >
+    **+15 testes** (11 de componente + 4 de repositório), batendo com o Change Log e com o delta que
+    eu mesma medi contra o gate da 12.3 (1186 → 1201). Arquivo do diálogo: **21 casos**.
+    · **Prova de discriminância, o item mais importante deste bloco.** Não confiei na afirmação do
+      @dev nem na minha leitura: mutei o `src` em 4 pontos independentes e rodei. Resultado:
+      `if (resultado.lancados === 0)` → `if (false)` ⇒ **1 falha**, "AC 1: 100% de falha NÃO avança";
+      remover `setFaturamentos({})` ⇒ **1 falha**, "AC 4: … limpa os campos e pede confirmação";
+      remover `staleTime: 0` ⇒ **1 falha**, "AC 5 (DEB-12.3-B) … reabrir o diálogo revalida";
+      remover `|| !guardaPronta` do `disabled` ⇒ **2 falhas**, os dois casos de AC 5.
+      Em nenhuma das 4 houve falha colateral nem falha a menos: o mapeamento AC↔teste é **exato**.
+      Árvore restaurada com `git checkout --` após cada mutação; `git status -- apps/web` vazio ao
+      final.
+    · **A mutação do `guardaPronta` foi desenhada para pegar teste preguiçoso** — removi só o
+      `disabled`, deixando o **rótulo** "Verificando emissões…" intacto. Um teste que verificasse
+      apenas o texto teria passado. Os dois falharam, ou seja, eles afirmam `toBeDisabled()` e a
+      não-chamada do mock, não a aparência.
+    · **Asserção sobre payload, não sobre estado interno.** O teste do AC 3 usa
+      `toHaveBeenNthCalledWith(2, '2026-06', [{ clienteContabilidadeId: 'cc-2', … }])` e o do AC 4
+      (confirmar) usa `toHaveBeenCalledWith('2026-07', …)`. Nos dois casos a asserção mira o que sai
+      para o servidor — que é onde `RS-3` e o reenvio indevido se materializam. É a camada certa.
+    · **Trava de ausência preservada e ampliada.** Os `not.toBeInTheDocument()` do Cenário A da 12.3
+      (`:123-124`) continuam intactos, e a 12.4 acrescenta os seus:
+      `queryByText(/cc-2/)` (nenhum UUID cru vaza para a tela, AC 2),
+      `queryByText('Padaria Bom Pão Ltda')` ausente após o retry (AC 3 — prova que o já-lançado
+      **não** volta), `queryByText(/Pronto pra calcular/i)` ausente com 0 lançados (AC 1).
+      Testar o que **não** deve aparecer continua sendo a parte cara e ela está feita.
+    · **Contadores como asserção de arquitetura.** No repositório, `estado.buscasDeClientes` é
+      afirmado `toBe(0)` no caminho feliz e `toBe(1)` na falha parcial. Isso trava três coisas de uma
+      vez: que o caminho feliz não paga round-trip, que não há N+1, e que a resolução acontece. Um
+      contador no fake é mais barato e mais durável que espiar chamadas de mock.
+    · **Modo de falha testado nos dois estados.** Guarda pendente (`new Promise(() => {})`) e guarda
+      em erro (`mockRejectedValue`), mais a falha da busca de nomes no repositório. A parte mais
+      delicada do desenho é a mais coberta — proporção correta, igual à que elogiei na 12.3.
+    · **Lacuna correspondente aos achados:** Escape e backdrop do `ConfirmDialog` (OBS-124-2) e o
+      estado de competência vazia (OBS-124-3). Nos dois casos o comportamento é derivável do código,
+      mas não está travado.
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      Nenhuma rota nova, nenhuma mudança de papel: `POST /clientes-contabilidade/faturamentos/lote`
+      segue com `requireRole(['admin','colaborador','financeiro'])` e o schema Zod inalterado
+      (`competenciaSchema` + `uuid()` + `number().min(0)` + `min(1).max(200)`) — confirmei que o
+      arquivo da rota e o de validação **não estão no diff**.
+      A mudança de contrato é **aditiva e de saída**, e o campo novo é `nome` de cliente contábil —
+      dado que os três papéis já enxergam na própria tela que originou a chamada, e que só é
+      resolvido para ids que o próprio chamador enviou (`falhas.map(f => f.clienteContabilidadeId)`).
+      Não há enumeração possível: um id que não veio no payload nunca entra na consulta.
+      Sem SQL cru (`.in()` parametrizado do builder Supabase). Nenhum `dangerouslySetInnerHTML`; os
+      dados interpolados no JSX novo (`f.nome`, `f.motivo`, `nome`, `brl(numero)`) são todos
+      escapados pelo React. O `catch {}` de `resolverNomesDasFalhas` **não** vaza mensagem de erro
+      para a resposta — engole e mantém `'—'`, que é o comportamento certo do ponto de vista de não
+      expor detalhe de banco ao cliente.
+  performance:
+    status: PASS
+    notes: >
+      O único I/O novo é **condicional e único**: 1 query a `clientes_contabilidade` apenas quando
+      `falhas.length > 0`, com asserção de teste garantindo 0 consultas no caminho feliz. Não há
+      N+1. No cliente, `staleTime: 0` na `comBoletoQ` aumenta a frequência de refetch **de propósito**
+      (é o conteúdo do AC 5) e o custo é 1 GET numa tabela pequena por montagem do diálogo —
+      contrapartida correta para fechar a janela de dado obsoleto de `RS-1`. O global de 30s segue
+      intocado, então nenhuma outra tela paga por isso.
+      Os derivados novos (`alvosFaturamento`, `lancamentosValidos`) são `useMemo` O(n) sobre uma
+      seleção limitada a 200 pelo schema. `next build` exit 0 após limpar o `.next`
+      (ver `episodio_do_build`), sem alerta de tamanho de bundle.
+  reliability:
+    status: PASS
+    notes: >
+      **É aqui que a story ganha o gate**, e é a NFR que estava em CONCERNS na 12.3. Três melhoras
+      concretas de confiabilidade, todas travadas por teste discriminante: (a) o passo 1 deixou de
+      declarar sucesso sobre 100% de falha — o bug de fluxo do `RS-3` está morto; (b) o lançamento
+      em massa herdou o modo de falha fechada da guarda (`|| !guardaPronta`), resolvendo a
+      contradição entre D-1 e D-2 que eu registrei em OBS-123-4b; (c) a janela de cache de cliente
+      da guarda (camada 2 do resíduo de `RS-1`, OBS-123-2) foi fechada com `staleTime: 0`.
+      A degradação da resolução de nomes é graciosa por construção e por teste: falha ao buscar nome
+      **nunca** custa um lançamento confirmado.
+      `tsc`, lint, **2× 1201 testes** e build, todos reexecutados por mim, todos verdes. Resíduos:
+      OBS-124-3 (rótulo falso na competência vazia, recuperação óbvia) e as duas saídas do
+      `ConfirmDialog` sem trava de teste (OBS-124-2) — nenhum dos dois é modo de falha novo.
+      **`RS-1` continua REDUZIDO, NÃO FECHADO**: esta story fechou a *camada 2* das três descritas em
+      `DEB-12.3-A`; as camadas 1 (corrida entre abas) e 3 (calcular→calcular→emitir) seguem abertas e
+      sem dono.
+  maintainability:
+    status: PASS
+    notes: >
+      Reuso em vez de invenção nos três pontos onde havia tentação: `ConfirmDialog` (AC 4, com o
+      `tone="neutral"` correto), o padrão visual de `ClientesContabilidadeManager` (AC 2) e
+      `listarClientesContabilidadePorIds`, que já existia. Zero componente novo, zero utilitário
+      novo, zero token.
+      Os comentários novos explicam **por quê**, não o quê — o de `:305-308` sobre bloco persistente
+      vs. toast, o de `:100-101` sobre por que lista vazia é bloqueada antes do 422, o JSDoc de
+      `resolverNomesDasFalhas` sobre por que o `catch` é vazio de propósito. Comentário que justifica
+      um `catch` silencioso é exatamente o que impede a próxima pessoa de "consertá-lo" propagando o
+      erro (e quebrando o teste que existe para isso).
+      As duas `[AUTO-DECISION]` e o `Fora de escopo confirmado` estão registrados no Dev Agent
+      Record com razão declarada, o que torna a próxima revisão barata.
+      Débito de manutenção real e único: OBS-124-1, o comentário que promete persistência que o
+      `!execucaoId` nega.
+
+# ─────────────────────────────────────────────────────────────────────────────
+debitos_tecnicos_do_epico:
+  - id: DEB-12.4-A
+    severity: low
+    category: code+tests
+    titulo: "Comentário do bloco de falhas + asserções de Escape/backdrop do `ConfirmDialog`"
+    origem: "OBS-124-1 e OBS-124-2 desta revisão"
+    dono_proposto: "**12.5** — próxima da fila `RS-9`, abre `LoteContabilidadeDialog.tsx` **e** `LoteContabilidadeDialog.test.tsx`"
+    verificacao_do_roteamento: >
+      Conferido na fonte, não por suposição (regra herdada dos gates da 12.2 e 12.3): a File List
+      proposta da 12.5 inclui `LoteContabilidadeDialog.tsx` e o teste correspondente, e a AC 1 da
+      12.5 substitui justamente o bloco "Pronto pra calcular", vizinho imediato do comentário a
+      corrigir. O roteamento é válido em termos de arquivo.
+    recomendacao: >
+      @po: acrescentar **explicitamente** às Dev Notes da 12.5 (não apenas confiar em herança):
+      (a) reescrever o comentário de `:305-308` para dizer o que o `!execucaoId` realmente faz;
+      (b) dois `it` travando Escape e backdrop da confirmação de troca de competência no lado seguro.
+      **Motivo de exigir acréscimo explícito:** as ACs 1–5 da 12.5 são enumeradas e fechadas sobre
+      composição e progresso; nenhuma menciona o bloco de falhas nem o `ConfirmDialog`. Este épico já
+      perdeu itens exatamente assim três vezes (12.1, 12.2, 12.3). "A story já abre o arquivo" não
+      basta.
+      **Não abrir commit avulso para isto** — o arquivo está em contenção `RS-9`.
+  - id: DEB-12.4-B
+    severity: low
+    category: code
+    titulo: "Terceiro ramo de rótulo: competência não informada ≠ verificação pendente ≠ erro"
+    origem: "OBS-124-3 desta revisão"
+    dono_proposto: "**12.6** — dona declarada de \"erro vs. vazio nos pontos de carga\" neste arquivo; agrupa com OBS-123-4a"
+    avaliacao: >
+      Este item e o OBS-123-4a (roteado pelo gate da 12.3) são o **mesmo defeito de rotulagem** visto
+      de dois ângulos: o ternário do rótulo distingue apenas `isPending` de `guardaPronta`, sem ramo
+      para `isError` (12.3) nem para `!enabled` (12.4). A 12.4 propagou o `guardaPronta` para o
+      segundo botão, como o `DEB-12.3-B` mandava — e com ele propagou o defeito. Corrigir os dois
+      juntos é uma função de rótulo com 3 ramos usada nos 2 botões.
+    recomendacao: >
+      @po: **acrescentar o `comBoletoQ` à AC 1 e à File List da 12.6.** Este é o segundo gate
+      consecutivo em que registro isto e ele continua pendente: a AC 1 da 12.6 enumera 4 pontos de
+      carga e cita `LoteContabilidadeDialog.tsx:73-79` (a query de `resultados`, hoje deslocada — ver
+      OBS-124-6). O `comBoletoQ` **não está na enumeração**. Sem acréscimo explícito, tanto
+      OBS-123-4a quanto OBS-124-3 morrem no Dev Agent Record da 12.6.
+  - id: DEB-12.4-C
+    severity: info
+    category: requirements
+    titulo: "O bloco de falhas por nome é o novo candidato nº1 a anúncio assistivo — e não está em nenhuma AC da 12.12"
+    origem: "Consequência do AC 2 desta story + [AUTO-DECISION] do @dev que difere a11y para a 12.12"
+    avaliacao: >
+      O @dev acertou em **não** adicionar `role="status"`/`role="alert"` aqui (é escopo declarado da
+      12.12, e o gate da 12.3 roteou o `role="alert"` deste arquivo para lá). Mas a 12.4 criou um
+      alvo que não existia quando a 12.12 foi escrita: um bloco que **aparece dinamicamente** com a
+      lista de quem falhou, sem nenhum anúncio — para leitor de tela, o clique em "Lançar" hoje
+      produz só o toast, e o conteúdo mais importante (quem falhou e por quê) surge em silêncio.
+      Note o contraste que confirma o ponto: o padrão que a AC 2 mandou copiar
+      (`ClientesContabilidadeManager.tsx:263`) usa `<p role="alert" className="alert-error">`. A
+      cópia trouxe o visual e deixou a semântica para trás — corretamente, por escopo, mas alguém
+      precisa reencontrá-la.
+      As ACs da 12.12 são todas enumeradas: a AC 5 lista 6 pontos de carregamento e a AC 6 fala dos
+      *inputs* de faturamento (`:130-140`). **O bloco de falhas não está em nenhuma das duas.**
+    recomendacao: >
+      @po: acrescentar explicitamente à AC 5 (ou como AC nova) da **12.12** o bloco de falhas do
+      lançamento em massa (`LoteContabilidadeDialog.tsx:309-331` em `382a366`, localizar pelo trecho
+      — ver OBS-124-6). Mesmo padrão de acréscimo já pedido para a 12.6.
+  - id: DEB-12.3-A
+    severity: medium
+    category: architecture
+    status: "AINDA SEM DONO — reafirmado neste gate"
+    titulo: "Guarda de servidor por `(cliente_contabilidade_id, competência)` — o resíduo de `RS-1`"
+    atualizacao_desta_revisao: >
+      A 12.4 fechou a **camada 2** das três descritas no gate da 12.3 (janela de cache de cliente,
+      via `staleTime: 0`). Continuam abertas: **camada 1** (corrida entre abas/operadores) e
+      **camada 3** (calcular → calcular → emitir os dois). Nenhuma story aberta é dona.
+      **`RS-1` segue REDUZIDO, NÃO FECHADO.** Se alguém escrever "RS-1 fechado" ao consolidar o
+      Épico 12, este gate e o da 12.3 são a contraprova. Texto de saída correto atualizado:
+      "guarda de cliente contra reemissão sequencial na mesma competência, sem janela de cache de
+      cliente; sem guarda transacional de servidor; resíduo em corrida entre abas e na sequência
+      calcular-calcular-emitir".
+    recomendacao: "Inalterada — @po/dono precisa abrir a story nova. Não implementar dentro de 12.5, 12.6 ou 12.8 por iniciativa própria."
+  - id: DEB-12.3-C
+    severity: low
+    category: code
+    status: "AINDA SEM DONO — reafirmado neste gate"
+    titulo: "O fluxo MÉDICO (`NovaExecucao.tsx`) continua sendo o menos seguro dos dois"
+    atualizacao_desta_revisao: >
+      A distância **aumentou**. Depois da 12.4, o lado contábil tem guarda que falha fechada,
+      `staleTime: 0` e os dois botões (calcular **e** lançar) respeitando `guardaPronta`. O lado
+      médico segue com `const { data } = useQuery(...)` sem `isSuccess`/`isError`, com o
+      `staleTime: 30_000` global e com o **mesmo comentário sobre cache que esta story acabou de
+      corrigir do lado contábil** — o comentário mentiroso agora existe em exatamente um lugar, e é
+      `NovaExecucao.tsx`. O @dev fez certo em não tocar (fora de escopo, `RS-8`/rebase).
+    recomendacao: >
+      @po/@sm: continua precisando de decisão registrada — story própria de paridade, absorção em
+      `DEB-12.3-A`, ou aceitação formal da assimetria. Ao menos a correção do comentário deveria
+      viajar junto de qualquer story que abra `NovaExecucao.tsx` (a 12.17, AC 2).
+  - id: DEB-12.2-A
+    severity: low
+    category: requirements
+    status: "AINDA SEM DONO — reafirmado neste gate"
+    titulo: "7º campo de competência (`<input>` de texto livre) em `RecebiveisManager.tsx:191`"
+    atualizacao_desta_revisao: >
+      Sem mudança. Registro só para não sumir: nenhuma story aberta do Épico 12 é dona de
+      `RecebiveisManager.tsx`, e o roteamento sugerido à época (12.18) está **errado** — a 12.18 abre
+      `ClientesContabilidadeManager.tsx`. Continua dependendo de decisão do @po.
+impacto_no_sequenciamento: >
+  **PASS sem rework. A fila `RS-9` avança: 12.5 está liberada para abrir.** Ordem obrigatória
+  mantida — **12.3 → 12.4 → 12.5 → 12.6** (+ 12.8 na mesma contenção), com a fila estendida do
+  arquivo (12.12 / 12.15 / 12.16 / 12.17) inalterada.
+  Avisos para quem abrir a 12.5:
+  · o arquivo cresceu **+131 linhas líquidas** (326 → 457) e o deslocamento acumulado desde a
+    redação do épico já passa de 200 — tratar toda referência de linha como indicativa (OBS-124-6);
+  · o bloco "Pronto pra calcular" (`:376-383`) está intacto e é exatamente o que a AC 1 da 12.5 vai
+    substituir; `ultimoLancamento` e `pendentesRetry` já fornecem o "Y lançado · Z pendente" que essa
+    AC pede — **não recalcular esse dado do zero**;
+  · `DEB-12.4-A` cabe naturalmente no diff da 12.5 (uma frase de comentário + dois `it`), **se o @po
+    acrescentar explicitamente**. Enumeração de AC fechada não absorve item novo por herança — este
+    épico já perdeu itens assim em 12.1, 12.2 e 12.3, e o padrão se repetiu na 12.3→12.6.
+  · **Critérios de reprovação herdados, ainda vigentes:** (a) qualquer opt-in / checkbox de
+    reinclusão / "emitir mesmo assim" que devolva ao payload um cliente já emitido viola o Cenário A
+    da 12.3 — os testes de ausência (`:123-124`) existem para pegar isso, **não removê-los**;
+    (b) qualquer `brl`/`normalizarBusca`/`competenciaAtual` local reintroduzido, ou qualquer
+    `<input type="text">` de competência novo, é regressão direta da 12.2.
+  · **Critério de reprovação novo, a partir deste gate:** o AC 1 da 12.4 (o passo 1 só avança com
+    `lancados > 0`) e o `|| !guardaPronta` do botão de lançar são agora comportamento travado. Os
+    testes "AC 1: 100% de falha NÃO avança" e os dois de "AC 5" são discriminantes por verificação
+    minha — qualquer story da fila que os torne verdes por mudança de asserção em vez de mudança de
+    comportamento é reprovação.
+  Pendências que **não** bloqueiam a fila mas precisam de decisão do @po antes do fechamento do
+  épico: `DEB-12.3-A` (sem dono; é o que impede declarar `RS-1` fechado), `DEB-12.3-C` (sem dono),
+  `DEB-12.2-A` (sem dono) e os acréscimos explícitos de `DEB-12.4-B` à 12.6 e `DEB-12.4-C` à 12.12.
+  Ação recomendada antes do deploy (não bloqueante para o gate): a passada manual de ~3 minutos
+  descrita em `limitacao_da_verificacao_manual.recomendacao` — nem o @dev nem eu subimos o navegador.

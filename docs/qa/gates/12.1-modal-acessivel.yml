@@ -1,0 +1,203 @@
+# QA Gate — Story 12.1 (Componente `<Modal>` único e acessível) — iteração 1 (final)
+storyId: "12.1"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-08-25"
+commit: daaa36d
+epic: "12 — Sanitização do caminho de emissão (docs/architecture/epic-sanitizacao-emissoes.md), Fase 0"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [OBS-121-1 (low, débito), OBS-121-2 (low, débito), OBS-121-3 (info), OBS-121-4 (info)]
+notes: >
+  AC 1-7 verificados contra o diff real de `daaa36d`, não contra o relato do @dev. Comandos
+  reexecutados por mim nesta revisão: `npx tsc --noEmit` (exit 0), `npm run lint` ("No ESLint
+  warnings or errors"), `npx vitest run` (**1137 testes / 128 arquivos, 128 passed**) e
+  `npm run build` (24 rotas, exit 0) — batem exatamente com o reportado no Dev Agent Record.
+  AC 1/2: `Modal.tsx` entrega `role="dialog"` + `aria-modal` + `aria-labelledby` no id do `<h2>`,
+  `aria-describedby` só quando há descrição (não inventa IDREF vazio), foco inicial no primeiro
+  interativo (painel com `tabIndex={-1}` quando o modal é só de leitura), trap de Tab/Shift+Tab
+  com `preventDefault` explícito, retorno de foco ao gatilho guardado por `document.contains`,
+  Escape, backdrop e `emVoo` bloqueando SÓ Escape/backdrop (nunca o rodapé — D-12.1-4, correto: o
+  lote confirmado roda no servidor e precisa continuar fechável, decisão 5 da revisão de
+  arquitetura 2026-07-31). Backdrop em `mousedown` (D-12.1-5) é a escolha certa e está testada
+  (arrastar seleção de dentro do painel não fecha). Pilha de modais no escopo do módulo
+  (D-12.1-3) resolve `SyncModal` → `ConfirmDialog` sem provider, com teste dedicado.
+  AC 4 (métrica 6/6): verificado por conta própria, não pelo grep do @dev.
+  `rg 'fixed inset-0' apps/web/src` devolve apenas `Modal.tsx` + `ExtratoManager` (x2),
+  `DreManager`, `LinkPublicoBI` (todos fora do caminho de emissão e já com `role="dialog"`) e o
+  backdrop do `Sidebar` (não é diálogo). Nenhuma casca solta sobrou no caminho de emissão: 6/6
+  (era 0/6, G-37). Os 6 diálogos reais em overlay conferidos um a um no diff: `ConfirmDialog`,
+  `LoteContabilidadeDialog`, `LoteEmissaoDialog`, `EmitirBoletoDialog` (RelatorioGrupos),
+  `CancelarBoletoDialog` (RecebiveisManager) e `SyncModal`.
+  AC 6 / `RS-5`: **regressão dupla genuína**. `LoteEmissaoDialog.test.tsx` NÃO renderiza o
+  componente direto — abre pelos dois consumidores reais (`RelatorioGrupos` via "Emitir todos os
+  pendentes" e `LoteContabilidadeDialog` percorrendo competência → "Calcular 1 em lote" →
+  "Emitir boletos em lote") e afirma o MESMO snapshot de negócio nos dois caminhos
+  (`confirmar('lote-1', { totalItens: 1, totalValor: 950.89 })`). Não é um caminho só.
+  D4 (restrição do épico): `git show daaa36d --stat` confirma zero arquivos `.css` e zero
+  alteração em `docs/design-system.md` — o único doc tocado é a própria story.
+  Anti-self-review: revisão ativa, com reexecução independente da suíte e verificação por grep
+  das métricas — encontrou um achado de a11y que o @dev não registrou (OBS-121-1).
+decisoes_do_dev_avaliadas:
+  - id: D-12.1-1
+    assunto: "`AcaoRevisar` não virou `<Modal>` (divergência da letra do AC 3)"
+    veredito: ACEITA
+    justificativa: >
+      Verificado no código, não no relato. `AcaoRevisar` (`RelatorioGrupos.tsx:606-653`) renderiza
+      `<div className="mt-3 space-y-2 border-t border-cc-hairline pt-3">` sob a linha do resultado:
+      não tem `fixed inset-0`, não tem backdrop, não tem overlay — é um disclosure inline, não um
+      diálogo. Três evidências independentes sustentam a leitura do @dev:
+      (1) a auditoria de origem, em G-37, enumera os 6 modais e aponta `RelatorioGrupos.tsx:347`
+      (= `EmitirBoletoDialog`); `AcaoRevisar` aparece na auditoria só em G-32, em `:566-620`;
+      (2) o próprio épico atribui `RelatorioGrupos.tsx:566-620` (`AcaoRevisar`) explicitamente à
+      **story 12.13** (R-15 · G-32 · `RS-2`), com critério de pronto sobre exibir o valor liberado;
+      (3) contar `AcaoRevisar` como modal faria o AC 3 (7 diálogos) contradizer o AC 4 (métrica
+      6/6) — a leitura do @dev é a única internamente consistente.
+      O parêntese "(`EmitirBoletoDialog` + `AcaoRevisar`)" é um **defeito de especificação
+      propagado do épico para o AC 3**, não um desvio do @dev. NÃO volta para o @dev; recomendo ao
+      @po/@sm corrigir a linha de arquivos da 12.1 no épico para evitar que a 12.13 herde a
+      confusão.
+  - id: D-12.1-2
+    assunto: "sem split 12.1a/12.1b (válvula RS-11 não acionada)"
+    veredito: ACEITA
+    justificativa: >
+      7 arquivos de produção, zero mudança de lógica de negócio, suíte inteira verde. Dividir
+      criaria dois gates para o mesmo componente sem reduzir risco.
+  - id: D-12.1-3
+    assunto: "pilha de modais em módulo, não Context"
+    veredito: ACEITA
+    justificativa: >
+      `pilhaDeModais` só é mutado dentro de `useEffect` num arquivo `'use client'` — sem
+      vazamento entre requisições no SSR. O pressuposto declarado ("o modal interno sempre monta
+      depois do externo") vale para todos os casos do repo hoje e é travado por teste. Se algum
+      dia um modal interno montar junto com o externo, o teste do `SyncModal` quebra — falha
+      barulhenta, não silenciosa. Aceitável.
+  - id: D-12.1-4
+    assunto: "`emVoo` bloqueia só Escape/backdrop, nunca o rodapé"
+    veredito: ACEITA
+    justificativa: >
+      Distingue fechar por acidente de fechar de propósito e preserva a decisão 5 da revisão de
+      arquitetura 2026-07-31 (o lote confirmado roda no servidor; fechar não cancela nada).
+      Testado nos dois sentidos.
+  - id: D-12.1-5
+    assunto: "backdrop em `mousedown`, não `click`"
+    veredito: ACEITA
+  - id: D-12.1-6
+    assunto: "`ConfirmDialog` do `SyncModal` como IRMÃO do `<Modal>`"
+    veredito: ACEITA
+    justificativa: >
+      Como filho, a confirmação entraria no focus trap e no fluxo de leitura do modal externo.
+      Como irmão + pilha, só o de cima reage a Escape/Tab — coberto por teste.
+issues:
+  - id: OBS-121-1
+    severity: low
+    category: accessibility
+    status: debito-registrado
+    titulo: "Semântica de disclosure do `AcaoRevisar` é inerte (gatilho desmonta ao expandir)"
+    description: >
+      Achado desta revisão, não registrado pelo @dev. Em `RelatorioGrupos.tsx`, `AcaoRevisar`
+      retorna cedo no ramo `if (!aberto)`: o botão "Revisar e liberar" (com `aria-expanded={false}`
+      e `aria-controls={painelId}`) **deixa de existir** quando o painel expande, e o painel com
+      `id={painelId}` só existe quando o botão não existe. Consequências:
+      (a) `aria-expanded` é literal `false` e nunca transiciona para `true` — o estado de
+      disclosure nunca muda para a tecnologia assistiva;
+      (b) `aria-controls` aponta para um IDREF que nunca coexiste com o gatilho — referência
+      pendente, que o axe sinaliza em `aria-valid-attr-value`.
+      Na prática, do pacote adicionado ao `AcaoRevisar` nesta story, o que de fato funciona é o
+      gerenciamento de foco (foco no campo ao expandir, volta ao gatilho ao fechar). Não é
+      regressão — antes não havia nada — e por isso não bloqueia o gate.
+    recommendation: >
+      Absorver na **12.13**, que já é a dona declarada de `RelatorioGrupos.tsx:566-620`: manter o
+      gatilho montado nos dois estados alternando `aria-expanded` true/false, ou remover os dois
+      atributos em vez de expor um IDREF pendente. Não abrir story própria.
+  - id: OBS-121-2
+    severity: low
+    category: tests
+    status: debito-registrado
+    titulo: "Correção de foco do `AcaoRevisar` sem asserção de teste"
+    description: >
+      O retorno de foco ao gatilho (`gatilhoRef.current?.focus()` movido do `onClick` para um
+      `useEffect` guardado por `jaAbriu`) foi analisado e está **correto e seguro** — ver
+      OBS-121-3. O teste "cancelar fecha o formulário sem chamar o service"
+      (`RelatorioGrupos.test.tsx`) percorre exatamente esse caminho e passa, mas não afirma nada
+      sobre o foco: se o `useEffect` for removido numa refatoração futura, nenhum teste quebra.
+    recommendation: >
+      Uma linha (`expect(screen.getByRole('button', { name: 'Revisar e liberar' })).toHaveFocus()`)
+      no teste que já existe, quando a 12.13 abrir o arquivo. Não justifica reabrir a 12.1.
+  - id: OBS-121-3
+    severity: info
+    category: code
+    status: verificado-sem-acao
+    titulo: "A 'correção de bug de passagem' é artefato da própria sessão, não bug do `master`"
+    description: >
+      O Dev Agent Record descreve a correção do import de `react` e do
+      `gatilhoRef.current?.focus()` como bug encontrado na retomada. Verificado em `daaa36d~1`
+      (`7803dc0`): naquele commit `AcaoRevisar` **não tinha** `gatilhoRef`/`useId`/`useEffect` — as
+      linhas são todas `+` no diff. Ou seja, não havia bug no `master`; o import quebrado e a
+      chamada de foco em ref nulo eram estado de trabalho não commitado desta mesma story, e o
+      commit entregue é internamente coerente (tsc/lint/build verdes). Sobre a segurança da
+      correção: no formato antigo, com o painel aberto o gatilho estava desmontado e
+      `gatilhoRef.current` era `null`, então o `?.` tornava a chamada um no-op silencioso — nunca
+      um crash. O `useEffect` com guarda `jaAbriu` é necessário e correto: sem ele, a primeira
+      montagem (com `aberto === false`) roubaria o foco para cada botão "Revisar e liberar" da
+      lista. Após confirmação bem-sucedida o componente pode desmontar antes do efeito; `.focus()`
+      em nó destacado é no-op inofensivo no DOM. **Nenhum teste adicional é exigido para fechar o
+      gate** (ver OBS-121-2 para o nice-to-have).
+    recommendation: >
+      Sem ação de código. Apenas evitar que o histórico registre um "fix" que ninguém encontrará
+      em `git log` do `master`.
+  - id: OBS-121-4
+    severity: info
+    category: requirements
+    status: intencional-registrado
+    titulo: "Mudança intencional de UX: 'Cancelar/Fechar' na emissão a partir do lote contábil"
+    description: >
+      Antes de `daaa36d`, `LoteContabilidadeDialog` passava
+      `onClose={() => setMostrarEmissao(false)}` ao `LoteEmissaoDialog` — o botão do rodapé
+      **voltava** ao resumo do lote. Agora passa `onClose={fecharTudo}`: o rodapé encerra o fluxo
+      inteiro (e invalida `execucaoQueryKeys.execucoes()`), e o retorno ao resumo passou a ser o
+      novo "← Voltar ao lote". É exatamente a separação de semântica que o AC 5 e a R-5 pedem
+      ("'← Voltar ao lote' ao lado de 'Fechar'"), está coberta por dois testes dedicados e não
+      altera nenhuma chamada de serviço. Registrado aqui para que 12.4/12.5 — que reabrem este
+      arquivo — não interpretem a mudança como regressão.
+    recommendation: Sem ação.
+debitos_tecnicos_do_epico:
+  - id: DEB-12.1-A
+    severity: low
+    category: accessibility
+    titulo: "`<Modal>` não trava o scroll do `<body>` nem isola o fundo"
+    origem: "Ponto deixado em aberto pelo @dev; fora de todos os ACs da 12.1"
+    avaliacao: >
+      Julgamento do @qa: é gap **real, porém pequeno**, e **genuinamente fora do escopo da 12.1**.
+      Fundamentação: (i) `aria-hidden` no conteúdo de fundo é *redundante* aqui — `aria-modal="true"`
+      é o mecanismo previsto em ARIA 1.2 para o leitor de tela ignorar o fundo, e é exatamente o
+      que os diálogos acessíveis pré-existentes do repo (`ExtratoManager`, `DreManager`,
+      `LinkPublicoBI`, `CommandPalette`) já fazem — exigir mais do `<Modal>` seria pedir mais que
+      o padrão da casa (D3/WCAG 2.1 AA); (ii) trava de rolagem do `<body>` **não corresponde a
+      nenhum critério de sucesso do WCAG 2.1 AA** — é defeito de UX (a página rola atrás do
+      overlay, com scroll chaining no mobile), não de conformidade. Como a meta declarada do
+      épico é AA, nada aqui reprova a métrica de saída da story.
+    recomendacao: >
+      Registrar como débito do épico e **absorver na 12.16** (design system + polimento, que já
+      declara `[DEP] 12.1`) — são ~10 linhas em `Modal.tsx` (`overflow: hidden` no `<body>` no
+      efeito de montagem, restaurando no cleanup, com contagem via a pilha `pilhaDeModais` que já
+      existe, para o modal interno não destravar o scroll ao fechar). **Não abrir story própria** —
+      não paga o overhead de mais um gate. Se o @po preferir não esperar a Fase 3, é um item de
+      backlog de meia hora que cabe em qualquer story que reabra `Modal.tsx`.
+  - id: DEB-12.1-B
+    severity: low
+    category: requirements
+    titulo: "Linha de arquivos da 12.1 no épico contradiz a métrica 6/6"
+    origem: "Achado desta revisão (ver D-12.1-1)"
+    recomendacao: >
+      @po/@sm: remover "+ `AcaoRevisar`" da linha de arquivos da 12.1 em
+      `docs/architecture/epic-sanitizacao-emissoes.md` (§Fase 0), já que a 12.13 é a dona declarada
+      daquele bloco. Edição de documentação, sem impacto em código.
+impacto_no_sequenciamento: >
+  Nenhum bloqueio. A Fase 0 está liberada: 12.1 fecha PASS e 12.2 (independente, paralela) segue
+  sem restrição. A Fase 1 pode abrir — 12.3 já pode reabrir `LoteContabilidadeDialog.tsx` sobre o
+  `<Modal>`, que era o objetivo da decisão D2-A (tocar cada arquivo uma vez só). Os débitos
+  DEB-12.1-A/B e os achados OBS-121-1/2 são todos low/info e ficam endereçados nas stories que já
+  possuem os arquivos (12.13 e 12.16); nenhum deles justifica segurar a fase.

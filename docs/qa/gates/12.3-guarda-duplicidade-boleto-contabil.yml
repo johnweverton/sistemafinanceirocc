@@ -1,0 +1,693 @@
+# QA Gate — Story 12.3 (Guarda de duplicidade de boleto para clientes contábeis) — iteração 1 (final)
+storyId: "12.3"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-08-26"
+commit: 457cbf3
+epic: "12 — Sanitização do caminho de emissão (docs/architecture/epic-sanitizacao-emissoes.md), Fase 1 ALTA"
+verdict: CONCERNS
+iterations:
+  - n: 1
+    verdict: CONCERNS
+    issues: [OBS-123-1 (medium), OBS-123-2 (medium), OBS-123-3 (low), OBS-123-4 (low), OBS-123-5 (info), OBS-123-6 (info)]
+resumo_do_veredito: >
+  **CONCERNS não é rework.** Não há uma linha para o @dev mudar neste commit: as ACs 1, 2, 4 e 5
+  estão implementadas exatamente como escritas, o Cenário A está respeitado sem exceção, os testes
+  são reais e todos os números do Dev Agent Record bateram quando eu mesma rodei. O que impede o
+  PASS é o **registro**, não o código: (a) a AC 3 é uma promessa de RESULTADO ("rodar o mesmo lote
+  duas vezes não produz dois boletos ativos") que o MECANISMO prescrito pela AC 2 (consultar
+  `boletos`) não consegue cumprir por inteiro — a sequência "calcular → calcular de novo → emitir
+  os dois" continua passando, e o teste da AC 3 cobre só a sequência em que a guarda funciona; e
+  (b) a janela residual de `RS-1` é **maior** do que a "Nota de escopo do guard" descreve, por
+  causa de dois defaults globais do `QueryClient` que ninguém considerou (OBS-123-2). Carimbar PASS
+  aqui deixaria "AC 3 ✅ / RS-1 reduzido" no registro durável de um jeito que vai ser relido como
+  "rodar o lote 2x nunca duplica" — que não é verdade. Os dois itens medium precisam de decisão do
+  @po; nenhum deles segura a cadeia (ver `impacto_no_sequenciamento`).
+notes: >
+  ACs verificadas contra o diff real de `457cbf3`, não contra o relato do @dev. Árvore conferida
+  antes de rodar: `HEAD` é `457cbf3` e `git status --short` não tem **nenhum** arquivo de
+  `apps/web` sujo (só stories/gates/docs não versionados), então a suíte reflete o commit revisado.
+  Comandos reexecutados por mim dentro de `apps/web`: `npx tsc --noEmit` (exit 0, sem saída),
+  `npm run lint` ("No ESLint warnings or errors"), `npx vitest run` (**133 arquivos / 1186 testes,
+  133 passed / 1186 passed**, exit 0) e `npm run build` (exit 0). Os dois primeiros números batem
+  **exatamente** com o Dev Agent Record e com o delta do gate da 12.2 (130 arquivos / 1164 testes
+  → +3 arquivos / +22 testes, igual ao "+22 testes" da mensagem de commit). O "25 rotas" não bate
+  com nada — ver OBS-123-6.
+  AC 1: rota criada, espelho estrutural de `medicos-com-boleto/route.ts` (mesmo `querySchema`,
+  mesmos papéis `['admin','colaborador','financeiro']`, mesmo `dynamic = 'force-dynamic'`, mesmo
+  400 de VALIDATION). Conferi o "sem cache" no artefato, não no comentário: o `next build` lista
+  `ƒ /api/clientes-contabilidade/com-boleto` (server-rendered on demand). Contagem de arquivos de
+  rota `457cbf3~1` → `457cbf3`: **76 → 77**, ou seja, exatamente +1 rota, nenhuma removida.
+  AC 2: `listarClientesContabilidadeComBoletoAtivo` é espelho **byte a byte** de
+  `listarMedicosComBoletoAtivo` (`boleto-repository.ts:230-248`) trocando `medico_id` por
+  `cliente_contabilidade_id` — comparei as duas funções lado a lado: mesmo `.from('boletos')`,
+  mesmo `!inner` duplo, mesmo `.in('status', ['emitido','pago'])`, mesmo
+  `.eq('execucao_resultados.execucoes.competencia', …)`, mesmo `ApiError 500` no ramo de erro,
+  mesma montagem do `Set`. Ver `logica_central_de_exclusao` e `tratamento_do_id_nulo`.
+  AC 3: cumprida **para a sequência que a guarda cobre**, não para todas — ver OBS-123-1.
+  AC 4: bloco "Já emitido nesta competência (N)" com os nomes, renderizado fora do ramo
+  `execucaoId` (portanto antes do clique); `dispararLote` recebe `elegiveis`, não `clientes`
+  (`LoteContabilidadeDialog.tsx:99-108`). **Cenário A confirmado por varredura própria, não pelo
+  relato**: `git show 457cbf3 | grep -iE "checkbox|emitir mesmo assim|incluir|forçar|override"` no
+  diff inteiro não devolve nenhum controle de reinclusão, e o teste trava a ausência
+  (`queryByRole('checkbox')` e `queryByText(/emitir mesmo assim/i)` ambos `not.toBeInTheDocument()`).
+  Não há opt-in, não há exceção por cliente, não há flag.
+  AC 5: `clientesContabilidadeService.comBoleto()` + `clienteContabilidadeQueryKeys.comBoleto()`
+  chaveada por competência, com invalidação em `fecharTudo` e em `onAlgumEmitido`.
+  Restrição de escopo (D4 do épico): `git show 457cbf3 --name-only` devolve **9 arquivos** — 4 de
+  código em `apps/web/src`, 4 de teste e a própria story. Nenhum `.css`, nenhum
+  `docs/design-system.md`, nenhuma migration, nenhum `NovaExecucao.tsx`, nenhum
+  `execucao-orchestrator.ts`, nenhuma rota `POST /clientes-contabilidade/lote`. Confirmado.
+  Regressão da 12.2 (critério que herdei do gate anterior): o diff não reintroduz nenhuma cópia
+  local de `brl`/`normalizarBusca`/`competenciaAtual` (grep nas linhas `+`: zero) e não adiciona
+  nenhum `<input type="text">` de competência — o componente segue importando de `@/lib/formato` e
+  `@/lib/competencia` e usando `<CampoCompetencia>`.
+  Anti-self-review: revisão ativa. Reproduzi a quebra da 12.1 rodando o arquivo de teste do commit
+  ANTERIOR contra o `src` atual (4 falhas, exatamente as descritas — ver `regressao_12_1`); fui
+  atrás do terceiro estado de `boletos.status` que ninguém citou (`processando`, migration 0037 —
+  OBS-123-3); li `app/providers.tsx` para saber o que o `useQuery` herda de verdade em vez de
+  aceitar o comentário "sem staleTime de propósito" (é falso — OBS-123-2); e rastreei a sequência
+  "calcular 2x sem emitir no meio" até `validarResultadoParaEmissao` para confirmar que nada a
+  barra (OBS-123-1).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Os dois pontos que a lead pediu explicitamente que eu julgasse
+# ─────────────────────────────────────────────────────────────────────────────
+julgamento_falha_fechada:
+  pergunta: >
+    A guarda falha FECHADA (sem resposta da rota → cálculo bloqueado), divergindo do espelho do
+    lado médico (`NovaExecucao.tsx`), que deixa o disparo seguir se a consulta de médicos falhar.
+    Divergência aceitável ou deveria ter seguido o padrão do médico por consistência?
+  decisao: ACEITA — a divergência está CERTA e o lado médico é que está errado
+  status: "Decidido nesta revisão. Não é ambiguidade, não volta para o @dev, não reabre a 12.3."
+  fundamentacao: >
+    Quatro razões independentes, em ordem de peso:
+
+    **1. É a única leitura não-vazia da AC 4.** A AC 4 diz que os já cobertos são "removidos do
+    payload **antes** do cálculo". Se a consulta não respondeu, o conjunto de "quem remover" é
+    desconhecido — não vazio, *desconhecido*. Tratar desconhecido como vazio e seguir não é
+    "cumprir a AC de forma mais permissiva", é **não cumprir a AC** enquanto exibe a aparência de
+    tê-la cumprido. Uma guarda que abre no timeout é pior do que guarda nenhuma, porque cria
+    confiança onde não há proteção.
+
+    **2. A direção da falha está anticorrelacionada com o risco.** O `com-boleto` falha justamente
+    quando o banco está lento ou sob carga — que é exatamente quando o operador clica duas vezes,
+    reabre a aba, ou "acha que não foi". Falhar aberto entrega a proteção precisamente na janela em
+    que ela é mais necessária. Verifiquei que essa não é hipótese abstrata: o `POST .../lote` tem
+    `maxDuration = 300` e um rate limiter de 3/min — o desenho já assume que esse fluxo demora e
+    que o operador reincide.
+
+    **3. A assimetria de custo é gritante e favorece o fechado.** Falso positivo do fechado =
+    operador espera / fecha e reabre o modal (minutos, reversível, visível). Falso negativo do
+    aberto = boleto duplicado emitido no gateway, que exige cancelamento junto à Cora, com o
+    cliente já tendo recebido a cobrança (irreversível do lado de fora, e é literalmente o `RS-1`
+    que motiva a existência desta story). Numa story cuja razão de ser é reduzir risco financeiro,
+    escolher o modo de falha que preserva o risco seria autocontraditório.
+
+    **4. O argumento de consistência não se sustenta, e é aqui que a decisão vira interessante.**
+    Consistência só é um valor quando o padrão de referência é uma **decisão**. Fui ver
+    `NovaExecucao.tsx:177-185` e o comportamento de lá é `const { data: medicosComBoletoData } =
+    useQuery({...})` — **sem `isSuccess`, sem `isError`, sem gate algum**; o `Set` vazio no
+    `?? []` do `useMemo` é o que faz o disparo seguir. Ou seja, o "falha aberta" do lado médico não
+    é um padrão adotado: é a **consequência não examinada** de desestruturar só `data`. Não há
+    comentário, não há teste, não há linha de story que decida isso. Espelhar uma não-decisão não
+    é consistência — é propagar um defeito com a desculpa de simetria. O @dev fez o certo em (a)
+    divergir, (b) **não** "consertar" o fluxo médico de passagem (fora de escopo, e mexer em
+    `NovaExecucao.tsx` acionaria o `RS-8`/rebase) e (c) registrar a assimetria em vez de
+    silenciá-la.
+
+    Reforço material: a decisão não ficou só na UI. O repositório propaga `ApiError 500` em vez de
+    devolver `Set` vazio, e existe teste explícito para isso ("erro do banco → propaga ApiError 500
+    (não devolve vazio, que abriria a guarda)"). Fechar em uma camada e abrir na outra teria sido
+    fechar em lugar nenhum.
+  ressalvas_que_acompanham_a_aceitacao:
+    - >
+      Escolher falhar fechado **cria uma obrigação nova** que esta story não entregou: um caminho
+      de recuperação. Rastreei o estado de erro no código: `guardaPronta` vira `false`,
+      `clientesComBoletoAtivo` volta a ser um `Set` vazio, logo `elegiveis === clientes` e o botão
+      é renderizado **desabilitado com o rótulo "Verificando emissões…"** — rótulo que, depois das
+      3 tentativas do React Query, é literalmente falso, porque nada mais está sendo verificado. Ao
+      lado dele há um `<p className="alert-error">` estático, sem "Tentar novamente". A única saída
+      é fechar e reabrir o modal, o que funciona mas é descoberto por tentativa e erro. Ver
+      OBS-123-4a e o roteamento para 12.6.
+    - >
+      A decisão D-1 (falha fechada) e a decisão D-2 (faturamento também filtrado) **se contradizem
+      exatamente no estado em que D-1 está ativa**: durante o carregamento e no erro, o passo de
+      lançamento de faturamento em massa continua liberado sobre a lista inteira, porque o botão
+      dele não tem gate de `guardaPronta`. Ver OBS-123-4b.
+    - >
+      A assimetria com o fluxo médico agora tem um dono implícito e nenhum dono explícito: depois
+      desta story, o caminho **médico** é o menos seguro dos dois. Roteado como DEB-12.3-C.
+julgamento_rs1_reduzido:
+  pergunta: >
+    A checagem é client-side (consulta antes de calcular), então duas abas abrindo o mesmo lote
+    quase ao mesmo tempo ainda podem ambas passar. Aceitável para esta story ou deveria vir
+    acompanhada de guarda transacional/idempotente no servidor?
+  decisao: >
+    ACEITÁVEL AGORA, EXPLICITAMENTE INCOMPLETO — e a janela residual real é MAIOR do que a story
+    documenta. `RS-1` fica **reduzido, não fechado**, e este gate proíbe qualquer story/PR/métrica
+    do Épico 12 de declará-lo eliminado.
+  status: "Débito técnico registrado (DEB-12.3-A + DEB-12.3-B). Não implementar aqui."
+  fundamentacao: >
+    **Por que aceitável agora:** o desenho client-side foi **pré-autorizado pelo @po** na "Nota de
+    escopo do guard" ([AJUSTE @po 2026-08-25]), com a instrução literal "Fechar o resíduo
+    (constraint/guard de servidor por `(cliente, competência)`) é story nova e depende de decisão
+    do dono; **não** implementar aqui por iniciativa própria". O @dev obedeceu. Cobrar guarda
+    transacional neste gate seria reprovar a story por não fazer o que o @po proibiu de fazer — e,
+    pior, incentivaria o próximo @dev a inventar constraint de banco por conta própria numa tabela
+    de produção (`boletos`/`execucao_resultados`), que é como se cria incidente de migration.
+    Além disso, a guarda entregue **cobre o caso comum de verdade**: "rodei o lote e não lembro se
+    já tinha rodado" é sequencial, não concorrente, e é o caso que o achado original de 2026-08-04
+    descreve (coordenadora financeira emitiu individual e ia rodar o lote em seguida).
+
+    **Por que explicitamente incompleto, em três camadas — a 2ª e a 3ª ninguém tinha registrado:**
+
+    · *Camada 1 (documentada pelo @po):* corrida entre a consulta e o `POST .../lote`. Duas abas /
+      dois operadores. Mitigação parcial que vale registrar e que não estava escrita em lugar
+      nenhum: o `POST .../lote` tem rate limiter de **3/min por `userId`**, o que estreita o caso
+      "mesmo operador, duas abas" mas não faz nada contra dois operadores distintos.
+
+    · *Camada 2 (achado desta revisão — OBS-123-2):* a janela **não** é "entre a consulta e o
+      POST". `app/providers.tsx:10` define `defaultOptions: { queries: { staleTime: 30_000,
+      refetchOnWindowFocus: false } }` **globalmente**. O comentário do @dev no componente diz
+      "Sem `staleTime` de propósito — precisa refletir uma emissão feita há segundos" e isso é
+      **factualmente falso**: a query herda 30s de staleTime, e com `refetchOnWindowFocus: false`
+      um diálogo que fique aberto não revalida nunca. A janela real é "desde o último fetch/
+      invalidação até o clique", que pode ser arbitrariamente longa. O `force-dynamic` da rota
+      (AC 1) elimina o cache **HTTP**, não o cache **do cliente** — são coisas diferentes e a
+      story trata as duas como se fossem a mesma.
+
+    · *Camada 3 (achado desta revisão — OBS-123-1):* a guarda é chaveada em **boletos**, então ela
+      não cobre "calcular → calcular de novo → emitir os dois". Isso não é concorrência, é
+      sequencial e plausível.
+
+    Nenhuma das três é regressão introduzida por este commit — a 1 é escopo declarado, a 2 é
+    default global herdado (o fluxo médico tem o mesmo) e a 3 é consequência do mecanismo que a
+    própria AC 2 prescreve. Mas juntas elas significam que a frase "reduzido ao mesmo nível de
+    risco residual já aceito no fluxo médico" está **correta na comparação e otimista na
+    magnitude**.
+  registro_obrigatorio: >
+    `RS-1` = **REDUZIDO, NÃO FECHADO**. Ao consolidar o Épico 12, o texto de saída deve ser:
+    "guarda de cliente contra reemissão sequencial na mesma competência; sem guarda transacional
+    de servidor; resíduo em corrida entre abas, em janela de cache de cliente e na sequência
+    calcular-calcular-emitir". Se alguém escrever "RS-1 fechado", este gate é a contraprova.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verificações pontuais pedidas
+# ─────────────────────────────────────────────────────────────────────────────
+logica_central_de_exclusao:
+  veredito: CORRETA — e com um terceiro estado que ninguém tinha olhado
+  analise: >
+    Confirmado no código (`boleto-repository.ts:271`): `.in('status', ['emitido', 'pago'])`. Logo
+    `emitido` e `pago` contam como "já emitido"; `cancelado` e `falha` **não** contam, então
+    cancelar e reemitir corrigido continua funcionando sem exceção manual — que é exatamente o que
+    sustenta o Cenário A sem opt-in. O teste não se contenta com a igualdade: além de
+    `expect(builder.in).toHaveBeenCalledWith('status', ['emitido','pago'])`, ele afirma
+    separadamente `not.toContain('cancelado')` e `not.toContain('falha')`, o que é a asserção certa
+    — trava a **ausência**, que é a parte que uma refatoração distraída quebraria.
+    Coerência com o resto do sistema conferida em vez de assumida: a migration 0037 documenta o
+    mesmo espírito no índice único (`'cancelado'/'falha' NÃO entram: reemitir sobre eles é
+    legítimo`), e `buscarBoletoEmitido` usa o mesmo par. A regra é consistente ponta a ponta.
+    **Terceiro estado (achado desta revisão):** o CHECK real de `boletos.status` (migration 0037)
+    é `('processando','emitido','falha','pago','cancelado')` — são **cinco**, não quatro. A story,
+    o commit e todos os comentários só discutem quatro. Ver OBS-123-3.
+tratamento_do_id_nulo:
+  veredito: CORRETO — sem id fantasma e sem falso positivo
+  analise: >
+    A constraint `chk_execucao_resultados_exclusao_mutua` (migration
+    `0032_execucao_cliente_contabilidade.sql:28-32`) garante exclusão mútua entre `medico_id`,
+    `empresa_id` e `cliente_contabilidade_id`, e permite os três nulos. Logo todo resultado de
+    médico ou de empresa tem `cliente_contabilidade_id = null`.
+    Duas defesas no código, ambas necessárias e ambas presentes: (1) o `!inner` no `select` já
+    restringe às linhas com join, mas **não** filtra a coluna nula — sem a segunda defesa,
+    `ids.add(null)` colocaria `null` no `Set`; (2) `if (clienteId) ids.add(clienteId)`
+    (`:286`) descarta `null`, `undefined` e `''`. O `row.execucao_resultados?.` ainda protege o
+    caso de o join vir ausente.
+    Falso positivo é **impossível por construção**, e é importante entender por quê: o consumidor
+    faz `clientesComBoletoAtivo.has(c.id)` com `c.id` sendo um UUID de `clientes_contabilidade`.
+    Mesmo que um `null` entrasse no `Set`, nenhum `c.id` seria `null` — não haveria como um cliente
+    contábil real casar com o id fantasma. O risco real que o `if` evita é de higiene do dado
+    (`Set` com `null`, `size` inflado, e qualquer futuro consumidor que itere o `Set` em vez de
+    consultá-lo). O @dev tratou como se o risco fosse maior do que é, o que neste contexto é o erro
+    certo a cometer.
+    Coberto por teste dedicado ("ignora resultados sem cliente_contabilidade_id (boleto de
+    médico/empresa)") com uma linha `null` e uma linha válida no mesmo `data` — o teste falharia
+    tanto se o `null` entrasse quanto se o `if` descartasse a linha boa junto.
+regressao_12_1:
+  veredito: "Correção legítima de mock — NENHUMA asserção da 12.1 foi relaxada. Verificado empiricamente, não por leitura."
+  o_que_eu_fiz: >
+    Não me contentei com o diff. Extraí o arquivo `tests/components/LoteEmissaoDialog.test.tsx` do
+    commit **anterior** (`457cbf3~1`) para um caminho temporário e rodei contra o `src` atual:
+    **4 testes falharam**, exatamente os 4 do bloco "LoteEmissaoDialog aberto pelo lote contábil
+    (AC 5 + AC 6)", todos com
+    `[vitest] No "clienteContabilidadeQueryKeys" export is defined on the
+    "../../src/services/clientes-contabilidade" mock`. Arquivo temporário removido em seguida;
+    `git status` da árvore de testes limpo. Ou seja: a quebra relatada é **real, reproduzível e
+    de superfície de mock** — o componente passou a importar `clienteContabilidadeQueryKeys` no
+    topo e a chamá-lo no primeiro render, e um `vi.mock` de fábrica só expõe o que devolve.
+  prova_de_que_nada_foi_afrouxado:
+    - "Linhas REMOVIDAS pelo commit no arquivo: exatamente 3, todas idênticas — `fireEvent.click(screen.getByRole('button', { name: /Calcular 1 em lote/ }));`. Nenhuma outra linha foi apagada."
+    - "Contagem de `expect(`: **17 antes, 17 depois**."
+    - "`diff` do conjunto de linhas `describe(` / `it(` / `expect(` entre `457cbf3~1` e `457cbf3`: **vazio**. Nenhum nome de teste, nenhuma asserção e nenhum valor esperado mudou — nem um caractere."
+    - "A troca `getByRole` → `await findByRole` é **mais rígida**, não menos: `getBy` falharia instantaneamente e `findBy` espera o botão assumir o rótulo `Calcular 1 em lote`, ou seja, o teste agora exige que a guarda **resolva com sucesso** antes do clique. Se a guarda travasse em `Verificando emissões…`, o `findBy` estouraria por timeout — o teste continuaria detectando a quebra."
+    - "O mock novo devolve lista **vazia** (`{ clienteContabilidadeIds: [] }`), que é o estado neutro: nenhum cliente é excluído, então os 4 testes exercitam exatamente o mesmo fluxo de modal de antes."
+  execucao_propria: >
+    `npx vitest run tests/components/LoteEmissaoDialog.test.tsx
+    tests/components/LoteContabilidadeDialog.test.tsx
+    tests/server/clientes-contabilidade/com-boleto-route.test.ts
+    tests/server/repositories/boleto-repository-clientes-contabilidade-com-boleto.test.ts`
+    → **4 arquivos / 29 testes, todos verdes** (7 + 10 + 6 + 6).
+
+# ─────────────────────────────────────────────────────────────────────────────
+decisoes_do_dev_avaliadas:
+  - id: D-1
+    assunto: "O guard falha FECHADO, não aberto (divergência consciente do espelho de médicos)"
+    veredito: ACEITA
+    justificativa: "Ver `julgamento_falha_fechada` acima — decisão registrada, com 2 ressalvas roteadas (OBS-123-4, DEB-12.3-C)."
+  - id: D-2
+    assunto: "A guarda filtra também o lançamento de faturamento em massa (`faixaFaturamento` deriva de `elegiveis`)"
+    veredito: ACEITA COM RESSALVA
+    justificativa: >
+      O raciocínio está certo e a consequência é boa: `clientes_contabilidade_faturamentos` tem
+      `unique (cliente_contabilidade_id, competencia)` (migration 0031), então lançar faturamento
+      de quem já foi cobrado é, no melhor caso, ruído, e no pior caso sobrescreve o valor que
+      originou a cobrança que já existe. É consequência direta da AC 4, não escopo extra —
+      concordo com o enquadramento.
+      **Ressalva:** a filtragem só vale no caminho de sucesso. Enquanto `comBoletoQ` está
+      carregando ou falhou, `clientesComBoletoAtivo` é um `Set` vazio, logo `elegiveis === clientes`
+      e `faixaFaturamento` volta a ser a lista inteira — e o botão "Lançar faturamentos e
+      continuar" (`:258-265`) **não tem gate de `guardaPronta`**, ao contrário do botão de calcular
+      (`:168`). Ou seja: exatamente no estado que D-1 protege, D-2 não protege. Baixo impacto
+      (faturamento é registro de receita, não cobrança; e o lote não avança mesmo), mas as duas
+      decisões precisam concordar entre si. OBS-123-4.
+  - id: D-3
+    assunto: "Título do modal conta a seleção INTEIRA (`clientes.length`); só botão e resumo contam `elegiveis`"
+    veredito: ACEITA
+    justificativa: >
+      Argumento correto e bem posto: alinhar o título com `elegiveis` apagaria do cabeçalho
+      justamente o fato que o bloco "Já emitido (N)" existe para tornar visível. O operador
+      selecionou N; a subtração é explicada, não escondida. Bônus não registrado pelo @dev que
+      conferi: manter `clientes.length` no título é o que preserva o **nome acessível** do diálogo
+      estável — o teste da 12.1 `expect(await screen.findByRole('dialog')).toHaveAccessibleName(
+      /Calcular em lote/)` continua verde sem alteração. Alinhar com `elegiveis` teria feito o
+      nome acessível oscilar conforme a resposta da rota, o que é ruim para leitor de tela.
+  - id: D-4
+    assunto: "A quebra em `LoteEmissaoDialog.test.tsx` foi corrigida no mock, não contornada"
+    veredito: ACEITA — verificada por reprodução independente
+    justificativa: "Ver `regressao_12_1`. Reproduzi as 4 falhas com o arquivo do commit anterior contra o `src` atual e provei paridade exata de asserções (17/17, diff vazio de `it`/`describe`/`expect`)."
+  - id: D-5
+    assunto: "'Teste de integração de ponta a ponta' lido como o teste de componente de 2 rodadas"
+    veredito: ACEITA
+    justificativa: >
+      O argumento decisivo do @dev está certo e merece ser preservado: um teste de servidor de 2
+      disparos **falharia por design**, porque a "Nota de escopo do guard" do @po diz que não há
+      guarda transacional no servidor nesta story. Escrever esse teste teria produzido ou um teste
+      vermelho legítimo, ou — pior — um teste que "passa" afirmando uma garantia inexistente. Não
+      escrever é a resposta certa. Confirmei também a premissa factual: não há harness de
+      integração com banco no repositório (`tests/server/**` são todos com deps mockadas).
+      O teste entregue simula as duas rodadas com `unmount()` entre elas e `QueryClient` novo, o
+      que é uma simulação **mais forte** que a sessão contínua (não reaproveita cache).
+      Nota complementar que fecha o buraco de leitura: a rodada dupla **dentro da mesma sessão**
+      está estruturalmente impedida sem precisar de teste — `calcular.isPending` desabilita o botão
+      em voo e o `setExecucaoId` do `onSuccess` faz o botão desaparecer. O caso que sobra é
+      OBS-123-1, e esse nenhum teste cobre porque nenhum código cobre.
+  - id: AUDITORIA-DA-SESSAO-ANTERIOR
+    assunto: "@dev auditou linha a linha o diff pendente de uma sessão que caiu no limite de contexto antes de validar"
+    veredito: ACEITA
+    justificativa: >
+      Registro porque é uma situação de processo que normalmente produz problema e aqui não
+      produziu. Reconferi por conta própria os 4 pontos que o @dev diz ter auditado (espelhamento
+      da rota, espelhamento do repositório, `elegiveis` no `dispararLote`, bloco fora do ramo
+      `execucaoId`) e todos batem com o código. A postura de auditar em vez de refazer foi a certa;
+      refazer teria produzido um diff maior e sem rastreabilidade contra as ACs.
+
+# ─────────────────────────────────────────────────────────────────────────────
+issues:
+  - id: OBS-123-1
+    severity: medium
+    category: requirements
+    status: debito-registrado
+    titulo: "A AC 3 promete mais do que o mecanismo da AC 2 entrega: 'calcular → calcular de novo → emitir os dois' continua duplicando"
+    description: >
+      Achado desta revisão. A AC 3 diz: "Rodar o mesmo lote/competência duas vezes **não** produz
+      dois boletos ativos para o mesmo cliente". A AC 2 prescreve o mecanismo: consultar a tabela
+      **`boletos`**. As duas só coincidem quando existe um boleto entre as duas rodadas.
+      Sequência que passa inteira pela guarda, rastreada por mim no código:
+      (1) operador calcula o lote de 2026-08 → cria execução E1 com N `execucao_resultados`,
+      **nenhum boleto ainda** (o boleto só nasce na emissão);
+      (2) operador não emite — fecha o modal, ou se distrai, ou não tem certeza se rodou;
+      (3) calcula de novo → `com-boleto` devolve lista vazia (correto: não há boleto), ninguém é
+      excluído, cria execução E2 com os mesmos N clientes;
+      (4) depois, pela tela de execuções, emite E1 **e** E2 → dois boletos ativos para o mesmo
+      cliente na mesma competência.
+      Confirmei que nada barra o passo (4): `validarResultadoParaEmissao`
+      (`server/emissao/emitir-boleto.ts:111-180`) valida status, valor, mínimo do gateway e dados
+      do pagador — **nenhuma checagem por (cliente, competência)**; e a única idempotência
+      persistida é o índice único `uq_boletos_resultado_ativo` **em `execucao_resultado_id`**
+      (migration 0037), que por definição não vê duas linhas de resultado distintas.
+      Não é desvio do @dev: ele implementou exatamente a AC 2, e a AC 2 é o mecanismo que o épico
+      e a auditoria escolheram (espelho do fluxo médico, que tem a mesma limitação). É **defeito de
+      especificação**: uma AC de resultado universalmente quantificada ("duas vezes → nunca dois
+      boletos") em cima de um mecanismo que só cobre um subconjunto das sequências.
+      Agrava o registro que o **teste da AC 3 codifica o subconjunto que funciona**: ele injeta o
+      boleto de `cc-1` entre as rodadas (`mockComBoleto.mockResolvedValue({ clienteContabilidadeIds:
+      ['cc-1'] })`) e então verifica a exclusão. É um bom teste do mecanismo, mas ele **define o
+      problema para fora** — quem ler "AC 3 ✅, teste de 2 rodadas verde" vai concluir uma garantia
+      mais forte do que existe.
+    recommendation: >
+      **Sem mudança de código na 12.3** (implementar cobertura de resultado seria justamente a
+      guarda de servidor que o @po proibiu aqui). Duas ações de registro, ambas do @po:
+      (a) corrigir a leitura da AC 3 no fechamento do épico para "não reenvia ao cálculo quem já
+      tem boleto ativo na competência", que é o que o mecanismo garante;
+      (b) incorporar esta sequência ao escopo de **DEB-12.3-A** (a story nova de guarda de
+      servidor), porque uma constraint por `(cliente_contabilidade_id, competência)` sobre boletos
+      ativos fecha as três camadas de resíduo de uma vez.
+      Mitigação barata de UX, se o dono quiser algo antes: avisar no diálogo quando **já existe
+      execução de lote para a competência** (o dado já está em `execucoes.competencia` +
+      `clientes_contabilidade_lote`) — isso ataca o passo (3), que é o passo humano.
+  - id: OBS-123-2
+    severity: medium
+    category: code
+    status: debito-registrado
+    titulo: "\"Sem cache\" vale para a rota, não para o cliente: `staleTime: 30_000` e `refetchOnWindowFocus: false` são defaults globais"
+    description: >
+      Achado desta revisão. O comentário em `LoteContabilidadeDialog.tsx:45` afirma "Sem
+      `staleTime` de propósito — precisa refletir uma emissão feita há segundos", e a AC 1 / as
+      Dev Notes tratam "sem cache" como resolvido pelo `force-dynamic`. Fui ler o que a query
+      herda de verdade: `app/providers.tsx:10` define, para o app inteiro,
+      `defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } }`.
+      Consequências:
+      · o `useQuery` de `comBoleto` **tem** 30s de staleTime — "sem `staleTime`" significa "não
+        sobrescrevi o default", não "sem cache";
+      · com `refetchOnWindowFocus: false`, um diálogo aberto em segundo plano **nunca** revalida —
+        o operador pode voltar à aba horas depois e clicar em Calcular sobre uma lista antiga;
+      · `force-dynamic` elimina o cache **HTTP/CDN da rota**, que é uma camada diferente. Os dois
+        são necessários; a story trata como se um resolvesse o outro.
+      As invalidações explícitas do @dev (`fecharTudo` e `onAlgumEmitido`) cobrem o caminho
+      principal — emitir e reabrir o diálogo enxerga os boletos novos, e isso está certo. O que
+      não é coberto é emissão feita **por outro caminho** (emissão individual em
+      `EmissaoCliente`/`GerarExecucao`, ou outro operador) dentro da janela de stale.
+      **Não é regressão nem desvio:** `NovaExecucao.tsx` herda exatamente os mesmos defaults e tem
+      exatamente o mesmo comentário. O problema é que o comentário **afirma uma garantia que não
+      existe**, nos dois arquivos, e é o tipo de comentário que faz o próximo dev não investigar.
+      Impacto direto na avaliação de `RS-1`: a janela residual não é "entre a consulta e o POST",
+      é "desde o último fetch/invalidação até o clique".
+    recommendation: >
+      Correção de código é de uma linha e **não deve ser feita agora** (o arquivo está na fila
+      `RS-9` e a próxima da fila é a 12.4): acrescentar `staleTime: 0` (e, se o dono quiser,
+      `refetchOnWindowFocus: true` só nesta query) ao `useQuery` de `comBoleto` — passando a
+      cumprir literalmente o que o comentário promete. Roteado para a **12.4** como DEB-12.3-B, que
+      é a próxima story a abrir `LoteContabilidadeDialog.tsx` e portanto não gera contenção nova.
+      Independentemente da correção, o **comentário precisa deixar de mentir** — e o mesmo vale
+      para `NovaExecucao.tsx:176`, que fica com DEB-12.3-C.
+  - id: OBS-123-3
+    severity: low
+    category: code
+    status: verificado-sem-acao
+    titulo: "`boletos.status` tem CINCO valores: `processando` não conta como 'já emitido' e ninguém discutiu isso"
+    description: >
+      Achado desta revisão. A story, o commit, os comentários e os testes discutem quatro estados
+      (`emitido`, `pago`, `cancelado`, `falha`). O CHECK real é
+      `check (status in ('processando','emitido','falha','pago','cancelado'))`
+      (`0037_idempotencia_boletos.sql:46-47`). `processando` é a **reserva** gravada ANTES da
+      chamada ao gateway (padrão "reserva antes de chamar", `boleto-repository.ts:20-34`).
+      Como o filtro é `in ('emitido','pago')`, um cliente cujo boleto está `processando` **não**
+      aparece como já emitido. Nas condições normais isso dura segundos. O caso que interessa é o
+      que a própria migration 0037 declara em aberto: *"Não inclui 'reaper' automático de linhas
+      'processando' travadas (function morta entre o INSERT e o UPDATE) — considerado follow-up"*.
+      Uma reserva órfã fica `processando` indefinidamente; o cliente segue elegível ao lote; e o
+      índice único não protege, porque a segunda rodada cria um `execucao_resultado_id` novo.
+      Note o contraste que reforça o ponto: o índice único da 0037 usa
+      `where status in ('processando','emitido','pago')` — os **três**. As duas consultas de guarda
+      (médicos e clientes contábeis) usam só dois. A divergência pode até ser deliberada (uma
+      reserva não confirmada não é uma cobrança), mas não está escrita em lugar nenhum.
+      **Não bloqueia e não é desvio:** a AC 2 prescreve literalmente `status in ('emitido','pago')`
+      e o espelho de médicos faz o mesmo. Registro para que o par `(emitido, pago)` seja uma
+      escolha consciente e não uma cópia que sobreviveu à ampliação do CHECK.
+    recommendation: >
+      Sem ação nesta story e sem reabrir. Quando **DEB-12.3-A** (guarda de servidor) for
+      especificada, decidir explicitamente se `processando` conta como ocupado — se a guarda virar
+      constraint, o alinhamento natural é com o índice da 0037 (os três estados). Se o "reaper" de
+      `processando` travado sair do follow-up algum dia, esta observação deixa de importar.
+  - id: OBS-123-4
+    severity: low
+    category: code
+    status: debito-registrado
+    titulo: "Falha fechada sem caminho de recuperação, e o passo de faturamento não respeita o estado da guarda"
+    description: >
+      Dois sintomas da mesma raiz, ambos achados desta revisão:
+      **(a) Sem retry, e com rótulo que mente depois da falha.** Decidido falhar fechado (D-1,
+      aceita), o ramo de erro é um `<p className="alert-error">` estático (`:219-224`) sem botão
+      "Tentar novamente". Pior: o botão de calcular continua renderizado e desabilitado exibindo
+      **"Verificando emissões…"** (`:173-174`), porque o ternário só distingue `isPending` de
+      `guardaPronta` e não tem ramo para `isError` — depois das 3 tentativas do React Query nada
+      mais está sendo verificado, e o rótulo diz que sim. Como `retry` não é sobrescrito e
+      `refetchOnWindowFocus` é `false` (OBS-123-2), não há revalidação passiva nenhuma: a única
+      recuperação é fechar e reabrir o modal. Fechar duro **e** não oferecer saída transforma uma
+      indisponibilidade de segundos numa interrupção que o operador precisa adivinhar como
+      resolver. O `<p>` também não tem `role="alert"`, então quem usa leitor de tela não é avisado
+      de que o fluxo travou.
+      **(b) Faturamento fora do gate.** O botão "Lançar faturamentos e continuar" (`:258-265`) tem
+      `disabled={lancarFaturamentos.isPending}` apenas — sem `|| !guardaPronta`. Durante o
+      carregamento e no erro, `elegiveis === clientes`, então o passo 1 opera sobre a lista inteira,
+      incluindo quem D-2 diz que deveria estar fora. Impacto baixo (registro de receita, não
+      cobrança; `unique (cliente_contabilidade_id, competencia)` da 0031 limita o estrago; e o lote
+      não avança de qualquer forma), mas é uma inconsistência entre D-1 e D-2 dentro do mesmo
+      componente.
+    recommendation: >
+      **(a) → 12.6**, que é a dona declarada de "erro vs. vazio nos pontos de carga" neste arquivo.
+      **Atenção ao roteamento:** a AC 1 da 12.6 enumera **4 pontos** e o novo `comBoletoQ` **não
+      está entre eles** (ela cita `LoteContabilidadeDialog.tsx:73-79`, que é a query de
+      `resultados`). Enumeração fechada não absorve item novo por herança — o @po precisa
+      **acrescentar explicitamente** o ponto da guarda à AC 1 e à File List da 12.6, senão o item
+      morre no Dev Agent Record. O `role="alert"` cabe na 12.12 (dona dos anúncios assistivos neste
+      arquivo), pelo mesmo caminho de acréscimo explícito.
+      **(b) → 12.4** (próxima da fila `RS-9`, dona do passo de faturamento em massa): acrescentar
+      `|| !guardaPronta` ao `disabled` do botão. Uma condição. Registrado como parte de DEB-12.3-B
+      para viajar junto com a correção de `staleTime` no mesmo arquivo.
+  - id: OBS-123-5
+    severity: info
+    category: tests
+    status: verificado-sem-acao
+    titulo: "A rota nova é mais bem testada que o espelho que ela copia (6 testes vs. 4)"
+    description: >
+      Registro positivo, com uma ressalva de honestidade. `com-boleto-route.test.ts` tem 6 testes
+      contra os 4 de `medicos-com-boleto-route.test.ts`: os dois extras são "cada competência é
+      consultada isoladamente" e — o mais valioso — `expect(dynamic).toBe('force-dynamic')`, que
+      trava a AC 1 como **contrato de código**, não como intenção de comentário. É exatamente o
+      tipo de asserção que impede alguém de "otimizar" a rota com cache seis meses depois. Bom
+      trabalho, e o espelho ficou pior que a cópia.
+      **Ressalva:** a seção Testing da story pede "rota (sem cache, **401/403 por papel**)" e isso
+      **não** foi entregue como asserção de status — o teste afirma
+      `expect(mockRequireRole).toHaveBeenCalledWith([...])`, ou seja, verifica que a rota **pede** o
+      papel certo, não que uma sessão sem papel receba 401/403. Aceito: `requireRole` está mockado,
+      o comportamento de 401/403 é do `require-role` (testado no próprio módulo) e o espelho de
+      médicos faz exatamente igual. Verificar a chamada é a asserção correta neste nível de
+      isolamento; só não é o que a seção Testing literalmente descreve.
+    recommendation: "Nenhuma ação. Se algum dia o `medicos-com-boleto` for tocado, copiar de volta a asserção de `force-dynamic`."
+  - id: OBS-123-6
+    severity: info
+    category: requirements
+    status: verificado-sem-acao
+    titulo: "\"25 rotas\" não é reproduzível — e o \"24 rotas\" do meu próprio gate da 12.2 também não era"
+    description: >
+      O Dev Agent Record e a mensagem de commit dizem "`npm run build` OK (25 rotas)". O build está
+      **verde de fato** (exit 0, `✓ Compiled successfully`) e a rota nova aparece corretamente como
+      `ƒ /api/clientes-contabilidade/com-boleto`, mas o número 25 não corresponde a nenhuma
+      contagem que eu consiga extrair da saída: a tabela `Route (app)` lista **100** rotas (77 de
+      API + 23 de página, incluindo `/_not-found` e `/manifest.webmanifest`), o Next reporta
+      **59/59** páginas estáticas geradas, e há **21** `page.tsx` versionados.
+      Registro com autocrítica: o gate da 12.2 que eu mesma assinei diz "`npm run build` (exit 0,
+      **24 rotas**) — batem exatamente com o reportado". 24 → 25 é um delta de +1 coerente com uma
+      rota nova, o que sugere que os dois números vêm da mesma métrica não documentada (e que eu
+      aceitei o número em vez de reproduzi-lo). Fiz a verificação que substitui a contagem e que
+      **é** reproduzível: arquivos de rota em `apps/web/src/app` passaram de **76** (`457cbf3~1`)
+      para **77** (`457cbf3`) — exatamente +1, nenhuma removida — e `page.tsx` continua em 21 nos
+      dois commits.
+    recommendation: >
+      Sem ação de código e sem reabrir. Para os próximos gates do Épico 12 (meu e de quem me
+      suceder): parar de citar "N rotas" e usar a asserção verificável — "+1 rota de API,
+      `ƒ /api/...` no build, 0 páginas removidas". Se o @po consolidar métricas do épico, não usar
+      nem 24 nem 25.
+
+# ─────────────────────────────────────────────────────────────────────────────
+qualidade_dos_testes:
+  veredito: "Testes de comportamento, não de implementação — com uma cobertura que trava a AUSÊNCIA, que é a parte difícil"
+  analise: >
+    22 testes novos (6 rota + 6 repositório + 10 componente), batendo com o "+22" do commit e com o
+    delta 1164 → 1186 que eu mesma medi contra o gate da 12.2.
+    · **Travar ausência, não só presença.** Três asserções fazem o trabalho pesado do Cenário A e
+      merecem registro: `expect(statusFiltrados).not.toContain('cancelado')` /
+      `not.toContain('falha')` no repositório, e `queryByRole('checkbox')` +
+      `queryByText(/emitir mesmo assim/i)` ambos `not.toBeInTheDocument()` no componente. Testar
+      que algo **não** existe é o único jeito de impedir que um opt-in volte por conveniência numa
+      story futura — e a 12.4/12.5/12.6/12.8 vão todas reabrir este arquivo. É a asserção mais
+      valiosa do conjunto.
+    · **Teste do modo de falha, não só do caminho feliz.** Dois testes dedicados a D-1 ("enquanto a
+      checagem não responde…" com `new Promise(() => {})`, e "falha na checagem também bloqueia o
+      cálculo") + o teste de `ApiError` no repositório. A decisão de arquitetura mais delicada da
+      story é a que tem mais cobertura — proporção correta.
+    · **O teste de 2 rodadas é honesto no que simula.** `unmount()` entre as rodadas e
+      `QueryClient` novo: simula duas sessões, não um `refetch`. É mais forte que a alternativa
+      (não reaproveita cache) e a intenção está no comentário. O que ele não cobre está em
+      OBS-123-1, e é limitação do mecanismo, não do teste.
+    · **Teste de troca de competência com `mockImplementation` por argumento** — verifica que a
+      `queryKey` realmente rechaveia, e não só que a função foi chamada de novo. Diferença sutil e
+      correta.
+    · **`expect(screen.getByText(/^1 cliente no modo/))` + `getAllByRole('spinbutton')` com length 1**
+      é a prova de D-2 pelo lado observável (um campo numérico, não dois), não pelo estado interno.
+    · Lacuna correspondente aos achados: nada exercita o passo de faturamento **durante** o estado
+      de guarda pendente/erro (OBS-123-4b), e nada cobre a sequência calcular-calcular-emitir
+      (OBS-123-1) — nos dois casos porque não há código a cobrir.
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      `requireRole(['admin','colaborador','financeiro'])` na rota nova, idêntico ao espelho.
+      Assimetria conferida e considerada correta: `POST /clientes-contabilidade/lote` exige
+      `['admin','colaborador']` (mais restrito), então `financeiro` pode **consultar** quem já tem
+      boleto mas não pode disparar lote — leitura é superconjunto de escrita, que é a direção
+      segura, e `financeiro` já enxerga esses dados em Recebíveis. Sem SQL cru: a query usa o
+      builder do Supabase com `.in()`/`.eq()` parametrizados. Competência validada por regex Zod
+      antes de tocar o repositório (teste cobre 400 sem chamar o banco). Nenhum
+      `dangerouslySetInnerHTML`; o único dado interpolado no JSX é `c.nome`, escapado pelo React.
+      A resposta expõe apenas UUIDs, sem nome nem valor.
+  performance:
+    status: PASS
+    notes: >
+      Uma query a mais por abertura de diálogo, sobre `boletos` com `!inner` duplo e filtro por
+      competência — mesma forma da consulta de médicos que já roda em produção, e a tabela é
+      pequena (~120 boletos/mês, número da própria migration 0037). `force-dynamic` é exigência
+      funcional da AC 1, não descuido. `next build` exit 0, sem alerta de tamanho; o único código
+      de cliente novo é o `useMemo` de partição, O(n) sobre a seleção (limitada a 200 pela
+      `max(200)` do schema do lote). Ver OBS-123-2 para a discussão de cache, que é de correção e
+      não de performance.
+  reliability:
+    status: CONCERNS
+    notes: >
+      O modo de falha escolhido é o correto (fechado, ver `julgamento_falha_fechada`) e está
+      testado nas duas camadas. O que rebaixa para CONCERNS é o conjunto: sem caminho de retry
+      (OBS-123-4a), com o passo de faturamento fora do gate (OBS-123-4b), com janela de dado
+      obsoleto maior que a documentada (OBS-123-2) e com uma sequência de uso plausível que a
+      guarda não vê (OBS-123-1). Nenhum é regressão; todos afetam quanto se pode confiar na
+      guarda. `tsc`, lint, 1186 testes e build verdes, todos reexecutados por mim.
+  maintainability:
+    status: PASS
+    notes: >
+      Espelhamento deliberado e assumido: a função nova é reconhecível como cópia da de médicos, o
+      que é a decisão certa aqui (FKs diferentes impedem reuso, e o épico mandou copiar o padrão,
+      não a função). O JSDoc explica **por que** `buscarBoletoEmitido` não resolve o caso — a
+      informação que evita a próxima pessoa "otimizar" a função para fora. O `CheckCircleIcon`
+      inline vem com comentário justificando por que não foi consolidado, o que impede a discussão
+      de se repetir. Débito de manutenção real: dois comentários que afirmam garantia inexistente
+      sobre cache (OBS-123-2), aqui e em `NovaExecucao.tsx`.
+
+# ─────────────────────────────────────────────────────────────────────────────
+debitos_tecnicos_do_epico:
+  - id: DEB-12.3-A
+    severity: medium
+    category: architecture
+    titulo: "Guarda de servidor por `(cliente_contabilidade_id, competência)` — o resíduo de `RS-1`"
+    origem: "Nota de escopo do @po ([AJUSTE @po 2026-08-25]) + OBS-123-1 e OBS-123-2 desta revisão"
+    dono_hoje: "NENHUM — depende de decisão do dono, conforme o @po. Não existe story aberta."
+    avaliacao: >
+      O @po já declarou que fechar o resíduo é **story nova**. Este gate acrescenta o escopo que
+      essa story precisa cobrir, porque o resíduo é maior do que a nota original descreve — são
+      **três** camadas, não uma:
+      (1) corrida entre abas/operadores na janela consulta → `POST .../lote` (documentada; mitigada
+          só parcialmente pelo rate limiter de 3/min por usuário);
+      (2) janela de dado obsoleto do cache de cliente, sem teto definido (OBS-123-2);
+      (3) sequência calcular → calcular → emitir os dois, que não passa por boleto nenhum entre as
+          rodadas (OBS-123-1).
+      Uma guarda de servidor por `(cliente, competência)` sobre boletos ativos fecha (1) e (2) de
+      uma vez; (3) exige ou a mesma guarda no momento da emissão, ou uma checagem no
+      `iniciarLoteClientesContabilidade`. Ao especificar, decidir também o tratamento de
+      `processando` (OBS-123-3) e se a guarda vale igualmente para o fluxo **médico**, que tem o
+      mesmo desenho e o mesmo resíduo.
+    recomendacao: >
+      @po/dono: abrir a story nova com escopo explícito das 3 camadas + `processando` + paridade
+      médico/contábil. **Não** implementar dentro da 12.3, 12.4, 12.5, 12.6 ou 12.8 por iniciativa
+      própria — constraint em tabela de produção não é subtarefa de story de UX.
+      Até lá, `RS-1` permanece **REDUZIDO, NÃO FECHADO** no registro de risco do épico.
+  - id: DEB-12.3-B
+    severity: low
+    category: code
+    titulo: "Cache de cliente da guarda (`staleTime`) + botão de faturamento fora do gate `guardaPronta`"
+    origem: "OBS-123-2 e OBS-123-4b desta revisão"
+    dono_proposto: "**12.4** — próxima da fila `RS-9` no mesmo arquivo, sem contenção nova"
+    verificacao_do_roteamento: >
+      Conferido na fonte, não por suposição (regra que herdei do gate da 12.2, onde dois
+      roteamentos do @dev apontavam para arquivos errados): a File List da
+      `docs/stories/12.4.loop-lancamento-faturamento-massa.story.md:71-76` inclui
+      `components/clientes-contabilidade/LoteContabilidadeDialog.tsx` (M) e
+      `tests/components/LoteContabilidadeDialog.test.tsx` (M) — **abre os dois arquivos que este
+      débito precisa**. As Dev Notes da 12.4 (`:67-68`) já mandam considerar o diff da 12.3. O
+      roteamento é válido; ainda assim exige acréscimo explícito, porque as ACs 1–4 da 12.4 são
+      sobre o loop de faturamento e não mencionam a guarda.
+    recomendacao: >
+      @po: acrescentar às Dev Notes da 12.4 (ou a um AC 5 curto): (a) `staleTime: 0` no `useQuery`
+      de `comBoleto` e correção do comentário `:45`, que hoje afirma o contrário do que o código
+      faz; (b) `|| !guardaPronta` no `disabled` do botão "Lançar faturamentos e continuar". Duas
+      linhas somadas, no arquivo que a 12.4 já vai abrir.
+  - id: DEB-12.3-C
+    severity: low
+    category: code
+    titulo: "Depois desta story, o fluxo MÉDICO é o menos seguro dos dois — e ninguém é dono disso"
+    origem: "Decisão D-1 do @dev + `julgamento_falha_fechada` desta revisão"
+    dono_hoje: "NENHUM. `NovaExecucao.tsx` não está na File List de nenhuma story aberta do Épico 12 por este motivo."
+    avaliacao: >
+      A guarda de médicos (`NovaExecucao.tsx:177-185`) **falha aberta**: `const { data } =
+      useQuery({...})` sem `isSuccess`/`isError`, e o `?? []` transforma "não sei" em "ninguém".
+      Se o `medicos-com-boleto` falhar, o disparo segue com a lista completa e o operador não é
+      avisado. O mesmo arquivo carrega o comentário sobre cache que OBS-123-2 mostra ser incorreto.
+      Enquadramento importante para não virar cobrança injusta: o @dev **fez o certo** em não
+      tocar — está fora de escopo e `NovaExecucao.tsx` é o epicentro do `RS-8` (rebase). Mas o
+      registro precisa existir, porque o efeito colateral de aprovar D-1 é que o lado médico passa
+      a ser a exceção insegura, e "o médico faz assim" não pode mais ser usado como argumento de
+      consistência a partir deste gate.
+      Escopo da correção, se o dono quiser: trocar por `const { data, isSuccess } = useQuery(...)`,
+      derivar um `guardaPronta` e usá-lo em `canDispararCompetencia` (`:346`) e
+      `canDispararMedico` (`:359`), mais uma mensagem de erro. ~10 linhas, e testes de
+      `NovaExecucao.test.tsx` a acrescentar.
+    recomendacao: >
+      @po/@sm: decidir de forma registrada — (i) story própria pequena de paridade do modo de
+      falha, (ii) absorver em **DEB-12.3-A** (que já precisa decidir paridade médico/contábil), ou
+      (iii) aceitar formalmente a assimetria com justificativa. O que **não** pode é continuar
+      sendo um comportamento que ninguém escolheu. Se for corrigir, respeitar `RS-8`: a 12.17 (AC 2)
+      também toca `NovaExecucao.tsx`.
+  - id: DEB-12.3-D
+    severity: info
+    category: requirements
+    titulo: "Linhas citadas de `LoteContabilidadeDialog.tsx` nas stories 12.4/12.5/12.6/12.12/12.15/12.16/12.17 estão defasadas"
+    origem: "Consequência mecânica deste commit (+123 linhas no arquivo)"
+    avaliacao: >
+      O commit adiciona ~92 linhas líquidas antes do meio do componente, então **todas** as
+      referências de linha das stories seguintes da fila `RS-9` deslocaram: por exemplo, a AC 1 da
+      12.6 cita `:73-79` para a query de `resultados`, que hoje está em `:112-116`; a 12.12 cita
+      `:167` e `:130-140`; a 12.16 cita `:167,:172`; a 12.17 cita `:170` e `:130-140`; a 12.15
+      cita `:128-143`. Os **arquivos e as descrições** continuam corretos — só os números não.
+      Registro para que nenhum @dev da fila conclua "a linha citada não bate, então a story está
+      errada / o escopo mudou" e comece a improvisar.
+    recomendacao: >
+      Sem ação de documento obrigatória. @dev das próximas stories da fila: tratar as linhas como
+      **indicativas** e localizar pelo trecho descrito. É consequência esperada de `RS-9` e vai se
+      repetir a cada story da cadeia.
+impacto_no_sequenciamento: >
+  **CONCERNS não segura a fila.** A "Nota de sequenciamento (RS-9)" exige que 12.4 só abra depois
+  de 12.3 "fechar o gate de @qa" — este gate está fechado, com decisão registrada e sem rework
+  pendente para o @dev. **12.4 está liberada para abrir.** Ordem obrigatória mantida:
+  **12.3 → 12.4 → 12.5 → 12.6**, com 12.8 na mesma contenção, e a fila estendida do arquivo
+  (12.12 / 12.15 / 12.16 / 12.17) inalterada.
+  Avisos para quem abrir a 12.4:
+  · o arquivo cresceu ~92 linhas líquidas — ver DEB-12.3-D antes de confiar nos números de linha;
+  · dois itens de DEB-12.3-B são de duas linhas e cabem naturalmente no diff da 12.4, **se o @po
+    acrescentá-los** (enumeração de AC fechada não absorve item novo por herança — foi assim que a
+    12.2 quase perdeu um débito);
+  · **critério de reprovação a partir daqui:** qualquer reintrodução de opt-in, checkbox de
+    reinclusão, "emitir mesmo assim" ou qualquer caminho que devolva ao payload um cliente marcado
+    como já emitido é **violação direta do Cenário A** e da AC 4 desta story — o dono fechou a
+    decisão e a mudança seria story nova, não ajuste de implementação. Os testes de ausência já
+    existem para pegar isso; não removê-los.
+  Pendências que **não** bloqueiam a fila mas precisam de decisão do @po antes do fechamento do
+  épico: DEB-12.3-A (sem dono, e é o que impede declarar `RS-1` fechado), DEB-12.3-C (sem dono) e
+  o acréscimo explícito de OBS-123-4a à AC 1 / File List da **12.6**.
