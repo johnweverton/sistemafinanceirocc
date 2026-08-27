@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { getServerEnv } from '@/lib/env';
 import { brl } from '@/lib/formato';
-import { NOME_REMETENTE_MENSAGEM, formatarDataBR } from './mensagem-boleto';
+import { NOME_REMETENTE_MENSAGEM, formatarDataBR, descricaoServico, type PagadorNomenclatura } from './mensagem-boleto';
 
 export class EmailGateway {
   private transporter: nodemailer.Transporter | null = null;
@@ -42,9 +42,11 @@ export class EmailGateway {
    * GATE do dono (2026-08-04): a mensagem sempre assina como Carmem Cavalcante Contabilidade,
    * independente da conta emissora real do boleto (MC/Cavalcante Viana) — mudança consciente
    * da regra original da Story 7.2 (ver mensagem-boleto.ts). `saudacao` já vem pronta do
-   * chamador (com "Dr(a)." se for médico PF, ver `saudacaoPagador`).
+   * chamador (com "Dr(a)." se for médico PF, ver `saudacaoPagador`). `pagadorNomenclatura`
+   * decide entre "cobrança médica" e "honorários contábeis" no corpo (achado 2026-08-27: cliente
+   * contábil não deve receber o texto de cobrança médica).
    */
-  async enviarBoleto(paraEmail: string, saudacao: string, vencimento: string, pdfUrl: string) {
+  async enviarBoleto(paraEmail: string, saudacao: string, vencimento: string, pdfUrl: string, pagadorNomenclatura: PagadorNomenclatura) {
     if (!this.transporter) {
       console.log(`[Mock Email] Simulando envio de boleto para ${paraEmail} (Anexo URL: ${pdfUrl})`);
       return;
@@ -65,7 +67,7 @@ export class EmailGateway {
           </div>
           <div style="padding: 32px 24px;">
             <p style="font-size: 16px; margin-top: 0;">Olá, <strong>${saudacao}</strong>!</p>
-            <p>Segue abaixo o boleto da cobrança médica com o vencimento para <strong>${formatarDataBR(vencimento)}</strong>. O PDF vai em anexo neste e-mail.</p>
+            <p>Segue abaixo o boleto ${descricaoServico(pagadorNomenclatura)} com o vencimento para <strong>${formatarDataBR(vencimento)}</strong>. O PDF vai em anexo neste e-mail.</p>
             ${pixDisponivel ? '<p>Você também pode pagar via Pix escaneando o QR Code no boleto.</p>' : ''}
             <p>Se preferir, você também pode visualizar e imprimir o boleto através do link seguro abaixo:</p>
 

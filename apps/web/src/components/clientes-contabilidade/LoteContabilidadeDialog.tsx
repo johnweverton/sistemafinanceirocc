@@ -3,13 +3,21 @@
 // individual (1 cliente por vez), sem o ganho de produtividade que o lote de médico já dá. Fluxo:
 //   1. (só se algum selecionado for `faixa_faturamento`) lança o faturamento da competência em
 //      massa — sem isso o cálculo desses clientes fica em alerta, mesma regra de sempre.
-//   2. Calcula o lote inteiro numa chamada só (POST /clientes-contabilidade/lote) — sem polling:
-//      a rota AGUARDA o cálculo terminar antes de responder (mesmo padrão de POST /execucoes).
+//   2. Cria a execução (POST /clientes-contabilidade/lote devolve o `execucaoId` na hora) e manda
+//      processar (POST /execucoes/{id}/retomar, que aguarda terminar). O acompanhamento é pela
+//      barra de progresso real — ver Story 12.5 mais abaixo.
 //   3. Emissão em lote dos boletos REAPROVEITA o mecanismo já existente (LoteEmissaoDialog) sem
 //      nenhuma mudança nele — já é agnóstico de médico/empresa/cliente contábil.
-import { useMemo, useState } from 'react';
+//
+// Story 12.5 (R-3 + R-4, gaps G-06/G-08/G-11/G-12/G-13/G-15): o diálogo passou a (a) dizer a
+// COMPOSIÇÃO do lote antes do clique, em vez de "Pronto pra calcular N clientes"; (b) mostrar os
+// limites do sistema (teto de clientes e rate limit) ANTES de o servidor recusar; (c) acompanhar
+// o cálculo com barra + % + role="status" reaproveitando `ProgressoExecucao`; (d) separar
+// "A emitir" (só os `ok`) de "Total geral" no resumo; (e) manter o `execucaoId` recuperável.
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClienteContabilidade } from '@cobranca/shared';
+import { LOTE_CONTABILIDADE_MAX_CLIENTES, LOTE_CONTABILIDADE_MAX_POR_MINUTO } from '@cobranca/shared';
 import { clientesContabilidadeService, clienteContabilidadeQueryKeys } from '@/services/clientes-contabilidade';
 import type { ResultadoLancamentoFaturamentoLote } from '@/services/clientes-contabilidade';
 import { execucoesService, execucaoQueryKeys } from '@/services/execucoes';
@@ -19,15 +27,63 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
 import { LoteEmissaoDialog } from '@/components/execucoes/LoteEmissaoDialog';
+import { ProgressoExecucao } from '@/components/execucoes/ProgressoExecucao';
+import { cicloAdicionalVencendoNaCompetencia } from '@/lib/adicional-semestral';
 import { brl } from '@/lib/formato';
 import { competenciaAtual } from '@/lib/competencia';
 
+/**
+ * Story 12.5 (AC 5): rastro do cálculo em andamento. Fechar o diálogo — ou recarregar a página
+ * porque a rede caiu no meio dos 300s — não pode mais significar "perdi a execução": o
+ * `execucaoId` existe desde o primeiro instante (a rota de lote responde antes de processar) e
+ * fica aqui até a execução concluir. `sessionStorage` e não `localStorage` de propósito: o rastro
+ * morre com a aba, junto com a sessão de trabalho que o produziu.
+ */
+const CHAVE_LOTE_EM_ANDAMENTO = 'cc-lote-contabilidade-execucao';
+
+interface LoteEmAndamento {
+  competencia: string;
+  execucaoId: string;
+}
+
+function lerLoteEmAndamento(): LoteEmAndamento | null {
+  try {
+    const bruto = sessionStorage.getItem(CHAVE_LOTE_EM_ANDAMENTO);
+    if (!bruto) return null;
+    const dados = JSON.parse(bruto) as Partial<LoteEmAndamento> | null;
+    if (typeof dados?.execucaoId !== 'string' || !/^\d{4}-\d{2}$/.test(dados?.competencia ?? '')) {
+      return null;
+    }
+    return { execucaoId: dados.execucaoId, competencia: dados.competencia! };
+  } catch {
+    /* sessionStorage indisponível ou conteúdo corrompido — segue sem recuperação */
+    return null;
+  }
+}
+
+function gravarLoteEmAndamento(valor: LoteEmAndamento | null): void {
+  try {
+    if (valor) sessionStorage.setItem(CHAVE_LOTE_EM_ANDAMENTO, JSON.stringify(valor));
+    else sessionStorage.removeItem(CHAVE_LOTE_EM_ANDAMENTO);
+  } catch {
+    /* sessionStorage indisponível — recuperação vira um nice-to-have, nunca um erro na tela */
+  }
+}
+
 export function LoteContabilidadeDialog({
   clientes,
+  inativosSelecionados = [],
   onClose,
 }: {
-  /** Clientes JÁ selecionados na tela (resolvidos pelo chamador — nome/modoCobranca). */
+  /** Clientes ATIVOS já selecionados na tela (resolvidos pelo chamador — nome/modoCobranca). */
   clientes: ClienteContabilidade[];
+  /**
+   * Selecionados que ficaram de fora por estarem inativos (Story 12.5, AC 2 / gap G-15). Chegam
+   * como prop porque só o chamador conhece a seleção inteira — e sem eles o diálogo repetiria a
+   * divergência de contagem que a story existe para explicar ("10 selecionados" ao lado de
+   * "Calcular em lote (7)").
+   */
+  inativosSelecionados?: ClienteContabilidade[];
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -51,6 +107,18 @@ export function LoteContabilidadeDialog({
     valores: Record<string, string>;
   } | null>(null);
 
+  // AC 5: recuperação do cálculo em andamento, aplicada DEPOIS da montagem (mesmo cuidado de
+  // hidratação do Sidebar — o servidor não tem sessionStorage). Restaura a competência junto,
+  // senão o diálogo acompanharia a execução certa com o mês errado no cabeçalho.
+  useEffect(() => {
+    const salvo = lerLoteEmAndamento();
+    if (!salvo) return;
+    setCompetencia(salvo.competencia);
+    setExecucaoId(salvo.execucaoId);
+    // Só na montagem: recuperar é ato de abrir o diálogo, não reação a mudança de estado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Guarda de duplicidade (Story 12.3, risco RS-1): clientes que JÁ têm boleto ativo
   // (emitido/pago) nesta competência, em qualquer execução. Sem isso, rodar o mesmo lote/mês duas
   // vezes — por engano ou em duas sessões — gerava um segundo boleto pro mesmo cliente, porque
@@ -70,6 +138,19 @@ export function LoteContabilidadeDialog({
   const clientesComBoletoAtivo = useMemo(
     () => new Set(comBoletoQ.data?.clienteContabilidadeIds ?? []),
     [comBoletoQ.data],
+  );
+
+  // Story 12.5 (G-12): quem JÁ tem faturamento lançado na competência. Mesmo `staleTime: 0` da
+  // guarda, e pelo mesmo motivo: o passo 1 acabou de escrever nessa tabela.
+  const faturamentosLancadosQ = useQuery({
+    queryKey: clienteContabilidadeQueryKeys.faturamentosLancados(competencia),
+    queryFn: () => clientesContabilidadeService.faturamentosLancados(competencia),
+    enabled: /^\d{4}-\d{2}$/.test(competencia),
+    staleTime: 0,
+  });
+  const comFaturamentoLancado = useMemo(
+    () => new Set(faturamentosLancadosQ.data?.clienteContabilidadeIds ?? []),
+    [faturamentosLancadosQ.data],
   );
 
   // Bloqueio duro, sem opt-in nem exceção por cliente (decisão do dono): quem está em
@@ -97,6 +178,39 @@ export function LoteContabilidadeDialog({
     [faixaFaturamento, pendentesRetry],
   );
   const precisaFaturamento = alvosFaturamento.length > 0 && !faturamentoLancado;
+
+  /**
+   * Composição do lote (AC 1, gaps G-11/G-12). Todos os números saem de dado real — a partição
+   * por `modoCobranca` que já existia, a consulta de faturamentos lançados e
+   * `cicloAdicionalVencendoNaCompetencia` (a MESMA função usada na emissão individual,
+   * `GerarExecucao.tsx`). Nada é estimado: enquanto a consulta de faturamento não responde, o
+   * painel diz que não sabe em vez de mostrar "0 lançado".
+   */
+  const composicao = useMemo(() => {
+    const faixaLancado = faixaFaturamento.filter((c) => comFaturamentoLancado.has(c.id)).length;
+    return {
+      fixo: elegiveis.filter((c) => c.modoCobranca === 'fixo').length,
+      faixa: faixaFaturamento.length,
+      faixaLancado,
+      faixaPendente: faixaFaturamento.length - faixaLancado,
+      // O adicional semestral continua FORA do lote (decisão D9, `execucao-orchestrator.ts`) —
+      // aqui ele só vira aviso, pra que um ciclo vencendo não passe batido (G-11).
+      adicionalVencendo: elegiveis.filter(
+        (c) =>
+          c.adicionalAtivo &&
+          !!c.adicionalCompetenciaBase &&
+          !!c.adicionalIntervaloMeses &&
+          cicloAdicionalVencendoNaCompetencia(
+            c.adicionalCompetenciaBase,
+            c.adicionalIntervaloMeses,
+            competencia,
+          ),
+      ),
+    };
+  }, [elegiveis, faixaFaturamento, comFaturamentoLancado, competencia]);
+
+  const acimaDoTeto = elegiveis.length > LOTE_CONTABILIDADE_MAX_CLIENTES;
+
   // Lançamento em massa exige pelo menos um valor: mandar lista vazia só produziria um 422 do
   // schema (`min(1)`) — e, com a regra do AC 1, um 422 nunca faria o passo avançar.
   const lancamentosValidos = useMemo(
@@ -124,6 +238,11 @@ export function LoteContabilidadeDialog({
     // com pelo menos um lançamento bem-sucedido; 100% de falha CONTINUA no passo 1.
     onSuccess: (resultado) => {
       setUltimoLancamento(resultado);
+      // O painel de composição conta "lançado vs pendente" a partir do banco — depois de escrever
+      // nele, a contagem exibida tem que ser revalidada, senão o resumo mente por conta própria.
+      void qc.invalidateQueries({
+        queryKey: clienteContabilidadeQueryKeys.faturamentosLancados(competencia),
+      });
       if (resultado.lancados === 0) {
         toast(
           resultado.falhas.length > 0
@@ -169,30 +288,87 @@ export function LoteContabilidadeDialog({
   }
 
   const calcular = useMutation({
-    mutationFn: () =>
+    // Dois passos, ambos AGUARDADOS (Story 12.5, AC 3/5): a rota de lote só CRIA a execução e
+    // devolve o id na hora — o processamento vem depois, por `retomar`, que aguarda terminar antes
+    // de responder. O `setExecucaoId` no meio é proposital: é ele que faz a barra de progresso
+    // aparecer enquanto o cálculo roda, em vez de um botão "Calculando…" por até 300s.
+    mutationFn: async () => {
       // `elegiveis`, não `clientes`: quem já tem boleto ativo na competência fica FORA do payload.
-      clientesContabilidadeService.dispararLote({
+      const { execucaoId: novoId } = await clientesContabilidadeService.dispararLote({
         competencia,
         clienteContabilidadeIds: elegiveis.map((c) => c.id),
-      }),
-    onSuccess: (r) => setExecucaoId(r.execucaoId),
+      });
+      registrarExecucao(novoId);
+      await execucoesService.retomar(novoId);
+      return novoId;
+    },
+    // `retomar` só responde com o cálculo TERMINADO — não faz sentido a tela ficar mais 3s (o tick
+    // do polling de fallback) mostrando barra de progresso de algo que já acabou.
+    onSuccess: (id) => {
+      void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucao(id) });
+    },
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao calcular o lote', 'error'),
   });
 
-  // Sem polling: a rota já devolve o execucaoId com o cálculo CONCLUÍDO (aguardou internamente,
-  // mesmo padrão de POST /execucoes) — 1 busca única já traz o resultado final.
+  /** Estado + rastro persistido andam juntos — nunca um sem o outro (AC 5). */
+  function registrarExecucao(id: string) {
+    setExecucaoId(id);
+    gravarLoteEmAndamento({ competencia, execucaoId: id });
+  }
+
+  // Estado da execução, só para decidir QUAL bloco mostrar (progresso vs. resumo). Observa a
+  // MESMA chave que `useExecucaoRealtime` usa dentro de `ProgressoExecucao`, então não há fetch
+  // nem canal Realtime a mais — é um segundo observador do mesmo cache, sem duplicar a lógica de
+  // progresso/travamento que já mora lá.
+  const execucaoQ = useQuery({
+    queryKey: execucaoQueryKeys.execucao(execucaoId ?? ''),
+    queryFn: () => execucoesService.detalhe(execucaoId!),
+    enabled: !!execucaoId,
+  });
+  const calculoConcluido = execucaoQ.data?.status === 'concluido';
+
+  // O rastro só existe enquanto há o que recuperar. Concluiu, apaga: reabrir o diálogo depois
+  // disso tem que montar um lote NOVO, não voltar ao resumo de um lote já fechado (o histórico de
+  // execuções é o lugar de rever um lote antigo).
+  useEffect(() => {
+    if (calculoConcluido) gravarLoteEmAndamento(null);
+  }, [calculoConcluido]);
+
+  // Rastro apontando para uma execução que não existe mais (404 — id antigo, execução removida).
+  // Sem esta saída o diálogo ficaria preso: com `execucaoId` setado não há botão de calcular, e
+  // fechar não adianta porque o rastro só é apagado quando a execução conclui. SÓ 404: uma falha
+  // de rede transitória não pode tirar da tela um resultado que já está lá (para isso o
+  // react-query ainda tenta de novo antes de marcar erro).
+  const execucaoSumiu = execucaoQ.error instanceof ApiClientError && execucaoQ.error.status === 404;
+  useEffect(() => {
+    if (!execucaoSumiu) return;
+    gravarLoteEmAndamento(null);
+    setExecucaoId(null);
+    toast('O cálculo anterior não está mais disponível — comece um lote novo.', 'info');
+  }, [execucaoSumiu, toast]);
+
+  // Só busca os resultados quando há resultado: antes disso a resposta seria uma lista parcial
+  // (ou vazia) que viraria "Ok 0 · A emitir R$ 0,00" no meio do cálculo.
   const resultadosQ = useQuery({
     queryKey: execucaoQueryKeys.resultados(execucaoId ?? ''),
     queryFn: () => execucoesService.resultados(execucaoId!),
-    enabled: !!execucaoId,
+    enabled: !!execucaoId && calculoConcluido,
   });
 
-  const resultados = resultadosQ.data ?? [];
+  const resultados = useMemo(() => resultadosQ.data ?? [], [resultadosQ.data]);
   const totalOk = resultados.filter((r) => r.status === 'ok').length;
   const totalAlerta = resultados.filter((r) => r.status === 'alerta').length;
-  const totalValor = resultados.reduce((acc, r) => acc + (r.totalValor ?? 0), 0);
+  // AC 4 (G-08): "A emitir" soma SÓ os `ok` — são os únicos que viram boleto. O total de todos os
+  // resultados continua visível como linha secundária ("Total geral"), porque some junto com os
+  // alertas de valor calculado seria esconder dinheiro que existe no cálculo mas não na cobrança.
+  const valorAEmitir = resultados
+    .filter((r) => r.status === 'ok')
+    .reduce((acc, r) => acc + (r.totalValor ?? 0), 0);
+  const valorTotalGeral = resultados.reduce((acc, r) => acc + (r.totalValor ?? 0), 0);
 
   function fecharTudo() {
+    // AC 5: fechar no MEIO do cálculo NÃO limpa o rastro de propósito — reabrir o diálogo volta a
+    // acompanhar a mesma execução em vez de perdê-la. Quem apaga é o efeito de conclusão acima.
     void qc.invalidateQueries({ queryKey: execucaoQueryKeys.execucoes() });
     // Reabrir o diálogo depois de emitir tem que enxergar os boletos recém-criados, senão o
     // guard fica obsoleto justamente na 2ª rodada — que é o cenário que ele existe pra impedir.
@@ -225,9 +401,12 @@ export function LoteContabilidadeDialog({
         titulo={`Calcular em lote — ${clientes.length} cliente${clientes.length !== 1 ? 's' : ''}`}
         largura="2xl"
         onClose={fecharTudo}
-        // Lançamento de faturamento e cálculo do lote são requisições síncronas longas: fechar por
-        // Escape/backdrop no meio deixaria o operador sem o resultado que já está sendo produzido.
-        emVoo={lancarFaturamentos.isPending || calcular.isPending}
+        // Lançar faturamento em massa é uma escrita sem rastro consultável: fechar por
+        // Escape/backdrop no meio deixaria o operador sem saber quem foi lançado. Já o CÁLCULO só
+        // trava o fechamento até existir `execucaoId` — a partir daí (Story 12.5, AC 5) fechar é
+        // seguro, porque o id fica persistido e reabrir o diálogo volta a acompanhar a mesma
+        // execução em vez de perdê-la.
+        emVoo={lancarFaturamentos.isPending || (calcular.isPending && !execucaoId)}
         mensagemEmVoo="Aguarde o processamento terminar."
         corpoClassName="max-h-[65vh] space-y-4 overflow-y-auto px-6 py-4"
         rodape={
@@ -238,14 +417,16 @@ export function LoteContabilidadeDialog({
             {!execucaoId && !precisaFaturamento && elegiveis.length > 0 && (
               <button
                 onClick={() => calcular.mutate()}
-                disabled={calcular.isPending || !guardaPronta}
+                disabled={calcular.isPending || !guardaPronta || acimaDoTeto}
                 className="btn-primary btn btn-sm"
               >
                 {calcular.isPending
                   ? 'Calculando…'
                   : !guardaPronta
                     ? 'Verificando emissões…'
-                    : `Calcular ${elegiveis.length} em lote`}
+                    : acimaDoTeto
+                      ? `Acima do teto de ${LOTE_CONTABILIDADE_MAX_CLIENTES}`
+                      : `Calcular ${elegiveis.length} em lote`}
               </button>
             )}
             {execucaoId && totalOk > 0 && (
@@ -302,10 +483,14 @@ export function LoteContabilidadeDialog({
           </div>
         )}
 
-        {/* Falhas do lançamento em massa (AC 2) — bloco PERSISTENTE, por NOME do cliente, no mesmo
-            formato da importação de planilha em ClientesContabilidadeManager (`alert-*` + lista
-            `nome: motivo`). Sobrevive ao avanço pro passo de cálculo: quem falhou aqui vai virar
-            alerta lá, e o operador precisa continuar enxergando quem foi. */}
+        {/* Falhas do lançamento em massa (Story 12.4, AC 2) — bloco PERSISTENTE, por NOME do
+            cliente, no mesmo formato da importação de planilha em ClientesContabilidadeManager
+            (`alert-*` + lista `nome: motivo`). Persistente no sentido de NÃO ser toast: sobrevive
+            ao avanço do passo 1 para o passo de cálculo e a quantas remontagens do passo 1 o
+            operador precisar. Débito DEB-12.4-A: o comentário antigo prometia mais do que o código
+            entrega — o guard `!execucaoId` abaixo retira o bloco assim que o lote é calculado, e o
+            que aparece a partir daí é a lista de alertas do resultado (para onde quem falhou aqui
+            vai justamente cair). */}
         {!execucaoId && ultimoLancamento && ultimoLancamento.falhas.length > 0 && (
           <div className={ultimoLancamento.lancados === 0 ? 'alert-error' : 'alert-warning'}>
             <p className="font-medium">
@@ -373,20 +558,83 @@ export function LoteContabilidadeDialog({
           </div>
         )}
 
-        {!execucaoId && elegiveis.length > 0 && !precisaFaturamento && (
+        {/* AC 1/2 (R-4): composição do lote no lugar de "Pronto pra calcular N clientes". Fica
+            visível durante o passo 1 também — saber que 12 dos 18 já têm faturamento lançado é
+            justamente o que evita redigitar tudo. */}
+        {!execucaoId && elegiveis.length > 0 && (
           <div className="rounded-lg border border-cc-hairline bg-cc-surface-2 px-4 py-3">
-            <p className="text-sm text-cc-ink">
-              Pronto pra calcular <strong>{elegiveis.length}</strong> cliente{elegiveis.length !== 1 ? 's' : ''} da
-              competência <strong className="tabular">{competencia}</strong>.
+            <h3 className="text-sm font-medium text-cc-ink">
+              Composição do lote — <span className="tabular">{competencia}</span>
+            </h3>
+            <ul className="mt-2 space-y-1 text-sm text-cc-ink-2">
+              <li>
+                <strong className="tabular text-cc-ink">{composicao.faixa}</strong> em faixa de faturamento
+                {composicao.faixa > 0 &&
+                  (faturamentosLancadosQ.isSuccess ? (
+                    <>
+                      {' '}
+                      (<span className="tabular">{composicao.faixaLancado}</span> com faturamento lançado ·{' '}
+                      <span className="tabular">{composicao.faixaPendente}</span> pendente
+                      {composicao.faixaPendente !== 1 ? 's' : ''})
+                    </>
+                  ) : (
+                    <span className="text-cc-muted">
+                      {faturamentosLancadosQ.isError
+                        ? ' (não foi possível verificar quais já têm faturamento lançado)'
+                        : ' (verificando quais já têm faturamento lançado…)'}
+                    </span>
+                  ))}
+              </li>
+              <li>
+                <strong className="tabular text-cc-ink">{composicao.fixo}</strong> em valor fixo
+              </li>
+              {composicao.adicionalVencendo.length > 0 && (
+                <li className="text-cc-warning">
+                  <strong className="tabular">{composicao.adicionalVencendo.length}</strong> com adicional
+                  semestral vencendo em <span className="tabular">{competencia}</span> — não incluído neste
+                  lote, gere individualmente ({composicao.adicionalVencendo.map((c) => c.nome).join(', ')})
+                </li>
+              )}
+              {inativosSelecionados.length > 0 && (
+                <li className="text-cc-muted">
+                  <strong className="tabular">{inativosSelecionados.length}</strong> inativo
+                  {inativosSelecionados.length !== 1 ? 's' : ''} removido
+                  {inativosSelecionados.length !== 1 ? 's' : ''} da seleção
+                </li>
+              )}
+            </ul>
+            {/* AC 1 (G-13): os limites do sistema aparecem ANTES do clique — antes só existiam
+                como 422/429 depois de o operador já ter perdido o disparo. */}
+            <p className="mt-2 text-2xs text-cc-muted">
+              Limites: até <span className="tabular">{LOTE_CONTABILIDADE_MAX_CLIENTES}</span> clientes por
+              lote · no máximo <span className="tabular">{LOTE_CONTABILIDADE_MAX_POR_MINUTO}</span> cálculos
+              por minuto.
             </p>
+            {acimaDoTeto && (
+              <p role="alert" className="alert-warning mt-2">
+                A seleção tem {elegiveis.length} clientes para calcular, acima do teto de{' '}
+                {LOTE_CONTABILIDADE_MAX_CLIENTES} por lote. Reduza a seleção e calcule em mais de uma
+                rodada.
+              </p>
+            )}
           </div>
         )}
 
         {execucaoId && (
           <div className="space-y-3">
-            {resultadosQ.isLoading ? (
+            {/* AC 3 (R-3/G-06): barra + % + role="status" + aviso de travamento com "Reprocessar",
+                REAPROVEITANDO `ProgressoExecucao` (que já traz `useExecucaoRealtime` e o limiar de
+                travamento) — nada disso é reimplementado aqui. Some quando conclui, dando lugar ao
+                resumo abaixo, que é a informação que interessa a partir daí. */}
+            {!calculoConcluido && (
+              <ProgressoExecucao execucaoId={execucaoId} rotulo="Calculando clientes contábeis" />
+            )}
+
+            {calculoConcluido && resultadosQ.isLoading && (
               <p className="text-sm text-cc-muted">Carregando resultado do lote…</p>
-            ) : (
+            )}
+
+            {calculoConcluido && !resultadosQ.isLoading && (
               <>
                 <dl className="grid grid-cols-3 gap-3 text-center text-sm">
                   <div className="rounded-lg border border-cc-hairline p-2">
@@ -398,11 +646,16 @@ export function LoteContabilidadeDialog({
                     <dd className="tabular font-semibold text-cc-warning">{totalAlerta}</dd>
                   </div>
                   <div className="rounded-lg border border-cc-hairline p-2">
-                    <dt className="text-2xs uppercase tracking-wide text-cc-muted">Total</dt>
-                    <dd className="tabular font-semibold text-cc-ink">{brl(totalValor)}</dd>
+                    <dt className="text-2xs uppercase tracking-wide text-cc-muted">
+                      A emitir ({totalOk} ok)
+                    </dt>
+                    <dd className="tabular font-semibold text-cc-ink">{brl(valorAEmitir)}</dd>
+                    <dd className="mt-0.5 text-2xs text-cc-muted">
+                      Total geral <span className="tabular">{brl(valorTotalGeral)}</span>
+                    </dd>
                   </div>
                 </dl>
-                {resultados.filter((r) => r.status === 'alerta').length > 0 && (
+                {totalAlerta > 0 && (
                   <ul className="max-h-40 space-y-1 overflow-y-auto rounded border border-cc-hairline bg-cc-surface-2 p-3 text-xs text-cc-ink-2">
                     {resultados
                       .filter((r) => r.status === 'alerta')

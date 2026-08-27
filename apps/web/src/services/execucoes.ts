@@ -92,7 +92,12 @@ export const execucoesService = {
     }),
   listar: () => apiFetch<Execucao[]>('/execucoes'),
   detalhe: (id: string) => apiFetch<Execucao>(`/execucoes/${id}`),
-  /** Retoma manualmente uma execução travada em "processando" (encadeamento entre lotes falhou). */
+  /**
+   * Processa (ou retoma) uma execução em "processando" — a rota aguarda o processamento terminar
+   * antes de responder. Dois usos: o botão "Reprocessar" de uma execução travada, e o disparo do
+   * cálculo logo após criar o lote de clientes contábeis (Story 12.5), já que
+   * POST /clientes-contabilidade/lote só cria a execução e devolve o id.
+   */
   retomar: (id: string) => apiFetch<{ ok: true }>(`/execucoes/${id}/retomar`, { method: 'POST' }),
   resultados: (id: string) => apiFetch<ExecucaoResultado[]>(`/execucoes/${id}/resultados`),
   /** Auditoria "qual médico contribuiu quanto" de um resultado agregado. */

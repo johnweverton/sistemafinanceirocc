@@ -6,6 +6,7 @@ import {
   iniciarLoteClientesContabilidade,
   processarProximoLote,
   LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS,
+  PASSO_PROGRESSO_LOTE_CONTABILIDADE,
 } from '../../../src/server/orchestrator/execucao-orchestrator';
 import { novoEstado, clienteContabilidadeFake, fakeDeps } from './fake-deps';
 
@@ -153,5 +154,58 @@ describe('processarProximoLote — lote de clientes contábeis, fim a fim', () =
     const alerta = resultados.find((r) => r.r.nome !== 'Sobrevivente')!;
     expect(alerta.r.status).toBe('alerta');
     expect(alerta.r.alertas[0]).toContain('Falha ao calcular');
+  });
+});
+
+// Story 12.5 (R-3/G-06) — progresso gravado DURANTE o lote. Sem isto a barra do diálogo ficaria
+// parada em 0% por até 300s e depois pularia para 100%, que é o gap que a story fecha.
+describe('processarProximoLote — progresso real do lote de clientes contábeis (Story 12.5)', () => {
+  function loteDe(n: number) {
+    const clientes = Array.from({ length: n }, (_, i) =>
+      clienteContabilidadeFake({
+        id: `cc-${i}`,
+        nome: `Cliente ${i}`,
+        modoCobranca: 'fixo',
+        regraPreco: { forma: 'fixo', base: null, limiar: null, taxa: null, valorFixo: 100 },
+      }),
+    );
+    const state = novoEstado([], [], clientes);
+    const deps = fakeDeps(state, 5, processarProximoLote);
+    return { clientes, state, deps };
+  }
+
+  it('grava progresso intermediário ao longo do lote, em ordem crescente e sem passar de 99', async () => {
+    const { clientes, state, deps } = loteDe(40);
+    const gravados: number[] = [];
+    const original = deps.atualizarProgresso;
+    deps.atualizarProgresso = async (id, progresso) => {
+      gravados.push(progresso);
+      await original(id, progresso);
+    };
+
+    const exec = await iniciarLoteClientesContabilidade('2026-07', clientes.map((c) => c.id), 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    expect(gravados.length).toBeGreaterThan(1);
+    // Nunca 100 daqui: quem fecha em 100 é `concluirExecucao` — só depois de agregar os totais.
+    expect(Math.max(...gravados)).toBeLessThanOrEqual(99);
+    expect([...gravados].sort((a, b) => a - b)).toEqual(gravados);
+    // Passo mínimo respeitado: no máximo ~100/PASSO escritas, não 1 por cliente.
+    expect(gravados.length).toBeLessThanOrEqual(Math.ceil(100 / PASSO_PROGRESSO_LOTE_CONTABILIDADE));
+    expect(state.execucoes.get(exec.id)!.progresso).toBe(100);
+  });
+
+  it('falha ao gravar progresso NÃO derruba o lote (progresso é enfeite de UI)', async () => {
+    const { clientes, state, deps } = loteDe(40);
+    deps.atualizarProgresso = async () => {
+      throw new Error('rede caiu ao gravar progresso');
+    };
+
+    const exec = await iniciarLoteClientesContabilidade('2026-07', clientes.map((c) => c.id), 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const final = state.execucoes.get(exec.id)!;
+    expect(final.status).toBe('concluido');
+    expect(final.totalOk).toBe(40);
   });
 });

@@ -19,6 +19,18 @@ export type RegimeTributario = 'simples_nacional' | 'lucro_presumido';
  */
 export type ModoCobrancaContabilidade = 'faixa_faturamento' | 'fixo';
 
+/**
+ * Limites do CÁLCULO EM LOTE de clientes contábeis (Story 12.5, gap G-13). Moram aqui — e não no
+ * schema/rota/orquestrador, cada um com o seu número — porque a partir da 12.5 a UI precisa
+ * mostrá-los ANTES do clique, e um limite que a tela "acha que sabe" é pior que nenhum: o único
+ * jeito de o painel de composição nunca mentir é ler do mesmo lugar que o servidor valida.
+ * Consumidores: `execucao-schema.ts` (422), `execucao-orchestrator.ts` (LOTE_MUITO_GRANDE),
+ * `api/clientes-contabilidade/lote/route.ts` (rate limit) e `LoteContabilidadeDialog.tsx` (aviso).
+ */
+export const LOTE_CONTABILIDADE_MAX_CLIENTES = 200;
+/** Disparos de cálculo em lote por minuto, por usuário (rate limit da rota). */
+export const LOTE_CONTABILIDADE_MAX_POR_MINUTO = 3;
+
 export interface ClienteContabilidade {
   id: string;
   nome: string;

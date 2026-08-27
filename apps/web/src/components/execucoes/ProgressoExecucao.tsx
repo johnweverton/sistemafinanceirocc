@@ -14,7 +14,19 @@ function formatarDataHora(iso: string): string {
 // usuário esperando indefinidamente sem ação possível.
 const LIMIAR_TRAVADA_MS = 6 * 60 * 1000;
 
-export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
+export function ProgressoExecucao({
+  execucaoId,
+  rotulo = 'Processando médicos',
+}: {
+  execucaoId: string;
+  /**
+   * O que está sendo processado. Default preservado ("Processando médicos") para não mexer nos
+   * chamadores existentes; o lote de clientes contábeis (Story 12.5) reaproveita este componente
+   * e passa o seu próprio rótulo — a alternativa seria duplicar a barra + a detecção de
+   * travamento só por causa de uma palavra.
+   */
+  rotulo?: string;
+}) {
   const { execucao } = useExecucaoRealtime(execucaoId);
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -59,7 +71,7 @@ export function ProgressoExecucao({ execucaoId }: { execucaoId: string }) {
           <div className="flex items-center justify-between">
             <p className="flex items-center gap-2 text-sm font-medium text-cc-ink">
               <span className="live-dot inline-block h-2 w-2 rounded-full bg-cc-accent" />
-              Processando médicos
+              {rotulo}
             </p>
             <span className="tabular text-sm font-semibold text-cc-accent">{execucao.progresso}%</span>
           </div>

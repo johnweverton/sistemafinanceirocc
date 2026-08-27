@@ -124,6 +124,31 @@ export async function listarFaturamentos(
   return (data as ClienteContabilidadeFaturamentoRow[]).map(toClienteContabilidadeFaturamento);
 }
 
+/**
+ * Ids dos clientes contábeis que JÁ têm faturamento lançado na competência (Story 12.5, gap
+ * G-12). O painel de composição do lote precisa dizer quantos dos `faixa_faturamento` estão
+ * "lançado" e quantos estão "pendente" ANTES do clique — e essa distinção não é derivável do
+ * estado do diálogo, porque o lançamento pode ter sido feito numa sessão anterior, por outro
+ * operador ou pela emissão individual. Espelho de `listarClientesContabilidadeComBoletoAtivo`
+ * (guarda de duplicidade, Story 12.3): uma leitura, sem paginação, chaveada por competência.
+ */
+export async function listarClientesContabilidadeComFaturamentoLancado(
+  competencia: string,
+): Promise<string[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('clientes_contabilidade_faturamentos')
+    .select('cliente_contabilidade_id')
+    .eq('competencia', competencia);
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar faturamentos da competência', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  const ids = (data as { cliente_contabilidade_id: string }[]).map((r) => r.cliente_contabilidade_id);
+  return [...new Set(ids)];
+}
+
 export async function buscarFaturamento(
   clienteContabilidadeId: string,
   competencia: string,

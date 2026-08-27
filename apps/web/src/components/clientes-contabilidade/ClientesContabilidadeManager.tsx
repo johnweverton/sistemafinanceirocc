@@ -193,11 +193,23 @@ export function ClientesContabilidadeManager() {
   const clientesSelecionadosAtivos = [...selecionados]
     .map((id) => clientesPorId.get(id))
     .filter((c): c is ClienteContabilidade => Boolean(c?.ativo));
+  // Story 12.5 (AC 2, gap G-15): a barra mostrava "10 selecionados" ao lado de "Calcular em lote
+  // (7)" sem dizer de onde vinham os 3 que sumiram. A diferença são os INATIVOS — que não podem
+  // ser calculados (`iniciarLoteClientesContabilidade` rejeita a seleção inteira com
+  // SELECAO_INVALIDA se algum inativo entrar no payload). Agora a lista vai junto para a barra e
+  // para o painel de composição do diálogo, em vez de o operador ter que deduzir.
+  const clientesSelecionadosInativos = [...selecionados]
+    .map((id) => clientesPorId.get(id))
+    .filter((c): c is ClienteContabilidade => c != null && !c.ativo);
 
   return (
     <section className="space-y-5">
       {mostrarLote && (
-        <LoteContabilidadeDialog clientes={clientesSelecionadosAtivos} onClose={() => setMostrarLote(false)} />
+        <LoteContabilidadeDialog
+          clientes={clientesSelecionadosAtivos}
+          inativosSelecionados={clientesSelecionadosInativos}
+          onClose={() => setMostrarLote(false)}
+        />
       )}
       {confirmacao && (
         <ConfirmDialog
@@ -310,6 +322,16 @@ export function ClientesContabilidadeManager() {
         <div className="flex items-center justify-between rounded-lg border border-cc-accent/30 bg-cc-accent-soft px-4 py-2.5">
           <span className="text-sm font-medium text-cc-ink">
             {selecionados.size} selecionado{selecionados.size !== 1 ? 's' : ''}
+            {clientesSelecionadosInativos.length > 0 && (
+              // AC 2: a diferença entre este número e o do botão "Calcular em lote (N)" deixa de
+              // ser um enigma — é dita aqui, no mesmo lugar em que ela aparece.
+              <span className="font-normal text-cc-muted">
+                {' · '}
+                {clientesSelecionadosInativos.length} inativo
+                {clientesSelecionadosInativos.length !== 1 ? 's' : ''} não entra
+                {clientesSelecionadosInativos.length !== 1 ? 'm' : ''} no cálculo em lote
+              </span>
+            )}
           </span>
           <div className="flex items-center gap-2">
             <button onClick={() => setSelecionados(new Set())} className="btn-ghost btn btn-sm">

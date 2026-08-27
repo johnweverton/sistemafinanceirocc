@@ -1,6 +1,14 @@
-// POST /api/execucoes/[id]/retomar — retoma manualmente uma execução travada em "processando"
-// (ex.: encadeamento entre lotes falhou). Autenticado por sessão (não pelo segredo interno),
-// diferente de processar-lote/route.ts que é chamado só internamente.
+// POST /api/execucoes/[id]/retomar — processa (ou retoma) uma execução que está em "processando".
+// Autenticado por sessão (não pelo segredo interno), diferente de processar-lote/route.ts que é
+// chamado só internamente.
+//
+// Dois chamadores, mesma semântica de "continue de onde parou":
+//   1. Botão "Reprocessar" de ProgressoExecucao — execução travada (encadeamento entre lotes
+//      falhou), caso original desta rota.
+//   2. LoteContabilidadeDialog (Story 12.5) — logo depois de POST /clientes-contabilidade/lote,
+//      que passou a só CRIAR a execução e devolver o `execucaoId` na hora. Aqui o "de onde parou"
+//      é o começo (0 resultados), e o operador acompanha o cálculo pela barra de progresso em vez
+//      de olhar uma promise pendente por até 300s.
 //
 // Retomar é sempre seguro: o cursor de processarProximoLote é `contarResultados` (derivado do
 // banco), então reinvocar dispararPrimeiroLote continua de onde parou, sem duplicar nada.

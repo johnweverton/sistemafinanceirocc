@@ -38,7 +38,7 @@ beforeEach(() => {
 
 describe('EmailGateway.enviarBoleto — sempre assina Carmem Cavalcante Contabilidade', () => {
   it('inclui saudação, vencimento formatado e assinatura fixa, independente de qual conta emitiu', async () => {
-    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x');
+    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x', 'médico');
     const mail = mockSendMail.mock.calls[0]![0] as { from: string; subject: string; html: string };
     expect(mail.from).toContain('"Carmem Cavalcante Contabilidade"');
     expect(mail.subject).toContain('Carmem Cavalcante Contabilidade');
@@ -48,17 +48,30 @@ describe('EmailGateway.enviarBoleto — sempre assina Carmem Cavalcante Contabil
   });
 
   it('não menciona Pix quando EMISSAO_PIX_HABILITADA está desligada (default)', async () => {
-    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x');
+    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x', 'médico');
     const mail = mockSendMail.mock.calls[0]![0] as { html: string };
     expect(mail.html).not.toContain('Pix');
   });
 
   it('menciona Pix quando EMISSAO_PIX_HABILITADA=true (boleto híbrido, achado 2026-08-05)', async () => {
     mockEnv.EMISSAO_PIX_HABILITADA = 'true';
-    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x');
+    await new EmailGateway().enviarBoleto('medico@x.com', 'Dr(a). Fulano de Tal', '2026-08-15', 'https://pdf/x', 'médico');
     const mail = mockSendMail.mock.calls[0]![0] as { html: string };
     expect(mail.html).toContain('Pix');
     expect(mail.html).toContain('QR Code');
+  });
+
+  it('médico/empresa → corpo fala em "cobrança médica" (achado 2026-08-27: serviços diferentes, texto diferente)', async () => {
+    await new EmailGateway().enviarBoleto('empresa@x.com', 'Clínica XYZ Ltda', '2026-08-15', 'https://pdf/x', 'empresa');
+    const mail = mockSendMail.mock.calls[0]![0] as { html: string };
+    expect(mail.html).toContain('boleto da cobrança médica');
+  });
+
+  it('cliente contábil → corpo fala em "honorários contábeis", nunca "cobrança médica"', async () => {
+    await new EmailGateway().enviarBoleto('cc@x.com', 'Padaria Bom Pão Ltda', '2026-08-15', 'https://pdf/x', 'cliente contábil');
+    const mail = mockSendMail.mock.calls[0]![0] as { html: string };
+    expect(mail.html).toContain('boleto referente aos honorários contábeis');
+    expect(mail.html).not.toContain('cobrança médica');
   });
 });
 
@@ -120,7 +133,7 @@ describe('formatarDataBR (mensagem-boleto.ts)', () => {
 
 describe('montarLegendaWhatsapp (mensagem-boleto.ts)', () => {
   it('monta a legenda com saudação, vencimento e assinatura, no formato pedido pelo dono', () => {
-    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' }, '2026-08-15');
+    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' }, '2026-08-15', 'médico');
     expect(legenda).toBe(
       'Olá, Dr(a). John Weverton!\n' +
         'Segue abaixo o boleto da cobrança médica com o vencimento para 15/08/2026.\n\n' +
@@ -129,12 +142,23 @@ describe('montarLegendaWhatsapp (mensagem-boleto.ts)', () => {
   });
 
   it('menciona Pix quando pixDisponivel=true (boleto híbrido, achado 2026-08-05)', () => {
-    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' }, '2026-08-15', true);
+    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PF', pagadorNome: 'John Weverton' }, '2026-08-15', 'médico', true);
     expect(legenda).toBe(
       'Olá, Dr(a). John Weverton!\n' +
         'Segue abaixo o boleto da cobrança médica com o vencimento para 15/08/2026.\n' +
         'Você também pode pagar via Pix escaneando o QR Code no boleto.\n\n' +
         'At.te\nCarmem Cavalcante Contabilidade',
     );
+  });
+
+  it('empresa → mesmo texto "cobrança médica" do médico (Épocs 6-10, é o mesmo serviço de agregação médica)', () => {
+    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PJ', pagadorNome: 'MEDISA' }, '2026-08-15', 'empresa');
+    expect(legenda).toContain('boleto da cobrança médica');
+  });
+
+  it('cliente contábil → "honorários contábeis", nunca "cobrança médica" (achado 2026-08-27)', () => {
+    const legenda = montarLegendaWhatsapp({ pagadorTipo: 'PJ', pagadorNome: 'Padaria Bom Pão Ltda' }, '2026-08-15', 'cliente contábil');
+    expect(legenda).toContain('boleto referente aos honorários contábeis');
+    expect(legenda).not.toContain('cobrança médica');
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LOTE_CONTABILIDADE_MAX_CLIENTES } from '@cobranca/shared';
 
 export const dispararExecucaoSchema = z
   .object({
@@ -95,7 +96,10 @@ export const dispararLoteClientesContabilidadeSchema = z.object({
   clienteContabilidadeIds: z
     .array(z.string().uuid())
     .min(1, 'Selecione ao menos um cliente contábil')
-    .max(200, 'Máximo de 200 clientes por lote'),
+    .max(
+      LOTE_CONTABILIDADE_MAX_CLIENTES,
+      `Máximo de ${LOTE_CONTABILIDADE_MAX_CLIENTES} clientes por lote`,
+    ),
 });
 
 export type DispararLoteClientesContabilidadeInput = z.infer<typeof dispararLoteClientesContabilidadeSchema>;

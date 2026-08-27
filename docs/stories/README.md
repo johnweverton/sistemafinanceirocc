@@ -419,3 +419,116 @@ origem depois da execução) sem precisar de uma execução nova inteira. Ver
 - D1 (>180 guias) e D5 (reajuste dez/2025): resolvidos, sem trabalho.
 - Ezequiel (por guia, instável) — resolvido dentro da própria 10.1: dono confirmou R$4,00/guia
   estável, reincluído no override automático (forma `por_guia`) no mesmo dia da GATE.
+
+---
+
+# Épico 12 — Sanitização da área de Emissões (médico/empresa + clientes de contabilidade)
+
+**Fonte de verdade:** `docs/architecture/epic-sanitizacao-emissoes.md`, criado por @pm a partir
+da auditoria de UX `docs/architecture/ux-gaps-emissoes.md` (2026-08-25 — 51 gaps `G-01..G-51`, 23
+recomendações `R-1..R-23`, 8 riscos `RS-1..RS-8`, mais `RS-9..RS-13` próprios do épico).
+**Objetivo:** o sistema tem duas verticais de cobrança sobre o mesmo pipeline
+(`execucoes → execucao_resultados → boletos`) — médico/empresa (Épicos 6–10) e honorários
+contábeis (Épico 11) — que divergiram em experiência. Este épico **não adiciona capacidade de
+negócio nova**: fecha as lacunas de fluxo, risco financeiro e acessibilidade da área de emissões e
+converge os dois lados para um padrão único (D1: seleção → pré-requisitos → preview → confirmação
+→ progresso → resultado). Autorizado integralmente pelo dono, sem conflito de numeração com o
+Épico 11.
+
+## Decisões fechadas (dono + @pm, 2026-08-25)
+- **Sequenciamento (D2-A):** Fase 0 (fundação — `<Modal>` acessível + moléculas compartilhadas)
+  abre antes da Fase 1 ALTA, para que cada arquivo do caminho de emissão seja tocado uma vez só.
+- **Meta de acessibilidade (D3):** WCAG 2.1 AA no caminho de emissão.
+- **Contraste (D4):** trocar `cc-muted` por `cc-ink-2` só nos pontos citados (G-44) — nenhuma
+  variável CSS global ou `docs/design-system.md` é alterada (restrição de escopo, não preferência).
+- **Navegação (D5):** manter `/execucoes` compartilhado + vocabulário neutro + entrada "Emissões"
+  na seção Contabilidade da Sidebar, filtrada por tipo de pagador — sem tela dedicada.
+- **12.3 (guarda de duplicidade de boleto contábil) — GATE resolvido: Cenário A.** Bloqueio duro,
+  sem opt-in: clientes já cobertos na competência são excluídos do payload antes do cálculo
+  (mesmo tratamento que `NovaExecucao.tsx` já dá para médicos).
+- **12.8 (papéis visíveis antes do clique) — GATE resolvido: Cenário B.** Delegação: `admin` +
+  `financeiro` completam o fluxo inteiro de ponta a ponta (lançar → calcular → preview →
+  confirmar), sem 403 em nenhum passo; `colaborador` segue sem poder confirmar a emissão.
+
+## Riscos próprios do épico
+`RS-9` (contenção de arquivo: 5 stories editam `LoteContabilidadeDialog.tsx` — 12.3→12.4→12.5→
+12.6, e 12.8 na mesma contenção; sequenciamento estrito obrigatório), `RS-10` (duas stories
+dependiam de decisão do dono — ambas já resolvidas neste épico, ver acima), `RS-11` (12.1 migra 6
+modais de uma vez — válvula de escape de split 12.1a/12.1b se necessário), `RS-12` (escopo total
+grande — Fases 0+1 são o marco "MVP de segurança"), `RS-13` (gaps órfãos sem recomendação própria
+— G-20/G-23/G-29/G-30 — realocados em 12.12/12.6/12.9).
+
+**[CORREÇÃO @po 2026-08-25 — `RS-9` estava subdimensionado.]** `LoteContabilidadeDialog.tsx` é
+editado por **10** stories do épico, não 5: além de 12.3–12.6 e 12.8, também **12.1** (migração
+para `<Modal>`), **12.12** (`:167`, `:130-140`), **12.15** (`:128-143`), **12.16** (`:167`, `:172`)
+e **12.17** (`:106`, `:128`, `:130-140`, `:170`, `:185`). Fila completa do arquivo, uma por vez:
+**12.1 → 12.3 → 12.4 → 12.5 → 12.6 → 12.8 → 12.12 → 12.15 → 12.16 → 12.17.**
+
+Existem ainda **duas contenções não mapeadas pelo épico**:
+- **`GerarExecucao.tsx`** — 12.6 (`:141-144`), 12.7 (`:160-164`), 12.10 (`:145-165`), 12.12,
+  12.14 (`:87-107`), 12.16 (`:102`). Fila: **12.6 → 12.7 → 12.10 → 12.12 → 12.14 → 12.16.**
+- **`RelatorioGrupos.tsx`** — 12.1, 12.2, 12.7, 12.8 (`:273`), 12.10, 12.11 (`:273`), 12.13.
+  12.8 e 12.11 editam a **mesma linha** (`:273`); 12.8 é Fase 1 e fecha antes.
+
+## Stories
+
+| # | Story | Fase / Prioridade | Cobre | Depende de |
+|---|-------|---|---|---|
+| [12.1](12.1.modal-acessivel.story.md) | Componente `<Modal>` único e acessível | 0 · ALTA (pré-requisito) | R-5 · G-37, G-38, G-39 | — |
+| [12.2](12.2.moleculas-compartilhadas-formato.story.md) | Moléculas compartilhadas e formato pt-BR | 0 · infra | R-12 · G-27, G-28 | — (paralela a 12.1) |
+| [12.3](12.3.guarda-duplicidade-boleto-contabil.story.md) | Guarda de duplicidade de boleto contábil **[GATE resolvido — Cenário A]** | 1 · ALTA | R-1 · G-09 · RS-1 | contenção com 12.4–12.6, 12.8 |
+| [12.4](12.4.loop-lancamento-faturamento-massa.story.md) | Fechar o loop do lançamento em massa | 1 · ALTA | R-2 · G-01..G-04 · RS-3 | 12.1, 12.2, 12.3 |
+| [12.5](12.5.composicao-lote-progresso-real.story.md) | Composição do lote e progresso real | 1 · ALTA | R-3, R-4 · G-06, G-08, G-11, G-12, G-13, G-15 | 12.1, 12.2, 12.4 |
+| [12.6](12.6.erro-vs-vazio-pontos-carga.story.md) | Separar "erro" de "vazio" nos pontos de carga | 1 · ALTA | R-8 · G-07, G-16, G-23 | 12.5 |
+| [12.7](12.7.confirmacao-emissao-conta-emissora.story.md) | Confirmação de emissão com conta emissora | 1 · ALTA | R-7 · G-22 | 12.1 |
+| [12.8](12.8.papeis-visiveis-antes-clique.story.md) | Papéis visíveis antes do clique **[GATE resolvido — Cenário B]** | 1 · ALTA | R-6 · G-05 · RS-4 | 12.1, contenção com 12.3–12.6 |
+| [12.9](12.9.clareza-regras-valor-nova-emissao.story.md) | Clareza das regras que mudam o valor (nova emissão) | 1 · ALTA | G-29, G-30 (órfãos) | 12.2 |
+| [12.10](12.10.alertas-acionaveis-recalculo-universal.story.md) | Alertas acionáveis e recálculo universal | 2 · MÉDIA | R-9 · G-10, G-21, G-31 | 12.5 |
+| [12.11](12.11.vocabulario-neutro-historico-multipagador.story.md) | Vocabulário neutro, histórico e peso visual | 2 · MÉDIA | R-10, R-16 · G-33, G-34, G-35 | — (habilita 12.19) |
+| [12.12](12.12.anuncios-assistivos-dados-fora-toast.story.md) | Anúncios assistivos e dados fora do toast | 2 · MÉDIA | R-14, R-17 · G-18, G-20, G-40..G-43 | 12.4 |
+| [12.13](12.13.confirmacao-operacoes-irreversiveis.story.md) | Confirmação em operações irreversíveis | 2 · MÉDIA | R-15 · G-19, G-32 · RS-2 | 12.7 |
+| [12.14](12.14.adicional-semestral-dois-modos.story.md) | Adicional semestral nos dois modos | 2 · MÉDIA | R-11 · G-17 | 12.7 |
+| [12.15](12.15.ergonomia-faturamento-massa-nucleo.story.md) | Ergonomia do passo de faturamento (núcleo) | 2 · MÉDIA | R-13 (núcleo) · G-14 | 12.4, 12.5 |
+| [12.16](12.16.design-system-contraste-cirurgico.story.md) | Design system + contraste cirúrgico | 3 · BAIXA | R-18, R-22a · G-24, G-26, G-44 | 12.1 |
+| [12.17](12.17.responsividade-teclado-tabelas.story.md) | Responsividade e teclado nas tabelas | 3 · BAIXA | R-19, R-20 · G-45..G-51 | 12.15 |
+| [12.18](12.18.avisos-carteira-lista.story.md) | Avisos de carteira em nível de lista | 3 · BAIXA | R-21 · G-25 | — |
+| [12.19](12.19.navegacao-vertical-contabil.story.md) | Navegação da vertical contábil | 3 · BAIXA | R-23 · G-36 | 12.11 |
+
+**Paralelismo possível:** 12.1 ∥ 12.2 · 12.7 ∥ 12.3–12.5 · 12.18 ∥ qualquer coisa da Fase 2.
+**Serialização obrigatória (`RS-9`):** 12.3 → 12.4 → 12.5 → 12.6 e 12.8, todas em
+`LoteContabilidadeDialog.tsx` — nenhuma abre antes da anterior fechar o gate de @qa.
+
+**[CORREÇÃO @po 2026-08-25]** duas afirmações de paralelismo acima estavam erradas e foram
+ajustadas: **12.7 não é paralela a 12.6** (as duas editam o bloco `Acompanhamento` de
+`GerarExecucao.tsx`) e **12.11 não é paralela a "qualquer coisa da Fase 2"** (colide com 12.8 em
+`RelatorioGrupos.tsx:273`). Ver as três filas de arquivo na seção "Riscos próprios do épico".
+
+**Marco "MVP de segurança":** fim da Fase 1 (12.1–12.9). Neste ponto o risco financeiro direto
+está endereçado (`RS-1`, `RS-3`), o lote contábil cumpre os 6 passos do padrão D1 e nenhum
+operador descobre limites de papel por erro. Fases 2 e 3 são polimento incremental.
+
+## Fora de escopo
+- Alterar tokens do design system (`cc-muted`/`--text-muted`), `docs/design-system.md` ou
+  variáveis CSS globais — decisão D4, restrição do dono.
+- Refactor estrutural do `NovaExecucao.tsx` (1.227 linhas, 3 modos, ~18 estados) — decisão D10.
+- Componente genérico `<OperacaoEmLote>` — decisão D1 opção B; reavaliar quando existir um 3º
+  caso de lote.
+- Separar o lote contábil em dois (`fixo`/`faixa`) — decisão D6; reavaliar após o painel de
+  composição (12.5).
+- Incluir o adicional semestral no lote — decisão D9; permanece geração individual (12.14).
+- Extras de R-13 (busca no diálogo, aplicar-a-todos, rascunho em `localStorage`) — decisão D7,
+  gatilho > 50 clientes `faixa_faturamento` ativos numa competência.
+- Cancelamento em lote, estorno de boleto pago, e qualquer mudança no motor de cálculo (Épico 10)
+  ou no gateway (Épicos 3/6/7).
+
+**Próximo passo:** as 19 stories foram validadas pelo @po em 2026-08-25
+(`*validate-story-draft`, po-master-checklist) — **19/19 GO, nenhuma rejeitada**, todas em
+`Ready`. 11 aprovadas sem ajuste; 8 aprovadas com ajuste aplicado pelo próprio @po (12.2, 12.3,
+12.6, 12.7, 12.8, 12.11, 12.12, 12.15, 12.16, 12.17 — ver Change Log de cada uma).
+**@dev pode começar por 12.1 e 12.2 (paralelizáveis).**
+
+**Pendência aberta para o dono (não bloqueia o início):** `app/api/boletos/lotes/[id]/retomar`
+exige `admin` e **não** estava entre as 4 rotas do gate de 12.8. Com `financeiro` habilitado a
+confirmar, um lote que o circuit breaker pausar só pode ser retomado por `admin`. A rota **não é
+alterada** por nenhuma story; 12.8 (AC 8) apenas obriga a UI a avisar antes do clique. Pergunta a
+responder antes da Fase 2: *quem pode retomar um lote pausado pelo circuit breaker?*

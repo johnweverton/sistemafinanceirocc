@@ -43,7 +43,7 @@ import { criarBoletoGateway } from '@/server/gateway/boleto-gateway-factory';
 import { ZappyGateway } from '@/server/gateway/zappy-gateway';
 import { EmailGateway } from '@/server/gateway/email-gateway';
 import { calcularVencimento } from '@/server/gateway/vencimento';
-import { saudacaoPagador, montarLegendaWhatsapp } from '@/server/gateway/mensagem-boleto';
+import { saudacaoPagador, montarLegendaWhatsapp, type PagadorNomenclatura } from '@/server/gateway/mensagem-boleto';
 import { reservarBoleto, finalizarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { registrarDisparo } from '@/server/repositories/boleto-disparo-repository';
 import { buscarMedico } from '@/server/repositories/medico-repository';
@@ -95,7 +95,7 @@ export interface ResultadoParaEmissao {
 }
 
 export interface PagadorValidado {
-  pagadorNomenclatura: string;
+  pagadorNomenclatura: PagadorNomenclatura;
   cobranca: DadosCobranca;
   condicoesPagador: CondicoesCobranca | null;
   contaEmissora: ContaEmissora;
@@ -135,7 +135,9 @@ export async function validarResultadoParaEmissao(resultado: ResultadoParaEmissa
   // (Story 11.3), nunca mais de um (CHECK chk_execucao_resultados_exclusao_mutua, migration
   // 0032). O pagador do boleto vem do bloco de cobrança dele (não do CPF/nome do resultado,
   // que é só a chave de cruzamento/exibição).
-  let pagadorNomenclatura: string; // "médico"/"empresa"/"cliente contábil" — só para mensagens de erro
+  // "médico"/"empresa"/"cliente contábil" — mensagens de erro E o texto enviado ao pagador
+  // (montarLegendaWhatsapp/enviarBoleto decidem "cobrança médica" vs "honorários contábeis").
+  let pagadorNomenclatura: PagadorNomenclatura;
   let cobrancaPagador: DadosCobranca | null;
   let condicoesPagador: CondicoesCobranca | null;
   let contaEmissora: ContaEmissora;
@@ -245,7 +247,7 @@ export async function emitirBoletoParaResultado(
   const resultadoRow = resultado as ExecucaoResultadoRow & { execucoes: { competencia: string } };
 
   // 2-3. Validar status/valor e resolver o pagador (médico/empresa/cliente contábil).
-  const { cobranca, condicoesPagador, contaEmissora } = await validarResultadoParaEmissao(resultadoRow);
+  const { cobranca, condicoesPagador, contaEmissora, pagadorNomenclatura } = await validarResultadoParaEmissao(resultadoRow);
 
   // 4. Resolver as condições comerciais efetivas (override do pagador ?? default global).
   const config = await lerConfig();
@@ -323,7 +325,7 @@ export async function emitirBoletoParaResultado(
           try {
             const zappy = new ZappyGateway();
             const pixDisponivel = getServerEnv().EMISSAO_PIX_HABILITADA === 'true';
-            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!, pixDisponivel));
+            await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!, pagadorNomenclatura, pixDisponivel));
             await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
           } catch (err: any) {
             await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
@@ -335,7 +337,7 @@ export async function emitirBoletoParaResultado(
         if (cobranca.email) {
           try {
             const emailGtw = new EmailGateway();
-            await emailGtw.enviarBoleto(cobranca.email, saudacaoPagador(cobranca), boleto.vencimento!, pdfUrl);
+            await emailGtw.enviarBoleto(cobranca.email, saudacaoPagador(cobranca), boleto.vencimento!, pdfUrl, pagadorNomenclatura);
             await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
           } catch (err: any) {
             await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

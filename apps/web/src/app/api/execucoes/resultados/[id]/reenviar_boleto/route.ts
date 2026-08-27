@@ -57,7 +57,7 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
         try {
           const zappy = new ZappyGateway();
           const pixDisponivel = getServerEnv().EMISSAO_PIX_HABILITADA === 'true';
-          await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!, pixDisponivel));
+          await zappy.enviarDocumentoPorUrl(cobranca.whatsapp, pdfUrl, montarLegendaWhatsapp(cobranca, boleto.vencimento!, 'médico', pixDisponivel));
           await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'sucesso' });
         } catch (err: any) {
           await registrarDisparo({ boletoId: boleto.id, canal: 'whatsapp', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });
@@ -69,7 +69,7 @@ export const POST = withErrorHandler<{ id: string }>(async (_req, { params }) =>
       if (cobranca.email) {
         try {
           const emailGtw = new EmailGateway();
-          await emailGtw.enviarBoleto(cobranca.email, saudacaoPagador(cobranca), boleto.vencimento!, pdfUrl);
+          await emailGtw.enviarBoleto(cobranca.email, saudacaoPagador(cobranca), boleto.vencimento!, pdfUrl, 'médico');
           await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'sucesso' });
         } catch (err: any) {
           await registrarDisparo({ boletoId: boleto.id, canal: 'email', status: 'falha', mensagemErro: err.message || 'Erro desconhecido' });

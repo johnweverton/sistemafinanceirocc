@@ -21,18 +21,37 @@ vi.mock('../../src/services/boletos-lote', () => ({
 }));
 
 const mockResultados = vi.fn();
+// Story 12.5: o lote contábil passou a criar a execução e mandar processar em seguida
+// (`retomar`), acompanhando por `detalhe` — daí estes dois entrarem no dublê do serviço.
+const mockDetalheExecucao = vi.fn();
+const mockRetomarExecucao = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     resultados: (...a: unknown[]) => mockResultados(...a),
+    detalhe: (...a: unknown[]) => mockDetalheExecucao(...a),
+    retomar: (...a: unknown[]) => mockRetomarExecucao(...a),
     revisarResultado: vi.fn(),
     contribuicoes: vi.fn(),
     recalcularResultado: vi.fn(),
   },
   execucaoQueryKeys: {
     execucoes: () => ['execucoes'],
+    execucao: (id: string) => ['execucoes', id],
     resultados: (id: string) => ['execucoes', id, 'resultados'],
     contribuicoes: (id: string) => ['execucoes', 'resultados', id, 'contribuicoes'],
   },
+}));
+
+// O lote contábil renderiza `ProgressoExecucao` enquanto o cálculo não conclui, e ele assina
+// Realtime. Só o cliente Supabase vira dublê (mesmo padrão de Sidebar.test.tsx).
+vi.mock('../../src/lib/supabase/client', () => ({
+  createSupabaseBrowserClient: () => ({
+    channel: () => {
+      const canal = { on: () => canal, subscribe: () => canal };
+      return canal;
+    },
+    removeChannel: () => {},
+  }),
 }));
 
 vi.mock('../../src/services/boletos', () => ({
@@ -50,15 +69,24 @@ const mockDispararLote = vi.fn();
 // tem boleto ativo na competência ANTES de deixar calcular. Aqui ela responde vazio — este arquivo
 // testa a casca do modal e o fluxo de emissão, não a guarda (coberta em LoteContabilidadeDialog.test).
 const mockComBoleto = vi.fn();
+// `faturamentosLancados` (story 12.5) alimenta o painel de composição do lote — aqui responde
+// vazio: este arquivo testa a casca do modal e o fluxo de emissão, não o resumo.
+const mockFaturamentosLancados = vi.fn();
 vi.mock('../../src/services/clientes-contabilidade', () => ({
   clientesContabilidadeService: {
     dispararLote: (...a: unknown[]) => mockDispararLote(...a),
     lancarFaturamentoLote: vi.fn(),
     comBoleto: (...a: unknown[]) => mockComBoleto(...a),
+    faturamentosLancados: (...a: unknown[]) => mockFaturamentosLancados(...a),
   },
   clienteContabilidadeQueryKeys: {
     clientes: () => ['clientes-contabilidade'],
     comBoleto: (competencia: string) => ['clientes-contabilidade', 'com-boleto', competencia],
+    faturamentosLancados: (competencia: string) => [
+      'clientes-contabilidade',
+      'faturamentos-lancados',
+      competencia,
+    ],
   },
 }));
 
@@ -124,7 +152,32 @@ const clienteFixo = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Story 12.5 (AC 5): o rastro do lote em andamento vive em sessionStorage.
+  sessionStorage.clear();
   mockComBoleto.mockResolvedValue({ clienteContabilidadeIds: [] });
+  mockFaturamentosLancados.mockResolvedValue({ clienteContabilidadeIds: [] });
+  mockRetomarExecucao.mockResolvedValue({ ok: true });
+  // Story 12.5: o resumo do lote (e o botão "Emitir boletos em lote") só aparece com a execução
+  // concluída — antes disso o que está na tela é a barra de progresso.
+  mockDetalheExecucao.mockResolvedValue({
+    id: 'exec-lote',
+    competencia: '2026-08',
+    iniciadoPor: 'u1',
+    iniciadoEm: new Date().toISOString(),
+    finalizadoEm: new Date().toISOString(),
+    status: 'concluido',
+    progresso: 100,
+    totalMedicos: 0,
+    totalOk: 1,
+    totalAlerta: 0,
+    totalSemDados: 0,
+    totalAcumulado: 0,
+    totalGeralValor: 950.89,
+    empresaId: null,
+    clienteContabilidadeId: null,
+    ehAdicional: false,
+    clientesContabilidadeIds: ['cc-1'],
+  });
   mockCriarPreview.mockResolvedValue(previewCom('lote-1', 1, 950.89));
   mockConfirmar.mockResolvedValue({ lote: { id: 'lote-1', status: 'processando' } });
   mockStatus.mockResolvedValue({

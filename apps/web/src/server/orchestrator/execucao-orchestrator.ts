@@ -23,6 +23,7 @@ import type {
   ClienteContabilidadeFaturamento,
   SaldoAcumulado,
 } from '@cobranca/shared';
+import { LOTE_CONTABILIDADE_MAX_CLIENTES } from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
 import { processarEmpresa, type ProducaoMedico } from '@/server/engine/processar-empresa';
 import { aplicarRegraPreco } from '@/server/engine/regra-preco';
@@ -72,11 +73,16 @@ export const BATCH_SIZE = 150;
  * médico, cada cliente é só leitura local (regra de preço + faturamento já lançado, sem chamada
  * de rede externa) — cabe inteiro numa invocação só, sem encadeamento. Mesmo teto de
  * `EMISSAO_LOTE_MAX_ITENS` (emissao-lote-orchestrator.ts) — consistência de limite no sistema.
+ * Story 12.5 (G-13): o número passou a morar em `@cobranca/shared` porque o painel de composição
+ * do diálogo precisa exibi-lo ANTES do clique — este alias existe só para não quebrar os
+ * consumidores/testes que já importavam daqui.
  */
-export const LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS = 200;
+export const LOTE_CLIENTES_CONTABILIDADE_MAX_ITENS = LOTE_CONTABILIDADE_MAX_CLIENTES;
 /** Concorrência do lote de clientes contábeis — mesma ordem de grandeza do médico (8), mas sem
  *  precisar de env var nova (não há chamada de rede externa a limitar, só leitura de banco). */
 export const LOTE_CLIENTES_CONTABILIDADE_CONCORRENCIA = 8;
+/** Story 12.5: de quantos em quantos pontos percentuais o progresso do lote contábil é gravado. */
+export const PASSO_PROGRESSO_LOTE_CONTABILIDADE = 5;
 
 export interface SelecaoDeps {
   execucaoId: string;
@@ -816,6 +822,10 @@ async function processarExecucaoClienteContabilidade(
  * lote de médico, `executarComLimite`). Falha de 1 cliente vira alerta nesse resultado e não
  * afeta os demais (mesmo espírito de `processarUmMedico`) — `ehAdicional` nunca é true aqui: o
  * adicional semestral é um boleto avulso por cliente, não faz sentido em lote.
+ *
+ * Story 12.5 (R-3/G-06): o progresso é gravado DURANTE o lote, não só no fim. Sem isso a barra do
+ * diálogo ficaria em 0% por até 300s e depois pularia para 100% — que é exatamente o "botão
+ * dizendo Calculando… sem saber se travou" que a story existe para eliminar.
  */
 async function processarLoteClientesContabilidade(
   execucaoId: string,
@@ -823,9 +833,23 @@ async function processarLoteClientesContabilidade(
   competencia: string,
   deps: OrchestratorDeps,
 ): Promise<ResultadoLote> {
-  await executarComLimite(clienteContabilidadeIds, LOTE_CLIENTES_CONTABILIDADE_CONCORRENCIA, (clienteId) =>
-    processarUmClienteContabilidadeDoLote(execucaoId, clienteId, competencia, deps),
-  );
+  const total = clienteContabilidadeIds.length;
+  let concluidos = 0;
+  let ultimoGravado = 0;
+
+  await executarComLimite(clienteContabilidadeIds, LOTE_CLIENTES_CONTABILIDADE_CONCORRENCIA, async (clienteId) => {
+    await processarUmClienteContabilidadeDoLote(execucaoId, clienteId, competencia, deps);
+    concluidos += 1;
+    // Grava no máximo ~1 vez a cada PASSO_PROGRESSO_LOTE_CONTABILIDADE pontos percentuais: com o
+    // teto de 200 clientes são no máximo 20 escritas a mais por lote, em troca de uma barra que
+    // se mexe. 100% fica por conta de `finalizar`/`concluirExecucao`, nunca daqui.
+    const progresso = Math.min(99, Math.floor((concluidos / total) * 100));
+    if (progresso - ultimoGravado >= PASSO_PROGRESSO_LOTE_CONTABILIDADE) {
+      ultimoGravado = progresso;
+      // Progresso é enfeite de UI: se a escrita falhar, o lote NÃO pode cair por causa disso.
+      await deps.atualizarProgresso(execucaoId, progresso).catch(() => {});
+    }
+  });
 
   await finalizar(execucaoId, deps);
   return { concluido: true, processadosNoLote: clienteContabilidadeIds.length, progresso: 100 };

@@ -58,6 +58,7 @@ const clienteFaixa = {
 };
 
 const clienteFixo = { ...clienteFaixa, id: 'cc-2', nome: 'Clínica X', modoCobranca: 'fixo' as const };
+const clienteInativo = { ...clienteFaixa, id: 'cc-3', nome: 'Encerrado ME', ativo: false };
 
 beforeEach(() => {
   mockPush.mockClear();
@@ -92,6 +93,36 @@ describe('ClientesContabilidadeManager', () => {
     const linhaFixo = screen.getByText('Clínica X').closest('tr')!;
     expect(linhaFixo).toHaveTextContent('Emissão');
     expect(linhaFixo).not.toHaveTextContent('Faturamento');
+  });
+
+  // Story 12.5 (AC 2, gap G-15): "10 selecionados" ao lado de "Calcular em lote (7)" sem
+  // explicação era o gap; a diferença são os inativos e agora ela é dita na própria barra.
+  it('AC 2: a barra de seleção explica a diferença entre selecionados e calculáveis', async () => {
+    vi.mocked(clientesContabilidadeService.listar).mockResolvedValue([
+      clienteFaixa,
+      clienteFixo,
+      clienteInativo,
+    ]);
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Encerrado ME')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Selecionar todos os clientes'));
+
+    const barra = screen.getByText(/3 selecionados/).closest('div')!;
+    expect(barra.textContent?.replace(/\s+/g, ' ')).toContain(
+      '3 selecionados · 1 inativo não entra no cálculo em lote',
+    );
+    expect(screen.getByRole('button', { name: /Calcular em lote \(2\)/ })).toBeInTheDocument();
+  });
+
+  it('AC 2: sem inativos selecionados a barra não ganha explicação nenhuma', async () => {
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Clínica X')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Selecionar todos os clientes'));
+
+    expect(screen.getByText(/2 selecionados/).textContent).not.toContain('inativo');
+    expect(screen.getByRole('button', { name: /Calcular em lote \(2\)/ })).toBeInTheDocument();
   });
 
   it('clicar em "Emissão" na linha não navega pro hub (link próprio, propagação interrompida)', async () => {

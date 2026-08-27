@@ -131,6 +131,13 @@ export const clientesContabilidadeService = {
     apiFetch<{ clienteContabilidadeIds: string[] }>(
       `/clientes-contabilidade/com-boleto?competencia=${encodeURIComponent(competencia)}`,
     ),
+  // Story 12.5 (G-12): quem já tem faturamento lançado na competência. Separa "faixa lançado" de
+  // "faixa pendente" no painel de composição do lote — informação que o diálogo NÃO tem como
+  // deduzir sozinho (o lançamento pode ser de outra sessão/operador/tela).
+  faturamentosLancados: (competencia: string) =>
+    apiFetch<{ clienteContabilidadeIds: string[] }>(
+      `/clientes-contabilidade/faturamentos/lancados?competencia=${encodeURIComponent(competencia)}`,
+    ),
 };
 
 export const clienteContabilidadeQueryKeys = {
@@ -141,4 +148,7 @@ export const clienteContabilidadeQueryKeys = {
   clienteExecucoes: (id: string) => ['clientes-contabilidade', id, 'execucoes'] as const,
   /** Chaveada por competência: trocar a competência refaz a consulta (a lista muda com ela). */
   comBoleto: (competencia: string) => ['clientes-contabilidade', 'com-boleto', competencia] as const,
+  /** Idem — quem já tem faturamento lançado na competência (Story 12.5). */
+  faturamentosLancados: (competencia: string) =>
+    ['clientes-contabilidade', 'faturamentos-lancados', competencia] as const,
 };
