@@ -89,3 +89,14 @@ export interface RelatorioPublicoResposta {
   aging: { faixa: string; qtd: number; total: number }[];
   geradoEm: string;
 }
+
+// ---- Relatório mensal automático (cron) ----
+
+/** Config do relatório mensal automático por e-mail (tabela config_relatorio_mensal, singleton). */
+export interface ConfigRelatorioMensal {
+  /** E-mails separados por vírgula (ex.: a CEO). */
+  emails: string;
+  /** Dia do mês (1–28) em que o cron dispara o envio. */
+  diaEnvio: number;
+  habilitado: boolean;
+}

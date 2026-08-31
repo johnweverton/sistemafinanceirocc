@@ -1,8 +1,11 @@
-// GET /api/cron/relatorio-mensal — dispara automaticamente pelo Vercel Cron (vercel.json, dia 1
-// de cada mês) e manda o PDF do fechamento do mês ANTERIOR pra CEO por e-mail, sem ela precisar
-// abrir o sistema (feedback do dono, 2026-08-17). Zero peça nova de infraestrutura: reusa
-// listarRecebiveis + agruparRecebiveisPorEmpresa + gerarRelatorioRecebiveisPdf (já existentes no
-// Módulo de Relatórios) e o EmailGateway (já configurado pro SMTP de disparo de boleto).
+// GET /api/cron/relatorio-mensal — dispara automaticamente pelo Vercel Cron (vercel.json, TODO
+// DIA às 12h UTC — o Vercel Cron não tem "dia configurável em runtime", então quem decide se hoje
+// é o dia certo é esta rota, lendo config_relatorio_mensal) e manda o PDF do fechamento do mês
+// ANTERIOR pra CEO por e-mail, sem ela precisar abrir o sistema (feedback do dono, 2026-08-17).
+// Destinatários e dia de envio são editáveis em Configurações (config-relatorio-mensal-repository).
+// Zero peça nova de infraestrutura: reusa listarRecebiveis + agruparRecebiveisPorEmpresa +
+// gerarRelatorioRecebiveisPdf (já existentes no Módulo de Relatórios) e o EmailGateway (já
+// configurado pro SMTP de disparo de boleto).
 //
 // Sem sessão de usuário (o Vercel Cron não autentica como alguém logado) — autenticação é só o
 // segredo compartilhado, mesmo padrão de tempo constante do webhook da Cora
@@ -16,6 +19,7 @@ import { listarRecebiveis } from '@/server/repositories/recebiveis-repository';
 import { agruparRecebiveisPorEmpresa } from '@/server/engine/relatorio-recebiveis';
 import { gerarRelatorioRecebiveisPdf } from '@/server/engine/relatorio-recebiveis-pdf';
 import { EmailGateway } from '@/server/gateway/email-gateway';
+import { lerConfig as lerConfigRelatorioMensal } from '@/server/repositories/config-relatorio-mensal-repository';
 
 function segredosBatem(recebido: string | undefined, esperado: string): boolean {
   if (!recebido) return false;
@@ -35,18 +39,41 @@ export const GET = withErrorHandler(async (req) => {
 
   const competencia = competenciaAnterior();
 
-  // RELATORIO_MENSAL_EMAILS vazio/ausente não é erro — é "feature desligada até alguém
-  // configurar o destinatário", mesmo espírito do modo mock do EmailGateway.
-  const destinatarios = (env.RELATORIO_MENSAL_EMAILS ?? '')
+  // Config vem de config_relatorio_mensal (editável em Configurações). Enquanto ninguém salvar
+  // pela tela (linha ainda no estado seed: desabilitado e sem e-mails), cai no fallback legado
+  // RELATORIO_MENSAL_EMAILS + dia 1 — preserva quem já tinha isso configurado só via env var
+  // antes desta tela existir.
+  const configDb = await lerConfigRelatorioMensal();
+  const configNuncaTocada = !configDb.habilitado && configDb.emails.trim() === '';
+  const habilitado = configNuncaTocada ? Boolean(env.RELATORIO_MENSAL_EMAILS) : configDb.habilitado;
+  const diaEnvio = configNuncaTocada ? 1 : configDb.diaEnvio;
+  const emailsRaw = configNuncaTocada ? (env.RELATORIO_MENSAL_EMAILS ?? '') : configDb.emails;
+
+  if (!habilitado) {
+    console.warn(`[cron/relatorio-mensal] Envio desabilitado — pulando (competência ${competencia}).`);
+    return Response.json({ enviado: false, motivo: 'Envio desabilitado', competencia });
+  }
+
+  // Dia lido em UTC (mesmo fuso do cron, ver competenciaAnterior acima).
+  const hojeUTC = new Date().getUTCDate();
+  if (hojeUTC !== diaEnvio) {
+    return Response.json({
+      enviado: false,
+      motivo: `Hoje (dia ${hojeUTC}) não é o dia configurado para envio (dia ${diaEnvio})`,
+      competencia,
+    });
+  }
+
+  const destinatarios = emailsRaw
     .split(',')
     .map((e) => e.trim())
     .filter(Boolean);
 
   if (destinatarios.length === 0) {
     console.warn(
-      `[cron/relatorio-mensal] RELATORIO_MENSAL_EMAILS não configurado — pulando envio (competência ${competencia}).`,
+      `[cron/relatorio-mensal] Nenhum destinatário configurado — pulando envio (competência ${competencia}).`,
     );
-    return Response.json({ enviado: false, motivo: 'RELATORIO_MENSAL_EMAILS não configurado', competencia });
+    return Response.json({ enviado: false, motivo: 'Nenhum destinatário configurado', competencia });
   }
 
   const recebiveis = await listarRecebiveis({ competencia });
