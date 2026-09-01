@@ -125,6 +125,26 @@ describe('ClientesContabilidadeManager', () => {
     expect(screen.getByRole('button', { name: /Calcular em lote \(2\)/ })).toBeInTheDocument();
   });
 
+  it('Story 11.1-A: cliente com vencimento em dia fixo mostra "Vence dia X" junto do nome', async () => {
+    const clienteDiaFixo = {
+      ...clienteFaixa,
+      id: 'cc-4',
+      nome: 'Contabilidade Vencimento Fixo',
+      condicoes: {
+        diasVencimento: null, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null,
+        modoVencimento: 'dia_fixo' as const, diaFixoVencimento: 10,
+      },
+    };
+    vi.mocked(clientesContabilidadeService.listar).mockResolvedValue([clienteFaixa, clienteDiaFixo]);
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Contabilidade Vencimento Fixo')).toBeInTheDocument());
+
+    expect(screen.getByText('Vence dia 10')).toBeInTheDocument();
+    // Cliente sem override não ganha o rótulo.
+    const linhaFaixa = screen.getByText('Padaria Bom Pão Ltda').closest('tr')!;
+    expect(linhaFaixa).not.toHaveTextContent('Vence dia');
+  });
+
   it('clicar em "Emissão" na linha não navega pro hub (link próprio, propagação interrompida)', async () => {
     renderComProviders();
     await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());

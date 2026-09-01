@@ -28,6 +28,8 @@ const dadosPadrao: DadosEmissaoBoleto = {
     jurosMesPercent: null,
     descontoPercent: null,
     descontoDias: null,
+    modoVencimento: 'dias_corridos',
+    diaFixoVencimento: null,
   },
 };
 

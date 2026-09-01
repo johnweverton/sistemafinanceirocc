@@ -58,7 +58,7 @@ function normalizarStatusInvoice(body: unknown): StatusInvoice {
  */
 function montarPaymentTerms(condicoes: CondicoesEmissao): Record<string, unknown> {
   const terms: Record<string, unknown> = {
-    due_date: calcularVencimento(condicoes.diasVencimento),
+    due_date: calcularVencimento(condicoes),
   };
   if (condicoes.multaPercent != null) {
     terms.fine = { rate: condicoes.multaPercent };

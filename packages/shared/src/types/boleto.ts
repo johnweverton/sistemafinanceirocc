@@ -3,6 +3,7 @@
 // um boleto por vez, e só sobre resultado com status 'ok' (PRD §2 / §10).
 
 import type { ContaEmissora } from './conta-emissora';
+import type { ModoVencimento } from './medico';
 
 export type GatewayBoleto = 'cora' | 'mock';
 
@@ -62,6 +63,9 @@ export interface CondicoesEmissao {
   jurosMesPercent: number | null;
   descontoPercent: number | null;
   descontoDias: number | null;
+  /** 'dia_fixo' (Epic 11) usa `diaFixoVencimento` em vez de `diasVencimento` — ver `calcularVencimento`. */
+  modoVencimento: ModoVencimento;
+  diaFixoVencimento: number | null;
 }
 
 /** Defaults globais do escritório (tabela config_cobranca, singleton). */

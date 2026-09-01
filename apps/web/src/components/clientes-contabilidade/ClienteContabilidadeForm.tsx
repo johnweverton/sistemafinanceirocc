@@ -44,6 +44,8 @@ const CONDICOES_VAZIAS: CondicoesCobranca = {
   jurosMesPercent: null,
   descontoPercent: null,
   descontoDias: null,
+  modoVencimento: 'dias_corridos',
+  diaFixoVencimento: null,
 };
 
 const REGRA_PRECO_VAZIA: RegraPreco = {
@@ -78,7 +80,14 @@ function temAlgumaCobranca(c: DadosCobranca): boolean {
 
 /** True se algum override comercial foi preenchido (campo vazio herda o padrão global). */
 function temAlgumaCondicao(c: CondicoesCobranca): boolean {
-  return Object.values(c).some((v) => v != null);
+  return (
+    c.diasVencimento != null ||
+    c.multaPercent != null ||
+    c.jurosMesPercent != null ||
+    c.descontoPercent != null ||
+    c.descontoDias != null ||
+    c.modoVencimento === 'dia_fixo'
+  );
 }
 
 /** Regra de preço coerente com o modo de cobrança selecionado (espelho da CHECK 0030). */
@@ -124,7 +133,11 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
     !form.adicionalAtivo ||
     (form.adicionalValor != null && form.adicionalIntervaloMeses != null && !!form.adicionalCompetenciaBase);
   const contaOk = form.contaEmissora !== '';
-  const podeSalvar = motivoOk && regraOk && adicionalOk && contaOk && form.nome.trim().length > 0;
+  const condicoesOk =
+    condicoes.modoVencimento !== 'dia_fixo' ||
+    (condicoes.diaFixoVencimento != null && condicoes.diaFixoVencimento >= 1 && condicoes.diaFixoVencimento <= 31);
+  const podeSalvar =
+    motivoOk && regraOk && adicionalOk && contaOk && condicoesOk && form.nome.trim().length > 0;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -149,6 +162,10 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
 
   function setCond(campo: keyof CondicoesCobranca, valor: string) {
     setCondicoes((c) => ({ ...c, [campo]: valor === '' ? null : Number(valor) }));
+  }
+
+  function setCondModoVencimento(modo: 'dias_corridos' | 'dia_fixo') {
+    setCondicoes((c) => ({ ...c, modoVencimento: modo }));
   }
 
   const maxDoc = cobranca.pagadorTipo === 'PF' ? 11 : 14;
@@ -457,10 +474,32 @@ export function ClienteContabilidadeForm({ inicial, exigeMotivo = false, onSubmi
 
         <div className="mt-4 space-y-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Field label="Vencimento (dias)" optional>
-              <input type="number" min={0} max={365} value={condicoes.diasVencimento ?? ''}
-                onChange={(e) => setCond('diasVencimento', e.target.value)} className="input" placeholder="Padrão global" />
+            <Field label="Modo de vencimento" optional>
+              <select
+                value={condicoes.modoVencimento ?? 'dias_corridos'}
+                onChange={(e) => setCondModoVencimento(e.target.value as 'dias_corridos' | 'dia_fixo')}
+                className="input"
+              >
+                <option value="dias_corridos">Dias corridos após a emissão</option>
+                <option value="dia_fixo">Dia fixo do mês</option>
+              </select>
             </Field>
+            {condicoes.modoVencimento === 'dia_fixo' ? (
+              <Field label="Dia fixo do mês" optional>
+                <input type="number" min={1} max={31} value={condicoes.diaFixoVencimento ?? ''}
+                  onChange={(e) => setCond('diaFixoVencimento', e.target.value)} className="input" placeholder="Ex.: 10" />
+                {!condicoesOk && (
+                  <p className="mt-1 text-xs text-cc-danger" role="alert">
+                    Informe o dia do mês (1 a 31).
+                  </p>
+                )}
+              </Field>
+            ) : (
+              <Field label="Vencimento (dias)" optional>
+                <input type="number" min={0} max={365} value={condicoes.diasVencimento ?? ''}
+                  onChange={(e) => setCond('diasVencimento', e.target.value)} className="input" placeholder="Padrão global" />
+              </Field>
+            )}
             <Field label="Multa (%)" optional>
               <input type="number" min={0} max={100} step="0.01" value={condicoes.multaPercent ?? ''}
                 onChange={(e) => setCond('multaPercent', e.target.value)} className="input" placeholder="Padrão global" />

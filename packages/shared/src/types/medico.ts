@@ -80,6 +80,14 @@ export interface DadosCobranca {
 }
 
 /**
+ * Modo de cálculo do vencimento do boleto:
+ *   - 'dias_corridos' (padrão/legado): `diasVencimento` dias corridos a partir da emissão.
+ *   - 'dia_fixo': sempre o mesmo dia do mês (ex.: dia 10, dia 12) — alguns clientes de
+ *     contabilidade exigem essa data fixa em vez de um prazo relativo (Epic 11).
+ */
+export type ModoVencimento = 'dias_corridos' | 'dia_fixo';
+
+/**
  * Condições comerciais opcionais por médico (overrides). Cada campo nulo herda o default
  * global de `config_cobranca` na resolução da emissão.
  */
@@ -89,6 +97,14 @@ export interface CondicoesCobranca {
   jurosMesPercent: number | null;
   descontoPercent: number | null;
   descontoDias: number | null;
+  /**
+   * Alternativa a `diasVencimento` (Epic 11 — vencimento fixo por cliente de contabilidade).
+   * Default 'dias_corridos' quando ausente — opcional para não exigir o campo de todo literal
+   * `CondicoesCobranca` já existente (médico Épico 5, empresa Épico 10).
+   */
+  modoVencimento?: ModoVencimento | null;
+  /** Dia do mês (1-31) usado quando `modoVencimento === 'dia_fixo'`. Ver `calcularVencimento`. */
+  diaFixoVencimento?: number | null;
 }
 
 export interface Medico {

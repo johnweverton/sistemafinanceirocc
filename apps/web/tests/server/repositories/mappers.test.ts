@@ -286,6 +286,37 @@ describe('toClienteContabilidade / clienteContabilidadeUpdateToRow (Story 11.1)'
     expect(row.regra_preco_valor_abaixo_limiar).toBeNull();
     expect(row.regra_preco_valor_acima_limiar).toBeNull();
   });
+
+  it('toClienteContabilidade mapeia vencimento em dia fixo (Story 11.1-A)', () => {
+    const c = toClienteContabilidade({
+      ...rowBase,
+      modo_vencimento: 'dia_fixo',
+      dia_fixo_vencimento: 10,
+    });
+    expect(c.condicoes).toMatchObject({ modoVencimento: 'dia_fixo', diaFixoVencimento: 10 });
+  });
+
+  it('toClienteContabilidade sem modo_vencimento (pré-migration 0055) → default dias_corridos', () => {
+    const c = toClienteContabilidade({ ...rowBase, dias_vencimento: 30 });
+    expect(c.condicoes).toMatchObject({ modoVencimento: 'dias_corridos', diaFixoVencimento: null });
+  });
+
+  it('clienteContabilidadeUpdateToRow achata modoVencimento/diaFixoVencimento', () => {
+    const row = clienteContabilidadeUpdateToRow({
+      condicoes: {
+        diasVencimento: null, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null,
+        modoVencimento: 'dia_fixo', diaFixoVencimento: 12,
+      },
+    });
+    expect(row.modo_vencimento).toBe('dia_fixo');
+    expect(row.dia_fixo_vencimento).toBe(12);
+  });
+
+  it('clienteContabilidadeUpdateToRow com condicoes null limpa modo_vencimento/dia_fixo_vencimento', () => {
+    const row = clienteContabilidadeUpdateToRow({ condicoes: null });
+    expect(row.modo_vencimento).toBeNull();
+    expect(row.dia_fixo_vencimento).toBeNull();
+  });
 });
 
 describe('toBoleto (Épico 4 — campos de baixa)', () => {

@@ -85,11 +85,16 @@ export function resolverCondicoes(
   config: ConfigCobranca,
   overrides: CondicoesCobranca | null | undefined,
 ): CondicoesEmissao {
+  // Dia fixo (Epic 11) é sempre um override explícito por pagador — o default global do
+  // escritório continua 'dias_corridos' (não existe "dia fixo padrão da casa").
+  const modoVencimento = overrides?.modoVencimento === 'dia_fixo' ? 'dia_fixo' : 'dias_corridos';
   return {
     diasVencimento: overrides?.diasVencimento ?? config.diasVencimento,
     multaPercent: overrides?.multaPercent ?? config.multaPercent,
     jurosMesPercent: overrides?.jurosMesPercent ?? config.jurosMesPercent,
     descontoPercent: overrides?.descontoPercent ?? config.descontoPercent,
     descontoDias: overrides?.descontoDias ?? config.descontoDias,
+    modoVencimento,
+    diaFixoVencimento: modoVencimento === 'dia_fixo' ? (overrides?.diaFixoVencimento ?? null) : null,
   };
 }

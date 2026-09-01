@@ -57,6 +57,13 @@ interface CondicoesRowFields {
   juros_mes_percent: number | null;
   desconto_percent: number | null;
   desconto_dias: number | null;
+  /**
+   * Vencimento em dia fixo (Story 11.1-A, Epic 11) — colunas existem hoje só em
+   * `clientes_contabilidade` (migration 0055). Opcionais aqui para `medicos`/`empresas`
+   * continuarem satisfazendo o tipo sem as colunas (mesmo padrão de `valor_consulta_pediatria?`).
+   */
+  modo_vencimento?: 'dias_corridos' | 'dia_fixo' | null;
+  dia_fixo_vencimento?: number | null;
 }
 
 /** Colunas de regra de preço própria compartilhadas por `medicos`, `empresas` e
@@ -165,7 +172,8 @@ function toCondicoes(row: CondicoesRowFields): CondicoesCobranca | null {
     row.multa_percent != null ||
     row.juros_mes_percent != null ||
     row.desconto_percent != null ||
-    row.desconto_dias != null;
+    row.desconto_dias != null ||
+    row.modo_vencimento === 'dia_fixo';
   if (!algum) return null;
   return {
     diasVencimento: row.dias_vencimento,
@@ -173,6 +181,8 @@ function toCondicoes(row: CondicoesRowFields): CondicoesCobranca | null {
     jurosMesPercent: row.juros_mes_percent,
     descontoPercent: row.desconto_percent,
     descontoDias: row.desconto_dias,
+    modoVencimento: row.modo_vencimento ?? 'dias_corridos',
+    diaFixoVencimento: row.dia_fixo_vencimento ?? null,
   };
 }
 
@@ -557,6 +567,7 @@ export function clienteContabilidadeUpdateToRow(
       Object.assign(row, {
         dias_vencimento: null, multa_percent: null, juros_mes_percent: null,
         desconto_percent: null, desconto_dias: null,
+        modo_vencimento: null, dia_fixo_vencimento: null,
       } satisfies Partial<ClienteContabilidadeRow>);
     } else {
       const o = dados.condicoes;
@@ -566,6 +577,8 @@ export function clienteContabilidadeUpdateToRow(
         juros_mes_percent: o.jurosMesPercent,
         desconto_percent: o.descontoPercent,
         desconto_dias: o.descontoDias,
+        modo_vencimento: o.modoVencimento ?? 'dias_corridos',
+        dia_fixo_vencimento: o.diaFixoVencimento ?? null,
       } satisfies Partial<ClienteContabilidadeRow>);
     }
   }

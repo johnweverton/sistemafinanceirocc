@@ -306,7 +306,7 @@ export async function emitirBoletoParaResultado(
     status: emissao.status,
     idExterno: emissao.idExterno || null,
     payloadResposta: emissao.payloadResposta,
-    vencimento: calcularVencimento(condicoes.diasVencimento),
+    vencimento: calcularVencimento(condicoes),
   });
 
   if (boleto.status !== 'emitido') {

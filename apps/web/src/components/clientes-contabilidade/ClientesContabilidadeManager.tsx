@@ -407,7 +407,14 @@ export function ClientesContabilidadeManager() {
                       aria-label={`Selecionar ${c.nome}`}
                     />
                   </td>
-                  <td className="py-2.5 px-4 font-medium text-cc-ink">{c.nome}</td>
+                  <td className="py-2.5 px-4 font-medium text-cc-ink">
+                    {c.nome}
+                    {c.condicoes?.modoVencimento === 'dia_fixo' && c.condicoes.diaFixoVencimento && (
+                      <span className="mt-0.5 block text-2xs font-normal text-cc-muted">
+                        Vence dia {c.condicoes.diaFixoVencimento}
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2.5 px-4 text-cc-ink-2">{regimeLabel(c.regimeTributario)}</td>
                   <td className="py-2.5 px-4 text-cc-ink-2">
                     <span className="badge-slate">{modoCobrancaLabel(c.modoCobranca)}</span>

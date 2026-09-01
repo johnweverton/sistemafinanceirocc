@@ -13,7 +13,21 @@ vi.mock('@/lib/supabase/admin', () => ({
   getSupabaseAdmin: () => ({ from: mockFrom }),
 }));
 
-import { lerConfig, atualizarConfig, lerValorConsultaPediatria } from '../../../src/server/repositories/config-cobranca-repository';
+import {
+  lerConfig,
+  atualizarConfig,
+  lerValorConsultaPediatria,
+  resolverCondicoes,
+} from '../../../src/server/repositories/config-cobranca-repository';
+
+const configBase = {
+  diasVencimento: 30,
+  multaPercent: null,
+  jurosMesPercent: null,
+  descontoPercent: null,
+  descontoDias: null,
+  valorConsultaPediatria: 3.0,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -84,6 +98,34 @@ describe('atualizarConfig', () => {
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ valor_consulta_pediatria: 3.5 }),
     );
+  });
+});
+
+describe('resolverCondicoes — modoVencimento (Story 11.1-A)', () => {
+  it('sem override → dias_corridos, diaFixoVencimento null', () => {
+    const r = resolverCondicoes(configBase, null);
+    expect(r.modoVencimento).toBe('dias_corridos');
+    expect(r.diaFixoVencimento).toBeNull();
+    expect(r.diasVencimento).toBe(30);
+  });
+
+  it('override com modoVencimento dia_fixo → prevalece sobre o default global', () => {
+    const r = resolverCondicoes(configBase, {
+      diasVencimento: null, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null,
+      modoVencimento: 'dia_fixo', diaFixoVencimento: 10,
+    });
+    expect(r.modoVencimento).toBe('dia_fixo');
+    expect(r.diaFixoVencimento).toBe(10);
+  });
+
+  it('override com modoVencimento dias_corridos explícito → diaFixoVencimento sempre null', () => {
+    const r = resolverCondicoes(configBase, {
+      diasVencimento: 15, multaPercent: null, jurosMesPercent: null, descontoPercent: null, descontoDias: null,
+      modoVencimento: 'dias_corridos', diaFixoVencimento: 10, // ignorado: modo não é dia_fixo
+    });
+    expect(r.modoVencimento).toBe('dias_corridos');
+    expect(r.diaFixoVencimento).toBeNull();
+    expect(r.diasVencimento).toBe(15);
   });
 });
 
