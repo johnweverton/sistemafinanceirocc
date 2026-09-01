@@ -15,6 +15,10 @@ import { useSidebar } from '@/components/layout/SidebarContext';
 const NAV_TOPO = [
   { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
   { href: '/relatorios', label: 'Relatórios', icon: RelatoriosIcon },
+  // Recebíveis saiu da seção "Cobrança Médica" (feedback do dono, 2026-09-01): desde a
+  // migration 0050 a tela lista boletos das duas verticais (médica e contabilidade), então
+  // não pertence a uma seção só — mesmo raciocínio de Dashboard/Relatórios acima.
+  { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
 ];
 
 const NAV_SECOES = [
@@ -26,7 +30,6 @@ const NAV_SECOES = [
       // Rótulo visível renomeado de "Execuções" para "Emissão" (feedback do dono, 2026-07-30) —
       // a rota /execucoes e os nomes internos (execucaoId, NovaExecucao...) não mudam.
       { href: '/execucoes', label: 'Emissão', icon: ExecucoesIcon },
-      { href: '/recebiveis', label: 'Recebíveis', icon: RecebiveisIcon },
     ],
   },
   {
