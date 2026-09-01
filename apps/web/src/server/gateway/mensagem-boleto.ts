@@ -53,3 +53,25 @@ export function montarLegendaWhatsapp(
     `\nAt.te\n${NOME_REMETENTE_MENSAGEM}`
   );
 }
+
+/** Legenda do LEMBRETE de vencimento D-1 (WhatsApp) — Épico 13 Fase 1. Texto deliberadamente
+ *  distinto de `montarLegendaWhatsapp`: aqui o boleto JÁ foi enviado antes — isto é um aviso, não
+ *  uma primeira entrega, então "segue o boleto" seria confuso/redundante. */
+export function montarLegendaLembreteWhatsapp(
+  cobranca: Pick<DadosCobranca, 'pagadorTipo' | 'pagadorNome'>,
+  vencimento: string,
+  pagadorNomenclatura: PagadorNomenclatura,
+): string {
+  return (
+    `Olá, ${saudacaoPagador(cobranca)}!\n` +
+    `Passando para lembrar que o boleto ${descricaoServico(pagadorNomenclatura)} vence amanhã, ` +
+    `${formatarDataBR(vencimento)}. Se já efetuou o pagamento, desconsidere este aviso.\n` +
+    `\nAt.te\n${NOME_REMETENTE_MENSAGEM}`
+  );
+}
+
+/** Assunto do e-mail de lembrete de vencimento — mesmo padrão de nomenclatura das demais
+ *  mensagens automáticas do sistema. */
+export function assuntoLembreteVencimentoEmail(vencimento: string): string {
+  return `Lembrete: boleto vence amanhã (${formatarDataBR(vencimento)})`;
+}

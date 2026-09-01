@@ -50,6 +50,7 @@ export const GET = withErrorHandler(async (req) => {
       status: d.status,
       mensagemErro: d.mensagem_erro,
       enviadoEm: d.enviado_em,
+      tipo: d.tipo,
     }));
   }
 

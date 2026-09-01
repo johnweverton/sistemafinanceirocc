@@ -7,12 +7,17 @@ import type { ModoVencimento } from './medico';
 
 export type GatewayBoleto = 'cora' | 'mock';
 
+/** Tipo do disparo (migration 0056): emissão do boleto, lembrete preventivo de vencimento (D-1,
+ *  Épico 13 Fase 1) ou cobrança de reforço pós-vencimento (Fase 2 — reservado, não emitido ainda). */
+export type TipoDisparoBoleto = 'emissao' | 'lembrete_vencimento' | 'cobranca_vencido';
+
 /** Registro de envio do boleto por canal (WhatsApp/e-mail) — auditoria de disparo. */
 export interface DisparoBoleto {
   canal: 'whatsapp' | 'email';
   status: 'sucesso' | 'falha';
   mensagemErro: string | null;
   enviadoEm: string;
+  tipo: TipoDisparoBoleto;
 }
 // 'pago'/'cancelado' são resultado da baixa via webhook (Épico 4). 'vencido' NÃO é armazenado —
 // é derivado on-read (vencimento < hoje e sem baixa). 'processando' (migration 0037) é a

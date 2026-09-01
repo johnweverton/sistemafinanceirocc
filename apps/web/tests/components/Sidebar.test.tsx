@@ -39,12 +39,19 @@ describe('Sidebar — agrupamento por seção (2026-07-24)', () => {
     expect(screen.getByText('Contabilidade')).toBeInTheDocument();
   });
 
-  it('Médicos/Empresas/Emissão/Recebíveis ficam sob "Cobrança Médica"', () => {
+  it('Médicos/Empresas/Emissão ficam sob "Cobrança Médica"', () => {
     renderSidebar();
     const secao = screen.getByText('Cobrança Médica').parentElement!;
-    for (const label of ['Médicos', 'Empresas', 'Emissão', 'Recebíveis']) {
+    for (const label of ['Médicos', 'Empresas', 'Emissão']) {
       expect(secao).toHaveTextContent(label);
     }
+  });
+
+  it('Recebíveis fica avulso (fora das seções, feedback do dono 2026-09-01: lista as duas verticais)', () => {
+    renderSidebar();
+    expect(screen.getByRole('link', { name: /Recebíveis/i })).toBeInTheDocument();
+    const secaoCobranca = screen.getByText('Cobrança Médica').parentElement!;
+    expect(secaoCobranca).not.toHaveTextContent('Recebíveis');
   });
 
   it('Clientes Contábeis/Extrato/DRE ficam sob "Contabilidade", separados da Cobrança Médica (reposicionamento 2026-08-17)', () => {

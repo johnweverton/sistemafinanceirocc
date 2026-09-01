@@ -1,7 +1,13 @@
 import nodemailer from 'nodemailer';
 import { getServerEnv } from '@/lib/env';
 import { brl } from '@/lib/formato';
-import { NOME_REMETENTE_MENSAGEM, formatarDataBR, descricaoServico, type PagadorNomenclatura } from './mensagem-boleto';
+import {
+  NOME_REMETENTE_MENSAGEM,
+  formatarDataBR,
+  descricaoServico,
+  assuntoLembreteVencimentoEmail,
+  type PagadorNomenclatura,
+} from './mensagem-boleto';
 
 export class EmailGateway {
   private transporter: nodemailer.Transporter | null = null;
@@ -103,6 +109,69 @@ export class EmailGateway {
       return info;
     } catch (error) {
       console.error(`[EmailGateway] Erro ao enviar e-mail para ${paraEmail}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Lembrete PREVENTIVO de vencimento (D-1, Épico 13 Fase 1, cron) — texto e assunto diferentes
+   * de `enviarBoleto` ("segue o boleto" seria confuso para um boleto já enviado antes). Método
+   * separado em vez de parametrizar `enviarBoleto` (menor risco de regressão no fluxo de emissão
+   * real já em produção). Mesmo modo mock (sem transporter configurado, só loga e não lança).
+   */
+  async enviarLembreteVencimento(paraEmail: string, saudacao: string, vencimento: string, pdfUrl: string, pagadorNomenclatura: PagadorNomenclatura) {
+    if (!this.transporter) {
+      console.log(`[Mock Email] Simulando envio de lembrete de vencimento para ${paraEmail} (Anexo URL: ${pdfUrl})`);
+      return;
+    }
+
+    try {
+      const pdfBuffer = await this.downloadPdf(pdfUrl);
+      const env = getServerEnv();
+      const remetente = env.SMTP_USER || 'contato@empresa.com.br';
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5; max-width: 600px; margin: 0 auto; border: 1px solid #eaeaea; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #171717; padding: 24px; text-align: center;">
+             <h1 style="color: #fff; margin: 0; font-size: 20px;">${NOME_REMETENTE_MENSAGEM}</h1>
+          </div>
+          <div style="padding: 32px 24px;">
+            <p style="font-size: 16px; margin-top: 0;">Olá, <strong>${saudacao}</strong>!</p>
+            <p>Passando para lembrar que o boleto ${descricaoServico(pagadorNomenclatura)} vence amanhã, <strong>${formatarDataBR(vencimento)}</strong>. O PDF vai em anexo neste e-mail.</p>
+            <p>Se preferir, você também pode visualizar e imprimir o boleto através do link seguro abaixo:</p>
+
+            <div style="margin: 32px 0;">
+              <a href="${pdfUrl}" target="_blank" style="background-color: #0A0A0A; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; display: inline-block;">Acessar Boleto Online</a>
+            </div>
+
+            <p style="color: #666; font-size: 14px; margin-bottom: 0;">
+              Se já efetuou o pagamento, por favor desconsidere esta mensagem.
+            </p>
+          </div>
+          <div style="background-color: #f9f9f9; padding: 16px 24px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #eaeaea;">
+            At.te, ${NOME_REMETENTE_MENSAGEM}. Este é um e-mail automático, por favor não responda.
+          </div>
+        </div>
+      `;
+
+      const info = await this.transporter.sendMail({
+        from: `"${NOME_REMETENTE_MENSAGEM}" <${remetente}>`,
+        to: paraEmail,
+        subject: assuntoLembreteVencimentoEmail(vencimento),
+        html,
+        attachments: [
+          {
+            filename: 'boleto.pdf',
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ],
+      });
+
+      console.log(`[EmailGateway] Lembrete de vencimento enviado com sucesso: ${info.messageId}`);
+      return info;
+    } catch (error) {
+      console.error(`[EmailGateway] Erro ao enviar lembrete de vencimento para ${paraEmail}:`, error);
       throw error;
     }
   }

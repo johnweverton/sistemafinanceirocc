@@ -1,3 +1,4 @@
+import type { TipoDisparoBoleto } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 
@@ -11,6 +12,7 @@ export interface BoletoDisparoRow {
   status: DisparoStatus;
   mensagem_erro: string | null;
   enviado_em: string;
+  tipo: TipoDisparoBoleto;
 }
 
 export interface RegistrarDisparoParams {
@@ -18,6 +20,9 @@ export interface RegistrarDisparoParams {
   canal: DisparoCanal;
   status: DisparoStatus;
   mensagemErro?: string;
+  /** Tipo do disparo (migration 0056) — default 'emissao', preserva as chamadas existentes
+   *  (emitir-boleto.ts, reenviar_boleto/route.ts) sem precisar passar este campo. */
+  tipo?: TipoDisparoBoleto;
 }
 
 /**
@@ -32,16 +37,46 @@ export async function registrarDisparo(params: RegistrarDisparoParams): Promise<
       canal: params.canal,
       status: params.status,
       mensagem_erro: params.mensagemErro ?? null,
+      tipo: params.tipo ?? 'emissao',
     })
     .select('*')
     .single();
 
   if (error) {
+    // Violação do índice único parcial uq_boletos_disparos_lembrete_sucesso (migration 0056) —
+    // outra execução do cron já registrou este lembrete com sucesso entre a checagem de
+    // idempotência (jaDisparado) e este insert. Não é uma falha real, é a trava fazendo o
+    // trabalho dela: o chamador trata este código como "já foi enviado, tudo certo".
+    if (error.code === PG_UNIQUE_VIOLATION) {
+      throw new ApiError(409, 'Disparo já registrado para este boleto (idempotência)', 'DISPARO_DUPLICADO');
+    }
     throw new ApiError(500, 'Falha ao registrar disparo de boleto', 'DB_ERROR', { error: error.message });
   }
 
   return data as BoletoDisparoRow;
 }
+
+/**
+ * Checa se já existe um disparo do `tipo` informado para este boleto — guarda de idempotência do
+ * cron de lembrete de vencimento (Épico 13). Complementar ao índice único parcial
+ * `uq_boletos_disparos_lembrete_sucesso` (migration 0056), que fecha a corrida de fato; esta
+ * checagem evita a tentativa de reenvio na maioria dos casos (sem depender só do 23505).
+ */
+export async function jaDisparado(boletoId: string, tipo: TipoDisparoBoleto): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  const { count, error } = await db
+    .from('boletos_disparos')
+    .select('id', { count: 'exact', head: true })
+    .eq('boleto_id', boletoId)
+    .eq('tipo', tipo);
+  if (error) {
+    throw new ApiError(500, 'Falha ao checar idempotência de disparo', 'DB_ERROR', { error: error.message });
+  }
+  return (count ?? 0) > 0;
+}
+
+/** Código de erro do Postgres para violação de unicidade (índice único parcial). */
+export const PG_UNIQUE_VIOLATION = '23505';
 
 /**
  * Lista todos os disparos de um boleto.

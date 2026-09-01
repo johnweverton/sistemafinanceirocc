@@ -1,5 +1,6 @@
 import { ConfigCobrancaForm } from '@/components/configuracoes/ConfigCobrancaForm';
 import { ConfigRelatorioMensalForm } from '@/components/configuracoes/ConfigRelatorioMensalForm';
+import { ConfigLembreteVencimentoForm } from '@/components/configuracoes/ConfigLembreteVencimentoForm';
 
 export default function ConfiguracoesPage() {
   return (
@@ -16,6 +17,13 @@ export default function ConfiguracoesPage() {
           <h1 className="page-title">Relatório mensal automático</h1>
         </div>
         <ConfigRelatorioMensalForm />
+      </div>
+
+      <div>
+        <div className="page-header">
+          <h1 className="page-title">Lembrete de vencimento</h1>
+        </div>
+        <ConfigLembreteVencimentoForm />
       </div>
     </section>
   );

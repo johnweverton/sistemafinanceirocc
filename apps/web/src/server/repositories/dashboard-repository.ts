@@ -136,3 +136,26 @@ export async function aging(
   if (error) throw new ApiError(500, 'Falha ao carregar aging', 'DB_ERROR', { error: error.message });
   return (data as AgingFaixaRow[]).map(toAgingFaixa);
 }
+
+/**
+ * Contagem de lembretes de vencimento enviados com sucesso no mês corrente (mês civil) —
+ * indicador de auditoria pedido pela CEO (Épico 13, Fase 1) para confirmar que os lembretes
+ * estão saindo de fato, sem precisar cobrar a equipe manualmente. Conta DISPAROS (não boletos
+ * únicos): um boleto lembrado por WhatsApp E e-mail conta 2 — mais fiel ao volume de trabalho
+ * do sistema do que "quantos boletos foram avisados". Query isolada (não reusa vw_dashboard_*,
+ * que são pensadas para outra dimensão de dado — competência/conta/tipo de serviço).
+ */
+export async function contarLembretesVencimentoNoMes(): Promise<number> {
+  const db = getSupabaseAdmin();
+  const inicioMes = new Date();
+  inicioMes.setUTCDate(1);
+  inicioMes.setUTCHours(0, 0, 0, 0);
+  const { count, error } = await db
+    .from('boletos_disparos')
+    .select('id', { count: 'exact', head: true })
+    .eq('tipo', 'lembrete_vencimento')
+    .eq('status', 'sucesso')
+    .gte('enviado_em', inicioMes.toISOString());
+  if (error) throw new ApiError(500, 'Falha ao contar lembretes de vencimento do mês', 'DB_ERROR', { error: error.message });
+  return count ?? 0;
+}

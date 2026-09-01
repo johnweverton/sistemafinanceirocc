@@ -14,4 +14,5 @@ export * from './types/extrato';
 export * from './types/dre';
 export * from './types/dashboard';
 export * from './types/relatorio';
+export * from './types/lembrete-vencimento';
 export * from './engine-contracts';
