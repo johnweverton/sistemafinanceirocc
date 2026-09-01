@@ -95,6 +95,15 @@ export function LoteEmissaoDialog({
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao retomar o lote', 'error'),
   });
 
+  const reprocessarItem = useMutation({
+    mutationFn: (itemId: string) => lotesEmissaoService.reprocessarItem(loteId!, itemId),
+    onSuccess: () => {
+      toast('Item reenviado para reprocessamento…', 'success');
+      void qc.invalidateQueries({ queryKey: ['lote-emissao', loteId] });
+    },
+    onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao reprocessar o item', 'error'),
+  });
+
   const acompanhar = useQuery({
     queryKey: ['lote-emissao', loteId],
     queryFn: () => lotesEmissaoService.status(loteId!),
@@ -153,8 +162,11 @@ export function LoteEmissaoDialog({
           carregando={acompanhar.isLoading}
           status={statusAtual}
           lote={acompanhar.data?.lote}
+          itens={acompanhar.data?.itens ?? []}
           onRetomar={() => retomar.mutate()}
           retomando={retomar.isPending}
+          onReprocessarItem={(itemId) => reprocessarItem.mutate(itemId)}
+          itemReprocessando={reprocessarItem.isPending ? (reprocessarItem.variables ?? null) : null}
         />
       )}
     </Modal>
@@ -218,16 +230,25 @@ function AcompanhamentoConteudo({
   carregando,
   status,
   lote,
+  itens,
   onRetomar,
   retomando,
+  onReprocessarItem,
+  itemReprocessando,
 }: {
   carregando: boolean;
   status?: string;
   lote?: { progresso: number; totalEmitidos: number; totalPulados: number; totalFalhas: number; totalValorEmitido: number; motivoPausa: string | null };
+  itens: { id: string; nome: string; status: string; codigoErro: string | null; mensagemErro: string | null }[];
   onRetomar: () => void;
   retomando: boolean;
+  onReprocessarItem: (itemId: string) => void;
+  /** id do item cuja mutação de reprocessar está em voo — desabilita só o botão daquele item. */
+  itemReprocessando: string | null;
 }) {
   if (carregando || !lote) return <p className="text-sm text-cc-muted">Carregando status…</p>;
+
+  const falhas = itens.filter((i) => i.status === 'falha');
 
   return (
     <div className="space-y-3">
@@ -269,6 +290,31 @@ function AcompanhamentoConteudo({
           <dd className="tabular font-semibold text-cc-danger">{lote.totalFalhas}</dd>
         </div>
       </dl>
+
+      {falhas.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-cc-muted">
+            {falhas.length} item{falhas.length !== 1 ? 's' : ''} com falha
+          </p>
+          <ul className="space-y-1.5 rounded border border-cc-hairline bg-cc-surface-2 p-3">
+            {falhas.map((i) => (
+              <li key={i.id} className="flex items-center justify-between gap-3 text-xs text-cc-ink-2">
+                <span>
+                  <strong className="text-cc-ink">{i.nome}</strong>:{' '}
+                  {i.mensagemErro ?? (i.codigoErro ? (CODIGO_ERRO_LABEL[i.codigoErro] ?? i.codigoErro) : 'Motivo desconhecido')}
+                </span>
+                <button
+                  onClick={() => onReprocessarItem(i.id)}
+                  disabled={itemReprocessando === i.id}
+                  className="btn-ghost btn btn-sm shrink-0"
+                >
+                  {itemReprocessando === i.id ? 'Reprocessando…' : 'Reprocessar'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {status === 'concluido' && (
         <p className="text-sm text-cc-ink">

@@ -29,12 +29,16 @@ const mockBuscarLote = vi.fn();
 const mockConfirmarLote = vi.fn();
 const mockExpirarLote = vi.fn();
 const mockRetomarLote = vi.fn();
+const mockResetarItemParaPendente = vi.fn();
+const mockReabrirLoteParaProcessamento = vi.fn();
 vi.mock('@/server/repositories/lote-emissao-repository', () => ({
   listarItensLote: (...args: unknown[]) => mockListarItensLote(...args),
   buscarLote: (...args: unknown[]) => mockBuscarLote(...args),
   confirmarLote: (...args: unknown[]) => mockConfirmarLote(...args),
   expirarLote: (...args: unknown[]) => mockExpirarLote(...args),
   retomarLote: (...args: unknown[]) => mockRetomarLote(...args),
+  resetarItemParaPendente: (...args: unknown[]) => mockResetarItemParaPendente(...args),
+  reabrirLoteParaProcessamento: (...args: unknown[]) => mockReabrirLoteParaProcessamento(...args),
 }));
 
 const mockListarResultados = vi.fn();
@@ -281,5 +285,67 @@ describe('GET /api/boletos/lotes/[id]', () => {
     const body = await resp.json();
     expect(body.lote.id).toBe('lote-1');
     expect(body.itens).toHaveLength(1);
+  });
+
+  it('enriquece os itens com o nome do pagador (escopo execucao) — para a UI mostrar QUEM falhou', async () => {
+    mockBuscarLote.mockResolvedValue({ id: 'lote-1', status: 'concluido', escopoTipo: 'execucao', escopoRef: 'exec-1' });
+    mockListarItensLote.mockResolvedValue([
+      { id: 'item-1', execucaoResultadoId: 'res-1', status: 'falha', codigoErro: 'FALHA_GATEWAY', mensagemErro: 'O gateway recusou.' },
+    ]);
+    mockListarResultados.mockResolvedValue([{ id: 'res-1', nome: 'Dr. Falhou' }]);
+    const { GET } = await import('@/app/api/boletos/lotes/[id]/route');
+    const resp = await GET(new Request('http://x'), { params: { id: 'lote-1' } });
+    const body = await resp.json();
+    expect(body.itens[0].nome).toBe('Dr. Falhou');
+    expect(mockListarResultados).toHaveBeenCalledWith('exec-1');
+  });
+});
+
+describe('POST /api/boletos/lotes/[id]/itens/[itemId]/reprocessar', () => {
+  it('exige papel admin', async () => {
+    mockBuscarLote.mockResolvedValue({ id: 'lote-1', status: 'concluido' });
+    mockResetarItemParaPendente.mockResolvedValue(null);
+    const { POST } = await import('@/app/api/boletos/lotes/[id]/itens/[itemId]/reprocessar/route');
+    await POST(req('http://x'), { params: { id: 'lote-1', itemId: 'item-1' } });
+    expect(mockRequireRole).toHaveBeenCalledWith(['admin']);
+  });
+
+  it('404 quando o lote não existe', async () => {
+    mockBuscarLote.mockResolvedValue(null);
+    const { POST } = await import('@/app/api/boletos/lotes/[id]/itens/[itemId]/reprocessar/route');
+    const resp = await POST(req('http://x'), { params: { id: 'lote-1', itemId: 'item-1' } });
+    expect(resp.status).toBe(404);
+    expect(mockResetarItemParaPendente).not.toHaveBeenCalled();
+  });
+
+  it('422 quando o item não está com falha (resetarItemParaPendente devolve null)', async () => {
+    mockBuscarLote.mockResolvedValue({ id: 'lote-1', status: 'concluido' });
+    mockResetarItemParaPendente.mockResolvedValue(null);
+    const { POST } = await import('@/app/api/boletos/lotes/[id]/itens/[itemId]/reprocessar/route');
+    const resp = await POST(req('http://x'), { params: { id: 'lote-1', itemId: 'item-1' } });
+    expect(resp.status).toBe(422);
+    expect((await resp.json()).error.code).toBe('ITEM_NAO_REPROCESSAVEL');
+    expect(mockDispararProcessamento).not.toHaveBeenCalled();
+  });
+
+  it('reabre um lote concluído para processando antes de reprocessar o item', async () => {
+    mockBuscarLote.mockResolvedValue({ id: 'lote-1', status: 'concluido' });
+    mockResetarItemParaPendente.mockResolvedValue({ id: 'item-1', status: 'pendente' });
+    mockReabrirLoteParaProcessamento.mockResolvedValue({ id: 'lote-1', status: 'processando' });
+    const { POST } = await import('@/app/api/boletos/lotes/[id]/itens/[itemId]/reprocessar/route');
+    const resp = await POST(req('http://x'), { params: { id: 'lote-1', itemId: 'item-1' } });
+    expect(resp.status).toBe(202);
+    expect(mockReabrirLoteParaProcessamento).toHaveBeenCalledWith('lote-1');
+    expect(mockDispararProcessamento).toHaveBeenCalledWith('lote-1');
+  });
+
+  it('não tenta reabrir um lote que já está processando', async () => {
+    mockBuscarLote.mockResolvedValue({ id: 'lote-1', status: 'processando' });
+    mockResetarItemParaPendente.mockResolvedValue({ id: 'item-1', status: 'pendente' });
+    const { POST } = await import('@/app/api/boletos/lotes/[id]/itens/[itemId]/reprocessar/route');
+    const resp = await POST(req('http://x'), { params: { id: 'lote-1', itemId: 'item-1' } });
+    expect(resp.status).toBe(202);
+    expect(mockReabrirLoteParaProcessamento).not.toHaveBeenCalled();
+    expect(mockDispararProcessamento).toHaveBeenCalledWith('lote-1');
   });
 });

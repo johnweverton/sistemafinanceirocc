@@ -232,6 +232,45 @@ export async function retomarLote(id: string): Promise<LoteEmissao | null> {
   return data ? toLoteEmissao(data as LoteEmissaoRow) : null;
 }
 
+/**
+ * Reseta UM item com falha de volta para 'pendente' — condicional (`status = 'falha'`), então
+ * um clique duplo ou um item que não está mais em falha (já reprocessado por outra requisição)
+ * devolve `null` em vez de reprocessar às cegas. Limpa código/mensagem de erro e o boleto_id
+ * (a tentativa anterior pode ter deixado um boleto associado a uma falha de gateway).
+ */
+export async function resetarItemParaPendente(loteId: string, itemId: string): Promise<LoteEmissaoItem | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('lote_emissao_itens')
+    .update({ status: 'pendente', codigo_erro: null, mensagem_erro: null, boleto_id: null, processado_em: null })
+    .eq('id', itemId)
+    .eq('lote_id', loteId)
+    .eq('status', 'falha')
+    .select('*')
+    .maybeSingle();
+  if (error) throw new ApiError(500, 'Falha ao reprocessar item do lote', 'DB_ERROR', { error: error.message });
+  return data ? toLoteEmissaoItem(data as LoteEmissaoItemRow) : null;
+}
+
+/**
+ * Reabre um lote 'concluido' ou 'pausado_por_falhas' para 'processando' — usado quando o
+ * operador reprocessa um item isolado depois que o lote já tinha fechado. Zera falhas
+ * consecutivas e motivo de pausa (tentativa nova). Transição condicional; `null` se o lote já
+ * não estiver mais num desses dois estados (corrida com outra requisição).
+ */
+export async function reabrirLoteParaProcessamento(id: string): Promise<LoteEmissao | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('lotes_emissao')
+    .update({ status: 'processando', falhas_consecutivas: 0, motivo_pausa: null, finalizado_em: null })
+    .eq('id', id)
+    .in('status', ['concluido', 'pausado_por_falhas'])
+    .select('*')
+    .maybeSingle();
+  if (error) throw new ApiError(500, 'Falha ao reabrir lote para reprocessamento', 'DB_ERROR', { error: error.message });
+  return data ? toLoteEmissao(data as LoteEmissaoRow) : null;
+}
+
 export interface TotaisLote {
   totalEmitidos: number;
   totalPulados: number;

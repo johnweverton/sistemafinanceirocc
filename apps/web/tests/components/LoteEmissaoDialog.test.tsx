@@ -11,12 +11,14 @@ const mockCriarPreview = vi.fn();
 const mockConfirmar = vi.fn();
 const mockStatus = vi.fn();
 const mockRetomar = vi.fn();
+const mockReprocessarItem = vi.fn();
 vi.mock('../../src/services/boletos-lote', () => ({
   lotesEmissaoService: {
     criarPreview: (...a: unknown[]) => mockCriarPreview(...a),
     confirmar: (...a: unknown[]) => mockConfirmar(...a),
     status: (...a: unknown[]) => mockStatus(...a),
     retomar: (...a: unknown[]) => mockRetomar(...a),
+    reprocessarItem: (...a: unknown[]) => mockReprocessarItem(...a),
   },
 }));
 
@@ -231,6 +233,35 @@ describe('LoteEmissaoDialog aberto pelo relatório de execuções (AC 6)', () =>
         within(screen.getByRole('dialog')).getByRole('button', { name: 'Fechar' }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it('mostra o item com falha (nome + motivo) e permite reprocessar só aquele item', async () => {
+    mockStatus.mockResolvedValue({
+      lote: {
+        id: 'lote-1',
+        status: 'concluido',
+        progresso: 100,
+        totalEmitidos: 4,
+        totalPulados: 0,
+        totalFalhas: 1,
+        totalValorEmitido: 3000,
+        motivoPausa: null,
+      },
+      itens: [
+        { id: 'item-falho', nome: 'Dr. Falhou', status: 'falha', codigoErro: 'FALHA_GATEWAY', mensagemErro: 'O gateway recusou a emissão. Ver auditoria do boleto para detalhes.' },
+      ],
+    });
+    mockReprocessarItem.mockResolvedValue({ item: { id: 'item-falho', status: 'pendente' } });
+    renderComProviders(<RelatorioGrupos execucaoId="exec-1" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Emitir todos os pendentes' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Confirmar emissão de 1/ }));
+
+    expect(await screen.findByText('Dr. Falhou', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/O gateway recusou a emissão/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reprocessar' }));
+
+    await waitFor(() => expect(mockReprocessarItem).toHaveBeenCalledWith('lote-1', 'item-falho'));
   });
 
   it('Escape fecha e devolve o foco ao gatilho do relatório', async () => {
