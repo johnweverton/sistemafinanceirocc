@@ -48,10 +48,17 @@ export class ZappyGateway {
    * e é assim que o Whaticket reconhece "isso é um grupo" (vira `<isso>@g.us` no backend).
    * Removê-lo (como o `\D` global fazia antes) concatena os dois números e produz um
    * contato inexistente → 400 ERR_WAPP_INVALID_CONTACT.
+   *
+   * Achado 2026-09-02: a checagem original (`includes('-')`) confundia um telefone PF cadastrado
+   * com máscara humana (ex. "(85) 98721-6266" — tem hífen no meio do número) com um ID de grupo, e
+   * devolvia a string COM parênteses/espaço sem normalizar, quebrando o envio. Um ID de grupo real
+   * é só dígitos dos dois lados do hífen, sem nenhuma outra pontuação — é essa forma exata que
+   * precisa passar direto; qualquer outra coisa com hífen é telefone formatado e cai na
+   * normalização normal.
    */
   private normalizarNumero(to: string): string {
     const semEspacos = to.trim();
-    if (semEspacos.includes('-')) return semEspacos;
+    if (/^\d+-\d+$/.test(semEspacos)) return semEspacos;
     const digitos = semEspacos.replace(/\D/g, '');
     if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`;
     return digitos;
