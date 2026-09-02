@@ -20,7 +20,7 @@ describe('importação CSV — dados de cobrança', () => {
 
   it('linha com cobrança PF válida é aceita', () => {
     const input = parseUma(
-      '12345678900,Dr. Fulano,Cardio,credenciado,nao,nao,nao,Maria,PF,12345678900,Dr. Fulano,fulano@exemplo.com,60000000,Rua A,100,Sala 2,Centro,Fortaleza,CE',
+      '12345678900,Dr. Fulano,Cardio,credenciado,nao,nao,nao,Maria,PF,11144477735,Dr. Fulano,fulano@exemplo.com,60000000,Rua A,100,Sala 2,Centro,Fortaleza,CE',
     );
     const parsed = novoMedicoSchema.safeParse(input);
     expect(parsed.success).toBe(true);
@@ -32,7 +32,7 @@ describe('importação CSV — dados de cobrança', () => {
 
   it('linha com cobrança PJ válida (14 dígitos) é aceita', () => {
     const input = parseUma(
-      '98765432100,Dra. Ciclana,Pediatria,nao_credenciado,nao,nao,nao,Joao,PJ,12345678000199,Clinica LTDA,contato@ciclana.com,60110000,Av Beira Mar,2000,,Meireles,Fortaleza,CE',
+      '98765432100,Dra. Ciclana,Pediatria,nao_credenciado,nao,nao,nao,Joao,PJ,11222333000181,Clinica LTDA,contato@ciclana.com,60110000,Av Beira Mar,2000,,Meireles,Fortaleza,CE',
     );
     expect(novoMedicoSchema.safeParse(input).success).toBe(true);
   });
@@ -112,7 +112,7 @@ describe('importação CSV — campos estendidos (modo_cobranca, condições, re
     const input = parseUmaExt({
       cpf: '12345678900', nome: 'Dr. Fulano', especialidade: 'Cardio', status_hapvida: 'credenciado',
       faz_outros_hospitais: 'nao', faz_imobilizacoes: 'nao', modo_mudanca_data: 'nao',
-      colaborador_responsavel: 'Maria', pagador_tipo: 'PF', pagador_documento: '12345678900',
+      colaborador_responsavel: 'Maria', pagador_tipo: 'PF', pagador_documento: '11144477735',
       pagador_nome: 'Dr. Fulano', email: 'fulano@exemplo.com', cep: '60000000', logradouro: 'Rua A',
       numero: '100', bairro: 'Centro', cidade: 'Fortaleza', uf: 'CE', whatsapp: '85999998888',
     });

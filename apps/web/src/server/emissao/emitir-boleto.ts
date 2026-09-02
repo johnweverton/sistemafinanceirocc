@@ -30,6 +30,7 @@
 // chegar aqui.
 import {
   cobrancaMinimaEmissao,
+  documentoValido,
   type DadosCobranca,
   type CondicoesCobranca,
   type ContaEmissora,
@@ -55,9 +56,12 @@ import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
 // produção 2026-07-09). Falhar aqui com mensagem clara em vez de 502 do gateway.
 export const VALOR_MINIMO_GATEWAY = 5;
 
-/** Lista os campos MÍNIMOS de cobrança ainda vazios (para mensagem do 422). Endereço e
- *  e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. Mesmo tipo pra médico
- *  e empresa (Story 10.4c) — `DadosCobranca` é compartilhado entre os dois domínios. */
+/** Lista os campos MÍNIMOS de cobrança ainda vazios OU inválidos (para mensagem do 422). Endereço
+ *  e e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. Mesmo tipo pra médico
+ *  e empresa (Story 10.4c) — `DadosCobranca` é compartilhado entre os dois domínios.
+ *  `pagadorDocumento` também entra na lista quando PREENCHIDO mas com dígito verificador inválido
+ *  (achado 2026-09-02, caso Yana Clara PF) — sem isso, `cobrancaMinimaEmissao` reprova a emissão
+ *  mas esta função devolve `faltantes: []`, deixando o toast sem dizer qual campo é o problema. */
 function camposFaltantesCobranca(cobranca: DadosCobranca | null): string[] {
   if (!cobranca) return ['dados de cobrança'];
   const req: Record<string, unknown> = {
@@ -65,9 +69,17 @@ function camposFaltantesCobranca(cobranca: DadosCobranca | null): string[] {
     pagadorDocumento: cobranca.pagadorDocumento,
     pagadorNome: cobranca.pagadorNome,
   };
-  return Object.entries(req)
+  const faltantes = Object.entries(req)
     .filter(([, v]) => !v || String(v).trim() === '')
     .map(([k]) => k);
+  if (
+    !faltantes.includes('pagadorDocumento') &&
+    cobranca.pagadorDocumento &&
+    !documentoValido(cobranca.pagadorTipo, cobranca.pagadorDocumento.replace(/\D/g, ''))
+  ) {
+    faltantes.push('pagadorDocumento');
+  }
+  return faltantes;
 }
 
 /** Endereço só é enviado à Cora se TODOS os subcampos estiverem preenchidos — a API trata

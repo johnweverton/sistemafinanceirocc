@@ -45,7 +45,7 @@ async function main() {
   sheet.addRow({
     nome: 'MEDISA Participacoes LTDA',
     pagador_tipo: 'PJ',
-    pagador_documento: '12345678000199',
+    pagador_documento: '11222333000181',
     pagador_nome: 'MEDISA Participacoes LTDA',
     email: 'contato@medisa.com.br',
     whatsapp: '85999998888',
@@ -64,7 +64,7 @@ async function main() {
   sheet.addRow({
     nome: 'Clinica Exemplo LTDA',
     pagador_tipo: 'PJ',
-    pagador_documento: '98765432000188',
+    pagador_documento: '99888777000100',
     pagador_nome: 'Clinica Exemplo LTDA',
     cep: '60000000',
     logradouro: 'Rua das Flores',

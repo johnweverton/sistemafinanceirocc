@@ -7,7 +7,7 @@ import {
 
 const cobrancaPF = {
   pagadorTipo: 'PF',
-  pagadorDocumento: '12345678901',
+  pagadorDocumento: '11144477735', // dígito verificador válido
   pagadorNome: 'Dr. Fulano',
   email: 'fulano@exemplo.com',
   cep: '60000000',
@@ -23,7 +23,7 @@ describe('dadosCobrancaSchema', () => {
     expect(dadosCobrancaSchema.safeParse(cobrancaPF).success).toBe(true);
   });
   it('aceita PJ com documento de 14 dígitos', () => {
-    const pj = { ...cobrancaPF, pagadorTipo: 'PJ', pagadorDocumento: '12345678000199' };
+    const pj = { ...cobrancaPF, pagadorTipo: 'PJ', pagadorDocumento: '11222333000181' }; // dígito verificador válido
     expect(dadosCobrancaSchema.safeParse(pj).success).toBe(true);
   });
   it('rejeita PF com 14 dígitos (incompatível com o tipo)', () => {
@@ -44,12 +44,30 @@ describe('dadosCobrancaSchema', () => {
     void complemento;
     expect(dadosCobrancaSchema.safeParse(semComplemento).success).toBe(true);
   });
+
+  // Achado 2026-09-02 (caso Yana Clara PF): a Cora valida o dígito verificador de verdade e
+  // recusa a emissão sem dizer qual campo é o problema — checar aqui, no cadastro, evita chegar
+  // nesse ponto.
+  it('rejeita CPF com dígito verificador inválido (tamanho certo, dígito errado)', () => {
+    const res = dadosCobrancaSchema.safeParse({ ...cobrancaPF, pagadorDocumento: '11144477736' });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      expect(res.error.issues.some((i) => i.path.includes('pagadorDocumento'))).toBe(true);
+    }
+  });
+  it('rejeita CNPJ com dígito verificador inválido (tamanho certo, dígito errado)', () => {
+    const pj = { ...cobrancaPF, pagadorTipo: 'PJ', pagadorDocumento: '11222333000182' };
+    expect(dadosCobrancaSchema.safeParse(pj).success).toBe(false);
+  });
+  it('rejeita CPF com todos os dígitos iguais (matematicamente "válido" pelo módulo 11, mas nunca é real)', () => {
+    expect(dadosCobrancaSchema.safeParse({ ...cobrancaPF, pagadorDocumento: '11111111111' }).success).toBe(false);
+  });
 });
 
 describe('dadosCobrancaSchema — mínimo pra emitir (Épico 6: só documento+nome obrigatórios)', () => {
   const minima = {
     pagadorTipo: 'PF',
-    pagadorDocumento: '12345678901',
+    pagadorDocumento: '11144477735', // dígito verificador válido
     pagadorNome: 'Dr. Fulano',
   };
   it('aceita bloco só com documento+nome (sem email/endereço)', () => {

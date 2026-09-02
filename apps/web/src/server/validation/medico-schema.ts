@@ -1,6 +1,6 @@
 // Schemas Zod de validação de input das rotas de médico (architecture: Input Validation).
 import { z } from 'zod';
-import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import { CONTAS_EMISSORAS_VALIDAS, documentoValido } from '@cobranca/shared';
 
 export const statusHapvidaSchema = z.enum(['credenciado', 'nao_credenciado', 'nenhum']);
 export const modoMudancaDataSchema = z.enum(['sim', 'nao']);
@@ -88,7 +88,11 @@ const UFS = [
 export const ufSchema = z.enum(UFS);
 
 /**
- * Bloco de cobrança do pagador. Documento validado por tipo (CPF=11, CNPJ=14 dígitos).
+ * Bloco de cobrança do pagador. Documento validado por tipo (CPF=11, CNPJ=14 dígitos) E por
+ * dígito verificador (achado 2026-09-02, caso Yana Clara PF): a Cora valida o documento de
+ * verdade e recusa a emissão sem dizer qual campo está errado — checar o dígito aqui, na hora de
+ * salvar o cadastro (manual ou CSV, mesmo schema para os dois), evita gastar uma tentativa real
+ * no gateway com um documento digitado errado.
  * Mínimo pra emitir (Épico 6): pagadorTipo + pagadorDocumento + pagadorNome. E-mail,
  * WhatsApp, endereço e complemento são opcionais (vazio/ausente é válido) — mas se
  * preenchidos, seguem validados no formato (e-mail válido, CEP 8 dígitos, UF real).
@@ -111,6 +115,15 @@ export const dadosCobrancaSchema = z
   .refine(
     (c) => (c.pagadorTipo === 'PF' ? c.pagadorDocumento.length === 11 : c.pagadorDocumento.length === 14),
     { message: 'Documento incompatível com o tipo (PF=11 dígitos, PJ=14 dígitos)', path: ['pagadorDocumento'] },
+  )
+  .refine(
+    (c) =>
+      (c.pagadorTipo === 'PF' ? c.pagadorDocumento.length !== 11 : c.pagadorDocumento.length !== 14) ||
+      documentoValido(c.pagadorTipo, c.pagadorDocumento),
+    {
+      message: 'CPF/CNPJ inválido (dígito verificador não confere) — confira o número digitado',
+      path: ['pagadorDocumento'],
+    },
   );
 
 /**

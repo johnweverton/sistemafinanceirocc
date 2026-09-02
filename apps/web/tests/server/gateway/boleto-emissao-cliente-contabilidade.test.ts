@@ -65,7 +65,7 @@ vi.mock('@/server/repositories/config-cobranca-repository', () => ({
 
 const cobrancaClienteFixture = {
   pagadorTipo: 'PJ' as const,
-  pagadorDocumento: '98765432000188',
+  pagadorDocumento: '11222333000181',
   pagadorNome: 'Padaria Bom Pão Ltda',
   email: 'financeiro@padaria.com.br',
   cep: '60000000',
@@ -209,7 +209,7 @@ describe('Rota de emissão — branch cliente contábil (Story 11.3)', () => {
         valor: 250,
         pagador: expect.objectContaining({
           nome: 'Padaria Bom Pão Ltda',
-          documento: '98765432000188',
+          documento: '11222333000181',
           tipo: 'CNPJ',
         }),
       }),
@@ -276,18 +276,18 @@ describe('Rota de emissão — branch cliente contábil (Story 11.3)', () => {
     simularResultadoBanco({
       cliente_contabilidade_id: null,
       medico_id: '00000000-0000-0000-0000-000000000010',
-      cpf: '12345678901',
+      cpf: '11144477735',
       nome: 'Dr. Teste',
       total_valor: 1500,
     });
     mockBuscarMedico.mockResolvedValue({
       id: '00000000-0000-0000-0000-000000000010',
-      cpf: '12345678901',
+      cpf: '11144477735',
       nome: 'Dr. Teste',
       contaEmissora: 'mc' as const,
       cobranca: {
         pagadorTipo: 'PF',
-        pagadorDocumento: '12345678901',
+        pagadorDocumento: '11144477735',
         pagadorNome: 'Dr. Teste',
         email: 'dr.teste@exemplo.com',
         cep: '60000000',

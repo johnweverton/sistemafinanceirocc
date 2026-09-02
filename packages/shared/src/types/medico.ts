@@ -1,6 +1,7 @@
 // Domínio: Médico — fonte única de verdade dos parâmetros de faturamento.
 // Derivado da arquitetura (Data Models) e do PRD §5.1 / §7.
 import type { ContaEmissora } from './conta-emissora';
+import { documentoValido } from '../validacao-documento';
 
 export type StatusHapvida = 'credenciado' | 'nao_credenciado' | 'nenhum';
 export type ModoMudancaData = 'sim' | 'nao';
@@ -169,9 +170,14 @@ export function cobrancaMinimaEmissao(m: Pick<Medico, 'cobranca'>): boolean {
   if (!c) return false;
   const obrigatorios = [c.pagadorTipo, c.pagadorDocumento, c.pagadorNome];
   if (obrigatorios.some((v) => !v || String(v).trim() === '')) return false;
-  const tamDoc = c.pagadorDocumento.replace(/\D/g, '').length;
-  if (c.pagadorTipo === 'PF' && tamDoc !== 11) return false;
-  if (c.pagadorTipo === 'PJ' && tamDoc !== 14) return false;
+  const doc = c.pagadorDocumento.replace(/\D/g, '');
+  if (c.pagadorTipo === 'PF' && doc.length !== 11) return false;
+  if (c.pagadorTipo === 'PJ' && doc.length !== 14) return false;
+  // Achado 2026-09-02 (caso Yana Clara PF): a Cora valida o dígito verificador de verdade — sem
+  // esta checagem, um documento com dígito digitado errado só falha na emissão real, gastando
+  // uma tentativa no gateway e devolvendo "gateway recusou" em vez de um motivo claro. Cobre
+  // também cadastros salvos ANTES desta validação existir.
+  if (!documentoValido(c.pagadorTipo, doc)) return false;
   return true;
 }
 
