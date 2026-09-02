@@ -113,6 +113,65 @@ describe('MedicoForm', () => {
   });
 });
 
+// Auditoria 2026-09-02: o regex local do formulário (que decide se mostra "Mudança de data")
+// tinha ficado pra trás do Engine — `usaRegra3x1` em contagem-producao.ts já incluía angiologista
+// desde o GATE 2026-08-07, mas aqui o campo ficava escondido e o cadastro caía sempre em 'nao'.
+describe('MedicoForm — campo "Mudança de data" segue o mesmo critério 3x1 do Engine', () => {
+  function preencherMinimo() {
+    fireEvent.change(screen.getByRole('textbox', { name: /CPF \(11/i }), {
+      target: { value: '12345678901' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /Nome completo/i }), {
+      target: { value: 'Dr. Teste' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: /Empresa emissora/i }), {
+      target: { value: 'mc' },
+    });
+  }
+
+  it.each(['Pediatra', 'Urologista', 'Ginecologista', 'Ortopedista', 'Angiologista'])(
+    'especialidade "%s" (regra 3x1) exibe o campo',
+    (especialidade) => {
+      renderForm(<MedicoForm onSubmit={vi.fn()} />);
+      preencherMinimo();
+      fireEvent.change(screen.getByRole('textbox', { name: /Especialidade/i }), {
+        target: { value: especialidade },
+      });
+
+      expect(screen.getByRole('combobox', { name: /Mudança de data/i })).toBeInTheDocument();
+    },
+  );
+
+  it('especialidade sem regra 3x1 continua escondendo o campo e envia modoMudancaData "nao"', () => {
+    const onSubmit = vi.fn();
+    renderForm(<MedicoForm onSubmit={onSubmit} />);
+    preencherMinimo();
+    fireEvent.change(screen.getByRole('textbox', { name: /Especialidade/i }), {
+      target: { value: 'Cirurgia Geral' },
+    });
+
+    expect(screen.queryByRole('combobox', { name: /Mudança de data/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }));
+    expect(onSubmit.mock.calls[0]?.[0]?.modoMudancaData).toBe('nao');
+  });
+
+  it('angiologista com "Muda data" selecionado PRESERVA a escolha no payload (antes era forçada a "nao")', () => {
+    const onSubmit = vi.fn();
+    renderForm(<MedicoForm onSubmit={onSubmit} />);
+    preencherMinimo();
+    fireEvent.change(screen.getByRole('textbox', { name: /Especialidade/i }), {
+      target: { value: 'Angiologista' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: /Mudança de data/i }), {
+      target: { value: 'sim' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }));
+    expect(onSubmit.mock.calls[0]?.[0]?.modoMudancaData).toBe('sim');
+  });
+});
+
 describe('MedicoForm — seção de cobrança (Story 3.3)', () => {
   afterEach(() => {
     vi.restoreAllMocks();

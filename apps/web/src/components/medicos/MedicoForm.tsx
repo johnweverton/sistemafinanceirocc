@@ -201,7 +201,10 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   // especialidades que agrupam por atendimento (teto(n/3)): a ambiguidade senha-vs-paciente que
   // esse campo resolve é do mecanismo de agrupamento 3x1 em si, não exclusiva de pediatra
   // (achado 2026-08-06: ginecologista/urologista/ortopedista usam o MESMO agrupamento).
-  const usaRegra3x1 = /pediatr|urolog|ginecolog|ortoped/.test(form.especialidade?.toLowerCase() ?? '');
+  // `angiolog` entrou na auditoria 2026-09-02: o Engine já incluía angiologista em `usaRegra3x1`
+  // desde o GATE 2026-08-07 (lote de Angiografia), mas este regex ficou pra trás e escondia o
+  // campo "Mudança de data" desses médicos — o cadastro caía sempre em 'nao' no submit abaixo.
+  const usaRegra3x1 = /pediatr|urolog|ginecolog|ortoped|angiolog/.test(form.especialidade?.toLowerCase() ?? '');
 
   function handleSubmit() {
     const payload: NovoMedicoPayload = {

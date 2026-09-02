@@ -107,6 +107,69 @@ describe('dispararExecucaoSchema — sub-lotes de consulta de pediatria (achado 
   });
 });
 
+// Auditoria 2026-09-02: nada barrava apontar a MESMA produção como principal e como consultas —
+// o motor contaria os itens 2x (uma vez como guia, uma vez como consulta ambulatorial) e o
+// resultado sairia inflado sem nenhum sinal.
+describe('dispararExecucaoSchema — guard de dupla contagem de consulta (auditoria 2026-09-02)', () => {
+  it('mesma produção como principal E como consultas → rejeita', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [{ ...selecaoBase, producaoConsultasExternaId: selecaoBase.producaoExternaId }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('mensagem do erro explica a dupla contagem', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [{ ...selecaoBase, producaoConsultasExternaId: selecaoBase.producaoExternaId }],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => i.message.includes('contaria em dobro'))).toBe(true);
+    }
+  });
+
+  it('rejeita mesmo quando só UMA das seleções do lote repete a produção', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [
+        { ...selecaoBase, producaoConsultasExternaId: 'p-consultas' },
+        {
+          medicoId: '33333333-3333-3333-3333-333333333333',
+          producaoExternaId: 'p-julho',
+          producaoNome: 'Julho 2026',
+          producaoConsultasExternaId: 'p-julho',
+        },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('produções DIFERENTES continuam válidas (regressão do caso normal da Story 10.2)', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [{ ...selecaoBase, producaoConsultasExternaId: 'p-consultas' }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('producaoExternaId null + consultas preenchida não dispara o guard (Angiologista/sub-lotes)', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-07',
+      selecoes: [
+        {
+          medicoId: selecaoBase.medicoId,
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoConsultasExternaId: 'p-consultas',
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
 describe('dispararExecucaoSchema — cliente contábil (Story 11.3)', () => {
   const clienteId = '22222222-2222-2222-2222-222222222222';
 

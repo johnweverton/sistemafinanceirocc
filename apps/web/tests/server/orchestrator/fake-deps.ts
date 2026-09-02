@@ -151,7 +151,10 @@ export function clienteContabilidadeFake(
 
 export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; nome: string }): Medico {
   return {
-    especialidade: null,
+    // Especialidade não-3x1 (1 item = 1 guia). Era `null`, mas desde a auditoria 2026-09-02
+    // cadastro sem especialidade gera alerta próprio — cada teste que quiser esse caso passa
+    // `especialidade: null` explicitamente.
+    especialidade: 'Cirurgia Geral',
     statusHapvida: 'credenciado',
     fazOutrosHospitais: false,
     fazImobilizacoes: false,

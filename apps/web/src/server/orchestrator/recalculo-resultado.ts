@@ -104,12 +104,20 @@ export async function recalcularResultado(
   const medico = await deps.buscarMedico(resultado.medicoId);
   if (!medico) throw new ApiError(404, 'Médico não encontrado', 'MEDICO_NAO_ENCONTRADO');
 
+  // Achado 2026-09-02: o recálculo ignorava os sub-lotes (`producaoGuiasLoteExternaIds`/
+  // `producaoConsultasLoteExternaIds`) que o orquestrador principal já tratava desde o achado
+  // 2026-08-21 — um pediatra com sub-lote de consulta (producaoExternaId null, produção 100% nos
+  // sub-lotes) recalculava com ZERO itens e zerava o resultado. Mesma lógica de
+  // `processarUmMedico` (execucao-orchestrator.ts): sub-lote vence a produção flat.
+  const itensDeGuiasPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoGuiasLoteExternaIds);
   // Angiologista não tem lote principal (GATE 2026-08-07) — producaoExternaId fica null pra
   // ele, `itens` fica vazio (o Engine desvia pro caminho de Cateter/Fístula/Angiografia).
-  const itens = selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : [];
-  const itensConsultas = selecao.producaoConsultasExternaId
-    ? await deps.buscarItens(selecao.producaoConsultasExternaId)
-    : undefined;
+  const itens =
+    itensDeGuiasPorLote ?? (selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : []);
+  const itensConsultasPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoConsultasLoteExternaIds);
+  const itensConsultas =
+    itensConsultasPorLote ??
+    (selecao.producaoConsultasExternaId ? await deps.buscarItens(selecao.producaoConsultasExternaId) : undefined);
   const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
     ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
     : undefined;

@@ -816,6 +816,46 @@ describe('Engine: Contagem de Produção', () => {
       expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
     });
 
+    // Contra-prova da auditoria 2026-09-02: a checagem era `descricao.includes('diu')`, que casava
+    // DENTRO de outras palavras ("DIURESE", "DIURÉTICO"). Cada falso positivo errava DUAS vezes —
+    // tirava o item do pool 3x1 E somava 1 guia cheia extra. Agora exige "diu" como palavra.
+    it.each([
+      'CONTROLE DE DIURESE',
+      'DIURESE',
+      'Diurese de 24 horas',
+      'ADMINISTRACAO DE DIURETICO',
+      'Diurético endovenoso',
+    ])(
+      'descrição "%s" NÃO é exceção do ginecologista — 3 itens do mesmo atendimento = teto(3/3) = 1 guia',
+      (descricao) => {
+        const itens: ItemProducao[] = [
+          { ...baseItem(), descricaoProcedimento: descricao },
+          { ...baseItem() },
+          { ...baseItem() },
+        ];
+        expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(1);
+      },
+    );
+
+    it('"diu" isolado continua sendo exceção em grafias sem parênteses ("DIU DE COBRE")', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), descricaoProcedimento: 'DIU DE COBRE' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
+    });
+
+    it('mistura real: 1 DIU (exceção) + 1 DIURESE (pool) + 2 normais → 1 + teto(3/3) = 2 guias', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
+        { ...baseItem(), descricaoProcedimento: 'CONTROLE DE DIURESE' },
+        { ...baseItem() },
+        { ...baseItem() },
+      ];
+      expect(contarGuiasProducao(itens, 'Ginecologista').guias).toBe(2);
+    });
+
     it('.trim() defensivo (urologista): código de exceção com espaços ao redor ainda é reconhecido (mapper de origem não trima proc_code)', () => {
       const itens: ItemProducao[] = [
         { ...baseItem(), codigoProcedimento: ' 3.11.02.03-4 ' },

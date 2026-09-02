@@ -84,7 +84,25 @@ export const dispararExecucaoSchema = z
   .refine((d) => !d.ehAdicional || !!d.clienteContabilidadeId, {
     message: 'Adicional semestral só é válido para execução de cliente contábil',
     path: ['ehAdicional'],
-  });
+  })
+  // Auditoria 2026-09-02: nada impedia o operador de apontar a MESMA produção como guias e como
+  // consultas — o motor contaria os itens 2x (uma como guia, uma como consulta ambulatorial), e
+  // o resultado sairia inflado sem nenhum sinal. A UI não oferece essa combinação hoje, mas o
+  // payload é público (rota HTTP) e o custo de barrar aqui é zero.
+  .refine(
+    (d) =>
+      d.selecoes.every(
+        (s) =>
+          !s.producaoExternaId ||
+          !s.producaoConsultasExternaId ||
+          s.producaoExternaId !== s.producaoConsultasExternaId,
+      ),
+    {
+      message:
+        'A mesma produção não pode ser usada como produção principal e como produção de consultas (contaria em dobro)',
+      path: ['selecoes'],
+    },
+  );
 
 export type DispararExecucaoInput = z.infer<typeof dispararExecucaoSchema>;
 

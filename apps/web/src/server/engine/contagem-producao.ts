@@ -341,6 +341,14 @@ const CODIGOS_EXCECAO_ANGIOGRAFIA_NORM: ReadonlySet<string> = new Set(
 );
 
 /**
+ * "diu" como PALAVRA, não como substring (auditoria 2026-09-02): `includes('diu')` casava dentro
+ * de "DIURESE"/"CONTROLE DE DIURESE"/"DIURÉTICO", e cada falso positivo errava DUAS vezes — tirava
+ * o item do pool 3x1 E somava 1 guia cheia extra. Continua pegando as grafias reais, onde "DIU"
+ * aparece isolado ou entre parênteses ("...INTRA-UTERINO (DIU)", "DIU DE COBRE").
+ */
+const DIU_PALAVRA_ISOLADA = /\bdiu\b/;
+
+/**
  * Ginecologista: exceção por DESCRIÇÃO do procedimento, não por código fixo (GATE 2026-08-07,
  * correção da coordenadora financeira sobre o pedido original — ela tinha dito "histerectomia"
  * mas era "histeroscopia"). Motivo de usar descrição em vez de uma lista de códigos (como o
@@ -354,7 +362,7 @@ const CODIGOS_EXCECAO_ANGIOGRAFIA_NORM: ReadonlySet<string> = new Set(
 function ehExcecaoGinecologistaPorDescricao(descricao: string | null | undefined): boolean {
   if (!descricao) return false;
   const d = descricao.toLowerCase();
-  return d.includes('diu') || d.includes('histeroscopia');
+  return DIU_PALAVRA_ISOLADA.test(d) || d.includes('histeroscopia');
 }
 
 /**

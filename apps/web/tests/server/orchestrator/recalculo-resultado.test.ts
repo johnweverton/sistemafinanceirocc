@@ -160,4 +160,55 @@ describe('recalcularResultado', () => {
       code: 'SELECAO_NAO_ENCONTRADA',
     });
   });
+
+  // Achado 2026-09-02 (auditoria da contagem 3x1): o recálculo lia só `producaoExternaId`/
+  // `producaoConsultasExternaId` e ignorava os sub-lotes que o orquestrador principal já tratava
+  // desde 2026-08-21 — um pediatra com sub-lote de consulta (producaoExternaId NULL) recalculava
+  // com zero itens e zerava o resultado. Espelho do caso "Humberto" de execucao-integracao.test.ts.
+  it('pediatra com sub-lotes de guia/consulta (producaoExternaId null) recalcula pelos sub-lotes, não zera', async () => {
+    const itemDeLote = (paciente: string): ItemProducao => ({
+      data: '2026-07-05',
+      pacienteNome: paciente,
+      atendimentoExternoId: null,
+      codigoProcedimento: '30715040',
+      descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    });
+    const itensPorLote: Record<string, ItemProducao[]> = {
+      'lote-1q': Array.from({ length: 3 }, (_, i) => itemDeLote(`1Q-${i}`)),
+      'lote-2q': Array.from({ length: 2 }, (_, i) => itemDeLote(`2Q-${i}`)),
+      'lote-consultas': Array.from({ length: 10 }, (_, i) => itemDeLote(`Consulta ${i}`)),
+    };
+
+    const deps = baseDeps({
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoGuiasLoteExternaIds: ['lote-1q', 'lote-2q'],
+          producaoConsultasLoteExternaIds: ['lote-consultas'],
+        }),
+      ]),
+      buscarItensPorLote: vi.fn(async (loteId: string) => itensPorLote[loteId] ?? []),
+    });
+
+    const resultado = await recalcularResultado('res-1', 'user-financeiro', deps);
+
+    // 3 (1Q) + 2 (2Q) = 5 guias — antes do fix dava 0 (nenhum lote era buscado).
+    expect(resultado.guias).toBe(5);
+    expect(resultado.status).not.toBe('sem_dados');
+    // 10 consultas × R$3,00 (lerValorConsultaPediatria fake) = R$30,00.
+    expect(resultado.subtotais?.find((s) => s.classe === 'CONSULTA_PEDIATRIA')).toMatchObject({
+      guias: 10,
+      valor: 30,
+    });
+    // Nunca cai na produção flat quando os sub-lotes vieram preenchidos (anti-dupla-contagem).
+    expect(deps.buscarItens).not.toHaveBeenCalled();
+  });
 });

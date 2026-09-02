@@ -91,8 +91,15 @@ export function processarMedico(
     );
   }
 
-  const { validos } = itensValidos(itens);
+  const { validos, invalidos } = itensValidos(itens);
   const consultasValidas = itensConsultas ? itensValidos(itensConsultas).validos : [];
+  // Achado 2026-09-02: `itensValidos` já separava os inválidos (sem data ou sem paciente), mas o
+  // pipeline descartava em silêncio — o guia do sistema promete "descartadas E reportadas", e sem
+  // isso uma origem com linhas quebradas subconta guias sem deixar rastro pro operador.
+  const alertasDescarte =
+    invalidos.length > 0
+      ? [`${invalidos.length} item(ns) sem paciente ou data foram descartados da contagem — verificar na origem.`]
+      : [];
   const nConsultas = consultasValidas.length;
   const valorConsultas = nConsultas * valorConsultaPediatria;
   // Consultas NUNCA ficam retidas pelo limiar de guias (ver doc de `SaldoAcumulado`) — sempre que
@@ -125,8 +132,8 @@ export function processarMedico(
         guiasConsolidado: 0,
         subtotais: [subtotalConsultas],
         totalValor: valorConsultas,
-        status: 'ok',
-        alertas: [],
+        status: alertasDescarte.length > 0 ? 'alerta' : 'ok',
+        alertas: alertasDescarte,
       };
     }
     return {
@@ -139,7 +146,7 @@ export function processarMedico(
       subtotais: [],
       totalValor: 0,
       status: 'sem_dados',
-      alertas: ['Nenhum procedimento encontrado para essa competência.'],
+      alertas: ['Nenhum procedimento encontrado para essa competência.', ...alertasDescarte],
     };
   }
 
@@ -151,7 +158,10 @@ export function processarMedico(
   // já exclui resultados 'acumulado' (não é produção real comparável), mas pode refletir um total
   // JÁ COMBINADO de um mês que consumiu saldo — limitação conhecida, aceitável (é só um alerta
   // informativo, nunca bloqueia).
-  const alertas = checar(validos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade, modoObservado);
+  const alertas = [
+    ...alertasDescarte,
+    ...checar(validos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade, modoObservado),
+  ];
 
   // Lotes secundários (Outros Hospitais/Imobilizações) — só no modo faixa_guias (mesmo escopo de
   // sempre: percentual_producao/preco_proprio nunca cruzaram com essas classes, Story 10.5).
