@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo, useRef } from 'react';
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery, useQueries } from '@tanstack/react-query';
 import { ApiClientError } from '@/lib/api-client';
 import {
   execucoesService,
@@ -78,6 +78,54 @@ function classificarSubLoteAngiologista(nome: string): ClasseSubLoteAngiologista
   return 'angiografia';
 }
 
+/** Tipo mínimo de sub-lote usado pelos classificadores em lote abaixo — evita depender do tipo
+ *  exato devolvido por `execucoesService.lotes` neste arquivo utilitário. */
+type SubLoteMinimo = { id: string; nome: string };
+
+/** Versão pura (sem hook) de classificacaoImobilizacoes — reusada tanto pelo modo "Por médico"
+ *  (com override manual) quanto pelo modo "Por competência" (achado 2026-09-03: emissão em lote
+ *  precisa da MESMA classificação automática, sem ela todo médico VH/Imobilizações saía com 0
+ *  guias no disparo em massa). Sem overrides no modo em lote — são MUITOS médicos pra oferecer
+ *  correção individual por sub-lote ali; um sub-lote não reconhecido manda o médico pro grupo
+ *  "Requer atenção manual", que aponta pro modo "Por médico" pra resolver.
+ */
+function classificarLotesImobilizacoes<T extends SubLoteMinimo>(
+  lotes: T[],
+  overrides: Record<string, ClasseSubLoteImobilizacoes> = {},
+): { cirurgia: T[]; imobilizacao: T[]; naoClassificados: T[] } {
+  const cirurgia: T[] = [];
+  const imobilizacao: T[] = [];
+  const naoClassificados: T[] = [];
+  for (const l of lotes) {
+    const classe = overrides[l.id] ?? classificarSubLoteImobilizacoes(l.nome);
+    if (classe === 'cirurgia') cirurgia.push(l);
+    else if (classe === 'imobilizacao') imobilizacao.push(l);
+    else naoClassificados.push(l);
+  }
+  return { cirurgia, imobilizacao, naoClassificados };
+}
+
+/** Versão pura (sem hook) de classificacaoAngiologista — mesmo motivo de classificarLotesImobilizacoes acima. */
+function classificarLotesAngiologista<T extends SubLoteMinimo>(
+  lotes: T[],
+  overrides: Record<string, ClasseSubLoteAngiologista> = {},
+): { cateter: T[]; fistula: T[]; angiografia: T[]; cartaRede: T[]; naoClassificados: T[] } {
+  const cateter: T[] = [];
+  const fistula: T[] = [];
+  const angiografia: T[] = [];
+  const cartaRede: T[] = [];
+  const naoClassificados: T[] = [];
+  for (const l of lotes) {
+    const classe = overrides[l.id] ?? classificarSubLoteAngiologista(l.nome);
+    if (classe === 'cateter') cateter.push(l);
+    else if (classe === 'fistula') fistula.push(l);
+    else if (classe === 'angiografia') angiografia.push(l);
+    else if (classe === 'cartaRede') cartaRede.push(l);
+    else naoClassificados.push(l);
+  }
+  return { cateter, fistula, angiografia, cartaRede, naoClassificados };
+}
+
 // Nomes de mês por extenso (sem acento, casa com normalizeName) — usado tanto pelo auto-match do
 // modo "Por competência" quanto pelo pré-preenchimento de Competência dos modos "Por médico"/"Por
 // empresa" (Story de polimento UX, 2026-07-30: mesmo padrão, dois usos).
@@ -153,6 +201,11 @@ export function NovaExecucao() {
   // consultaSelections acima: nunca auto-match numa seleção que afeta valor cobrado.
   const [outrosHospitaisSelections, setOutrosHospitaisSelections] = useState<Record<string, string>>({});
   const [imobilizacoesSelections, setImobilizacoesSelections] = useState<Record<string, string>>({});
+  // Carta de Rede do Angiologista no modo em lote (achado 2026-09-03) — sem regra de contagem
+  // fixa (mesmo motivo do modo "Por médico"), então continua manual mesmo com a classificação
+  // automática de Cateter/Fístula/Angiografia por nome. Opcional: sem preencher, o motor só gera
+  // o alerta informativo de Carta de Rede — os outros 3 lotes cobram normalmente.
+  const [cartaRedeGuiasSelections, setCartaRedeGuiasSelections] = useState<Record<string, string>>({});
 
   // Planilha de guias CONFERIDAS MANUALMENTE (migration 0058) — modo "Por competência". Dois
   // estados de propósito: `guiasManuaisPreview` é o que a planilha diz (ainda NÃO afeta o
@@ -268,40 +321,20 @@ export function NovaExecucao() {
       ),
     [lotesDaProducaoMensal, consultaProducaoId, lotesConsultaAutoDetectados],
   );
-  const classificacaoImobilizacoes = useMemo(() => {
-    const cirurgia: typeof lotesElegiveisImobilizacoes = [];
-    const imobilizacao: typeof lotesElegiveisImobilizacoes = [];
-    const naoClassificados: typeof lotesElegiveisImobilizacoes = [];
-    for (const l of lotesElegiveisImobilizacoes) {
-      const classe = subLoteImobilizacoesOverride[l.id] ?? classificarSubLoteImobilizacoes(l.nome);
-      if (classe === 'cirurgia') cirurgia.push(l);
-      else if (classe === 'imobilizacao') imobilizacao.push(l);
-      else naoClassificados.push(l);
-    }
-    return { cirurgia, imobilizacao, naoClassificados };
-  }, [lotesElegiveisImobilizacoes, subLoteImobilizacoesOverride]);
+  const classificacaoImobilizacoes = useMemo(
+    () => classificarLotesImobilizacoes(lotesElegiveisImobilizacoes, subLoteImobilizacoesOverride),
+    [lotesElegiveisImobilizacoes, subLoteImobilizacoesOverride],
+  );
   const temSubLotesCirurgiaImobilizacoes =
     Boolean(medicoSelecionado?.fazImobilizacoes) && classificacaoImobilizacoes.cirurgia.length > 0;
 
   // Auto-classificação dos sub-lotes do Angiologista por NOME (achado 2026-09-03) — substitui os
   // 3 checkboxes manuais (Cateter/Fístula/Angiografia), cada um listando TODOS os sub-lotes e
   // exigindo que o operador soubesse identificar de olho qual pertencia a qual categoria.
-  const classificacaoAngiologista = useMemo(() => {
-    const cateter: typeof lotesDaProducaoMensal = [];
-    const fistula: typeof lotesDaProducaoMensal = [];
-    const angiografia: typeof lotesDaProducaoMensal = [];
-    const cartaRede: typeof lotesDaProducaoMensal = [];
-    const naoClassificados: typeof lotesDaProducaoMensal = [];
-    for (const l of lotesDaProducaoMensal) {
-      const classe = subLoteAngiologistaOverride[l.id] ?? classificarSubLoteAngiologista(l.nome);
-      if (classe === 'cateter') cateter.push(l);
-      else if (classe === 'fistula') fistula.push(l);
-      else if (classe === 'angiografia') angiografia.push(l);
-      else if (classe === 'cartaRede') cartaRede.push(l);
-      else naoClassificados.push(l);
-    }
-    return { cateter, fistula, angiografia, cartaRede, naoClassificados };
-  }, [lotesDaProducaoMensal, subLoteAngiologistaOverride]);
+  const classificacaoAngiologista = useMemo(
+    () => classificarLotesAngiologista(lotesDaProducaoMensal, subLoteAngiologistaOverride),
+    [lotesDaProducaoMensal, subLoteAngiologistaOverride],
+  );
 
   const { data: empresas, isLoading: isEmpresasLoading } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
@@ -361,22 +394,23 @@ export function NovaExecucao() {
     return producoes.filter(p => p.clienteId === medico.externalId);
   }, [medicoId, validMedicos, producoes]);
 
-  // Derived selections (modo "Por competência")
-  const selecoesInfo = useMemo(() => {
+  // FASE 1 (modo "Por competência"): casamento médico↔produção mensal por nome/data — não
+  // depende de sub-lotes, só de `apoio` + vínculo manual. Extraído do cálculo final (achado
+  // 2026-09-03) porque agora precisamos SABER o match ANTES de decidir quais médicos precisam de
+  // busca de sub-lotes (Angiologista/Pediatra/Imobilizações) — sem essa busca, TODO médico
+  // Angiologista saía com 0 guias no disparo em massa (nenhum lote de Cateter/Fístula/Angiografia
+  // era buscado), e VH/Imobilizações e Pediatra-com-sub-lote de Consulta ficavam com a produção
+  // completa errada.
+  const matchResultado = useMemo(() => {
     const matched: Array<{ medico: any; producao: any; guiasManuais?: GuiasManuaisLinha }> = [];
     const unmatched: Array<{ medico: any; producoesDisponiveis: any[] }> = [];
     const jaEmitidos: any[] = [];
-    const finalPayload: ExecucaoSelecaoPayload[] = [];
 
-    // Guias conferidas manualmente (migration 0058), só as APLICADAS e só se a competência ainda
-    // for a mesma em que a planilha foi lida. Médico fora deste mapa segue 100% no fluxo
-    // automático — é isso que viabiliza a execução mista na mesma competência.
     const manuaisPorMedico = new Map<string, GuiasManuaisLinha>(
       guiasManuaisAplicadas && guiasManuaisAplicadas.competencia === competencia
         ? guiasManuaisAplicadas.linhas.map((l) => [l.medicoId, l])
         : [],
     );
-    const manuaisUsados = new Set<string>();
 
     const compValida = /^\d{4}-\d{2}$/.test(competencia);
     const split = compValida ? competencia.split('-') : ['', ''];
@@ -386,14 +420,12 @@ export function NovaExecucao() {
     const mesNome = mesIndex >= 0 ? (MESES_NFD[mesIndex] || '') : '';
 
     for (const med of medicosParaCompetencia) {
-      // Já tem boleto ativo (emitido/pago) nesta competência, de uma execução ANTERIOR — nunca
-      // entra na lista de seleção (nem manual, nem auto-match), pra não arriscar duplicar.
       if (medicosComBoletoAtivo.has(med.id)) {
         jaEmitidos.push(med);
         continue;
       }
 
-      const producoesDoMedico = producoes.filter(p => p.clienteId === med.externalId);
+      const producoesDoMedico = producoes.filter((p) => p.clienteId === med.externalId);
       const manualProdId = manualSelections[med.id];
 
       if (manualProdId === 'IGNORE') {
@@ -401,11 +433,10 @@ export function NovaExecucao() {
         continue;
       }
 
-      let match = producoesDoMedico.find(p => p.id === manualProdId);
+      let match = producoesDoMedico.find((p) => p.id === manualProdId);
 
-      // Auto-match
       if (!match && compValida) {
-        match = producoesDoMedico.find(p => {
+        match = producoesDoMedico.find((p) => {
           const norm = normalizeName(p.nome);
           const hasData = norm.includes(`${ano}-${mes}`) || norm.includes(`${mes}/${ano}`) || norm.includes(`${mes}-${ano}`);
           const hasExtenso = norm.includes(mesNome) && norm.includes(ano);
@@ -414,75 +445,233 @@ export function NovaExecucao() {
       }
 
       if (match) {
-        const guiasManuais = manuaisPorMedico.get(med.id);
-        if (guiasManuais) manuaisUsados.add(med.id);
-        matched.push({ medico: med, producao: match, guiasManuais });
-        // Produção de consultas é sempre escolha manual do operador (nunca auto-match) —
-        // só entra no payload se o pediatra tiver uma selecionada.
-        const consultaProdId = consultaSelections[med.id];
-        const consultaProd = consultaProdId
-          ? producoesDoMedico.find((p) => p.id === consultaProdId)
-          : undefined;
-        // Mesmo mecanismo acima para os lotes separados de Outros Hospitais/Imobilizações —
-        // sempre manual, nunca auto-match (afeta valor cobrado).
-        const outrosHospitaisProdId = outrosHospitaisSelections[med.id];
-        const outrosHospitaisProd = outrosHospitaisProdId
-          ? producoesDoMedico.find((p) => p.id === outrosHospitaisProdId)
-          : undefined;
-        const imobilizacoesProdId = imobilizacoesSelections[med.id];
-        const imobilizacoesProd = imobilizacoesProdId
-          ? producoesDoMedico.find((p) => p.id === imobilizacoesProdId)
-          : undefined;
-        finalPayload.push({
-          medicoId: med.id,
-          producaoExternaId: match.id,
-          producaoNome: match.nome,
-          ...(consultaProd
-            ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
-            : {}),
-          ...(outrosHospitaisProd
-            ? {
-                producaoOutrosHospitaisExternaId: outrosHospitaisProd.id,
-                producaoOutrosHospitaisNome: outrosHospitaisProd.nome,
-              }
-            : {}),
-          ...(imobilizacoesProd
-            ? {
-                producaoImobilizacoesExternaId: imobilizacoesProd.id,
-                producaoImobilizacoesNome: imobilizacoesProd.nome,
-              }
-            : {}),
-          // Migration 0058: substitui a contagem automática SÓ deste médico. Vai junto com a
-          // produção normal — o motor ignora a contagem dela para as guias, mas o resto do
-          // pipeline (consultas de pediatria, lotes secundários) continua igual.
-          ...(guiasManuais
-            ? {
-                guiasManuaisTotal: guiasManuais.guiasManuaisTotal,
-                guiasManuaisMotivo: guiasManuais.guiasManuaisMotivo,
-              }
-            : {}),
-        });
+        matched.push({ medico: med, producao: match, guiasManuais: manuaisPorMedico.get(med.id) });
       } else {
         unmatched.push({ medico: med, producoesDisponiveis: producoesDoMedico });
       }
     }
 
+    return { matched, unmatched, jaEmitidos, manuaisPorMedico };
+  }, [medicosParaCompetencia, producoes, manualSelections, competencia, medicosComBoletoAtivo, guiasManuaisAplicadas]);
+
+  // FASE 2: quais médicos casados precisam de sub-lotes (Angiologista/Pediatra/Imobilizações) —
+  // mesmo critério do modo "Por médico" (`idParaBuscarLotes`) — e busca todos em paralelo. Sem
+  // sub-lotes na resposta (médico "normal", sem nenhum desses 3 casos), a lista fica vazia e
+  // `useQueries` não faz nenhuma chamada extra.
+  const medicosNecessitandoLotesBulk = useMemo(
+    () =>
+      matchResultado.matched
+        .filter(
+          ({ medico }) =>
+            isAngiologistaEspecialidade(medico.especialidade) ||
+            isPediatraEspecialidade(medico.especialidade) ||
+            medico.fazImobilizacoes,
+        )
+        .map(({ medico, producao }) => ({ medicoId: medico.id as string, producaoId: producao.id as string })),
+    [matchResultado],
+  );
+  const queriesLotesBulk = useQueries({
+    queries: medicosNecessitandoLotesBulk.map(({ producaoId }) => ({
+      queryKey: execucaoQueryKeys.lotes(producaoId),
+      queryFn: () => execucoesService.lotes(producaoId),
+      enabled: Boolean(producaoId),
+      retry: false,
+      // Sub-lotes não mudam durante a sessão de disparo — evita refazer 1 chamada por médico a
+      // cada digitação no filtro/competência.
+      staleTime: 5 * 60_000,
+    })),
+  });
+  const lotesPorMedicoIdBulk = useMemo(() => {
+    const mapa = new Map<string, { lotes: { id: string; nome: string }[]; isLoading: boolean }>();
+    medicosNecessitandoLotesBulk.forEach(({ medicoId }, i) => {
+      const q = queriesLotesBulk[i];
+      mapa.set(medicoId, { lotes: q?.data?.lotes ?? [], isLoading: Boolean(q?.isLoading) });
+    });
+    return mapa;
+  }, [medicosNecessitandoLotesBulk, queriesLotesBulk]);
+  const algumLoteBulkCarregando = queriesLotesBulk.some((q) => q.isLoading);
+
+  // FASE 3: combina o match (fase 1) com a classificação automática de sub-lotes (fase 2, mesmos
+  // classificadores puros do modo "Por médico") e as seleções manuais (planilha, Outros
+  // Hospitais, fallback antigo de Consultas/Imobilizações, Carta de Rede) pra montar o payload
+  // final. Médico que precisa de sub-lotes mas cuja busca ainda não voltou fica de fora do
+  // payload até resolver — evita disparar uma competência de 60+ médicos com dado incompleto no
+  // meio do carregamento.
+  const selecoesInfo = useMemo(() => {
+    const finalPayload: ExecucaoSelecaoPayload[] = [];
+    const matched: Array<{
+      medico: any;
+      producao: any;
+      guiasManuais?: GuiasManuaisLinha;
+      angiologista: boolean;
+      usaConsultaAuto: boolean;
+      temCirurgiaVh: boolean;
+    }> = [];
+    const precisaAtencaoManual: Array<{ medico: any; motivo: string }> = [];
+    const manuaisUsados = new Set<string>();
+
+    for (const { medico: med, producao: match, guiasManuais } of matchResultado.matched) {
+      if (guiasManuais) manuaisUsados.add(med.id);
+
+      const angiologista = isAngiologistaEspecialidade(med.especialidade);
+      const pediatra = isPediatraEspecialidade(med.especialidade);
+      const producoesDoMedico = producoes.filter((p) => p.clienteId === med.externalId);
+      const precisaDeLotes = angiologista || pediatra || med.fazImobilizacoes;
+      const infoLote = lotesPorMedicoIdBulk.get(med.id);
+
+      if (precisaDeLotes && (!infoLote || infoLote.isLoading)) {
+        continue; // ainda carregando os sub-lotes deste médico — fica de fora por enquanto
+      }
+      const lotesDoMedico = infoLote?.lotes ?? [];
+
+      if (angiologista) {
+        const c = classificarLotesAngiologista(lotesDoMedico);
+        if (c.naoClassificados.length > 0) {
+          precisaAtencaoManual.push({
+            medico: med,
+            motivo: `${c.naoClassificados.length} sub-lote(s) com nome não reconhecido (Cateter/Fístula/Angiografia/Carta de Rede) — processar individualmente pelo modo "Por médico" para revisar.`,
+          });
+          continue;
+        }
+        if (!c.cateter.length && !c.fistula.length && !c.angiografia.length && !c.cartaRede.length) {
+          precisaAtencaoManual.push({
+            medico: med,
+            motivo: 'Médico Angiologista sem nenhum sub-lote de Cateter/Fístula/Angiografia/Carta de Rede identificado na produção mensal.',
+          });
+          continue;
+        }
+        matched.push({ medico: med, producao: match, guiasManuais, angiologista: true, usaConsultaAuto: false, temCirurgiaVh: false });
+        const cartaRedeGuiasStr = cartaRedeGuiasSelections[med.id];
+        finalPayload.push({
+          medicoId: med.id,
+          producaoExternaId: null,
+          producaoNome: null,
+          ...(c.cateter.length
+            ? { producaoCateterExternaIds: c.cateter.map((l) => l.id), producaoCateterNomes: c.cateter.map((l) => l.nome) }
+            : {}),
+          ...(c.fistula.length
+            ? { producaoFistulaExternaIds: c.fistula.map((l) => l.id), producaoFistulaNomes: c.fistula.map((l) => l.nome) }
+            : {}),
+          ...(c.angiografia.length
+            ? {
+                producaoAngiografiaExternaIds: c.angiografia.map((l) => l.id),
+                producaoAngiografiaNomes: c.angiografia.map((l) => l.nome),
+              }
+            : {}),
+          ...(c.cartaRede[0]
+            ? { producaoCartaRedeExternaId: c.cartaRede[0].id, producaoCartaRedeNome: c.cartaRede[0].nome }
+            : {}),
+          ...(cartaRedeGuiasStr ? { cartaRedeGuias: Number(cartaRedeGuiasStr) } : {}),
+        });
+        continue;
+      }
+
+      // Pediatra/fazImobilizacoes: mesma classificação automática de sub-lotes do modo "Por
+      // médico" (Consultas por "CONSULTA" no nome; Cirurgia/Imobilizações do padrão VH).
+      const lotesConsulta = pediatra ? lotesDoMedico.filter((l) => ehSubLoteConsultaPediatra(l.nome)) : [];
+      const usaConsultaAuto = lotesConsulta.length > 0;
+      const cImob = med.fazImobilizacoes
+        ? classificarLotesImobilizacoes(lotesDoMedico.filter((l) => !lotesConsulta.some((c) => c.id === l.id)))
+        : { cirurgia: [] as typeof lotesDoMedico, imobilizacao: [] as typeof lotesDoMedico, naoClassificados: [] as typeof lotesDoMedico };
+      const temCirurgiaVh = Boolean(med.fazImobilizacoes) && cImob.cirurgia.length > 0;
+
+      if (temCirurgiaVh && cImob.naoClassificados.length > 0) {
+        precisaAtencaoManual.push({
+          medico: med,
+          motivo: `${cImob.naoClassificados.length} sub-lote(s) de Imobilizações com nome não reconhecido — processar individualmente pelo modo "Por médico" para revisar.`,
+        });
+        continue;
+      }
+
+      matched.push({ medico: med, producao: match, guiasManuais, angiologista: false, usaConsultaAuto, temCirurgiaVh });
+
+      const guiasRestantes = temCirurgiaVh
+        ? cImob.cirurgia
+        : usaConsultaAuto
+          ? lotesDoMedico.filter((l) => !lotesConsulta.some((c) => c.id === l.id))
+          : [];
+
+      // Fallback antigo (produção flat, não sub-lote) — só usado quando a auto-classificação
+      // acima não se aplica (sem sub-lote de Consulta/Cirurgia detectado nesta produção).
+      const consultaProdId = consultaSelections[med.id];
+      const consultaProdManual =
+        !usaConsultaAuto && consultaProdId ? producoesDoMedico.find((p) => p.id === consultaProdId) : undefined;
+      const outrosHospitaisProdId = outrosHospitaisSelections[med.id];
+      const outrosHospitaisProd = outrosHospitaisProdId
+        ? producoesDoMedico.find((p) => p.id === outrosHospitaisProdId)
+        : undefined;
+      const imobilizacoesProdId = imobilizacoesSelections[med.id];
+      const imobilizacoesProdManual =
+        !temCirurgiaVh && imobilizacoesProdId ? producoesDoMedico.find((p) => p.id === imobilizacoesProdId) : undefined;
+
+      finalPayload.push({
+        medicoId: med.id,
+        producaoExternaId: temCirurgiaVh || usaConsultaAuto ? null : match.id,
+        producaoNome: temCirurgiaVh || usaConsultaAuto ? null : match.nome,
+        ...(usaConsultaAuto
+          ? {
+              producaoConsultasLoteExternaIds: lotesConsulta.map((l) => l.id),
+              producaoConsultasLoteNomes: lotesConsulta.map((l) => l.nome),
+            }
+          : consultaProdManual
+            ? { producaoConsultasExternaId: consultaProdManual.id, producaoConsultasNome: consultaProdManual.nome }
+            : {}),
+        ...(temCirurgiaVh || usaConsultaAuto
+          ? {
+              producaoGuiasLoteExternaIds: guiasRestantes.map((l) => l.id),
+              producaoGuiasLoteNomes: guiasRestantes.map((l) => l.nome),
+            }
+          : {}),
+        ...(outrosHospitaisProd
+          ? {
+              producaoOutrosHospitaisExternaId: outrosHospitaisProd.id,
+              producaoOutrosHospitaisNome: outrosHospitaisProd.nome,
+            }
+          : {}),
+        ...(temCirurgiaVh
+          ? {
+              producaoImobilizacoesLoteExternaIds: cImob.imobilizacao.map((l) => l.id),
+              producaoImobilizacoesLoteNomes: cImob.imobilizacao.map((l) => l.nome),
+            }
+          : imobilizacoesProdManual
+            ? {
+                producaoImobilizacoesExternaId: imobilizacoesProdManual.id,
+                producaoImobilizacoesNome: imobilizacoesProdManual.nome,
+              }
+            : {}),
+        // Migration 0058: substitui a contagem automática SÓ deste médico. O motor ignora a
+        // contagem automática das guias, mas o resto do pipeline (consultas, lotes secundários)
+        // continua igual.
+        ...(guiasManuais
+          ? { guiasManuaisTotal: guiasManuais.guiasManuaisTotal, guiasManuaisMotivo: guiasManuais.guiasManuaisMotivo }
+          : {}),
+      });
+    }
+
     // Linhas da planilha que NÃO entraram em nenhuma seleção (médico sem produção pareada, já
     // com boleto emitido, ou fora do filtro de tipo). Silenciar isso seria o pior caso: o
     // operador acharia que a conferência manual dele foi usada quando ela nem foi enviada.
-    const manuaisForaDaSelecao = [...manuaisPorMedico.values()].filter((l) => !manuaisUsados.has(l.medicoId));
+    const manuaisForaDaSelecao = [...matchResultado.manuaisPorMedico.values()].filter(
+      (l) => !manuaisUsados.has(l.medicoId),
+    );
 
-    return { matched, unmatched, jaEmitidos, finalPayload, manuaisForaDaSelecao, totalManuais: manuaisUsados.size };
+    return {
+      matched,
+      unmatched: matchResultado.unmatched,
+      jaEmitidos: matchResultado.jaEmitidos,
+      precisaAtencaoManual,
+      finalPayload,
+      manuaisForaDaSelecao,
+      totalManuais: manuaisUsados.size,
+    };
   }, [
-    medicosParaCompetencia,
+    matchResultado,
+    lotesPorMedicoIdBulk,
     producoes,
-    manualSelections,
     consultaSelections,
     outrosHospitaisSelections,
     imobilizacoesSelections,
-    guiasManuaisAplicadas,
-    competencia,
-    medicosComBoletoAtivo,
+    cartaRedeGuiasSelections,
   ]);
 
   // Upload + leitura da planilha de guias manuais (migration 0058). Só PREVIEW: nada é gravado e
@@ -533,7 +722,11 @@ export function NovaExecucao() {
   }
 
   const competenciaValida = /^\d{4}-\d{2}$/.test(competencia);
-  const canDispararCompetencia = competenciaValida && selecoesInfo.finalPayload.length > 0 && !disparar.isPending;
+  // Achado 2026-09-03: com médicos ainda esperando a busca de sub-lotes (Angiologista/Pediatra/
+  // Imobilizações), o botão fica desabilitado — disparar no meio do carregamento deixaria esses
+  // médicos de fora do payload silenciosamente (ver FASE 3 do `selecoesInfo` acima).
+  const canDispararCompetencia =
+    competenciaValida && selecoesInfo.finalPayload.length > 0 && !algumLoteBulkCarregando && !disparar.isPending;
 
   const producaoSelecionada = producoesDoMedicoSelecionado.find(p => p.id === producaoId);
   // Médico já tem boleto ativo (emitido/pago) nesta competência, de uma execução ANTERIOR —
@@ -1321,6 +1514,12 @@ export function NovaExecucao() {
 
                 {erro && <p role="alert" className="alert-error">{erro}</p>}
 
+                {algumLoteBulkCarregando && (
+                  <p className="text-xs text-cc-muted">
+                    Carregando sub-lotes de Angiologista/Pediatra/Imobilizações…
+                  </p>
+                )}
+
                 <button
                   type="submit"
                   disabled={!canDispararCompetencia}
@@ -1508,7 +1707,7 @@ export function NovaExecucao() {
                       <p className="text-sm text-cc-muted">Nenhum médico pareado para esta competência.</p>
                     ) : (
                       <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-                        {selecoesInfo.matched.map(({ medico, producao, guiasManuais }) => {
+                        {selecoesInfo.matched.map(({ medico, producao, guiasManuais, angiologista, usaConsultaAuto, temCirurgiaVh }) => {
                           const producoesDoMedico = producoes.filter((p) => p.clienteId === medico.externalId);
                           const outrasProducoes = producoesDoMedico.filter((p) => p.id !== producao.id);
                           const pediatra = isPediatraEspecialidade(medico.especialidade);
@@ -1537,22 +1736,32 @@ export function NovaExecucao() {
                                   Contagem MANUAL: {guiasManuais.guiasManuaisTotal} guias — {guiasManuais.guiasManuaisMotivo}
                                 </p>
                               )}
-                              {pediatra && outrasProducoes.length > 0 && (
-                                <select
-                                  className="input text-xs py-1 h-auto w-full"
-                                  value={consultaSelections[medico.id] ?? ''}
-                                  onChange={(e) =>
-                                    setConsultaSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
-                                  }
-                                  aria-label={`Produção de consultas de ${medico.nome} (opcional)`}
-                                >
-                                  <option value="">+ Produção de consultas (opcional)</option>
-                                  {outrasProducoes.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.nome}
-                                    </option>
-                                  ))}
-                                </select>
+                              {/* Achado 2026-09-03: quando a produção mensal tem sub-lote de Consultas
+                                  ("CONSULTA" no nome), a classificação automática já resolve — o
+                                  dropdown manual só aparece pro caso sem esse padrão. */}
+                              {usaConsultaAuto ? (
+                                <p className="rounded bg-cc-surface-2/60 px-1.5 py-1 text-xs text-cc-ink-2">
+                                  Consultas detectadas automaticamente pelo nome do sub-lote.
+                                </p>
+                              ) : (
+                                pediatra &&
+                                outrasProducoes.length > 0 && (
+                                  <select
+                                    className="input text-xs py-1 h-auto w-full"
+                                    value={consultaSelections[medico.id] ?? ''}
+                                    onChange={(e) =>
+                                      setConsultaSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
+                                    }
+                                    aria-label={`Produção de consultas de ${medico.nome} (opcional)`}
+                                  >
+                                    <option value="">+ Produção de consultas (opcional)</option>
+                                    {outrasProducoes.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.nome}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )
                               )}
                               {/* Lote separado de Outros Hospitais — sempre manual (nunca auto-match, afeta
                                   valor cobrado). Sem lote selecionado, o motor gera alerta e NÃO cobra a
@@ -1574,22 +1783,54 @@ export function NovaExecucao() {
                                   ))}
                                 </select>
                               )}
-                              {medico.fazImobilizacoes && outrasProducoes.length > 0 && (
-                                <select
-                                  className="input text-xs py-1 h-auto w-full"
-                                  value={imobilizacoesSelections[medico.id] ?? ''}
-                                  onChange={(e) =>
-                                    setImobilizacoesSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
-                                  }
-                                  aria-label={`Lote de Imobilizações de ${medico.nome}`}
-                                >
-                                  <option value="">+ Lote de Imobilizações (obrigatório p/ cobrar)</option>
-                                  {outrasProducoes.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.nome}
-                                    </option>
-                                  ))}
-                                </select>
+                              {/* Achado 2026-09-03: padrão VH (sub-lotes de Cirurgia detectados) já
+                                  resolve Imobilizações automaticamente — o dropdown manual só aparece
+                                  pro caso sem esse padrão (produção flat + no máx. 1 sub-lote). */}
+                              {temCirurgiaVh ? (
+                                <p className="rounded bg-cc-surface-2/60 px-1.5 py-1 text-xs text-cc-ink-2">
+                                  Cirurgia/Imobilizações detectadas automaticamente pelo nome do sub-lote.
+                                </p>
+                              ) : (
+                                medico.fazImobilizacoes &&
+                                outrasProducoes.length > 0 && (
+                                  <select
+                                    className="input text-xs py-1 h-auto w-full"
+                                    value={imobilizacoesSelections[medico.id] ?? ''}
+                                    onChange={(e) =>
+                                      setImobilizacoesSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
+                                    }
+                                    aria-label={`Lote de Imobilizações de ${medico.nome}`}
+                                  >
+                                    <option value="">+ Lote de Imobilizações (obrigatório p/ cobrar)</option>
+                                    {outrasProducoes.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.nome}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )
+                              )}
+                              {/* Achado 2026-09-03: Angiologista — Cateter/Fístula/Angiografia já vêm
+                                  classificados automaticamente pelo nome; só a Carta de Rede continua
+                                  manual (sem regra de contagem fixa, mesmo motivo do modo "Por médico"). */}
+                              {angiologista && (
+                                <div className="flex items-center gap-2">
+                                  <p className="flex-1 rounded bg-cc-surface-2/60 px-1.5 py-1 text-xs text-cc-ink-2">
+                                    Cateter/Fístula/Angiografia classificados automaticamente.
+                                  </p>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    className="input text-xs py-1 h-auto w-28"
+                                    placeholder="Carta de Rede"
+                                    value={cartaRedeGuiasSelections[medico.id] ?? ''}
+                                    onChange={(e) =>
+                                      setCartaRedeGuiasSelections((prev) => ({ ...prev, [medico.id]: e.target.value }))
+                                    }
+                                    aria-label={`Carta de Rede — guias de ${medico.nome} (opcional)`}
+                                  />
+                                </div>
                               )}
                             </div>
                           );
@@ -1611,6 +1852,31 @@ export function NovaExecucao() {
                         {selecoesInfo.jaEmitidos.map((medico: any) => (
                           <div key={medico.id} className="rounded bg-cc-surface-2/60 p-1.5 text-xs text-cc-ink-2">
                             {medico.nome}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Achado 2026-09-03: sub-lote com nome não reconhecido (Angiologista ou
+                      Imobilizações no padrão VH) — nunca chuta em qual classe ele entra; pede pra
+                      processar esse médico individualmente pelo modo "Por médico", que tem a tela
+                      de correção manual por sub-lote. */}
+                  {selecoesInfo.precisaAtencaoManual.length > 0 && (
+                    <div className="pt-4 border-t border-cc-border">
+                      <h3 className="mb-2 flex items-center gap-1.5 font-medium text-cc-warning">
+                        <AlertTriangleIcon className="shrink-0" />
+                        Requer atenção manual ({selecoesInfo.precisaAtencaoManual.length})
+                      </h3>
+                      <p className="text-xs text-cc-muted mb-3">
+                        Sub-lote com nome não reconhecido pela classificação automática — processe estes médicos
+                        pelo modo &ldquo;Por médico&rdquo; para revisar/classificar antes de cobrar.
+                      </p>
+                      <div className="space-y-1.5 max-h-64 overflow-y-auto pr-2">
+                        {selecoesInfo.precisaAtencaoManual.map(({ medico, motivo }) => (
+                          <div key={medico.id} className="rounded border border-cc-warning/25 bg-cc-warning-soft p-2 text-xs text-cc-ink">
+                            <span className="font-medium">{medico.nome}</span>
+                            <p className="mt-0.5 text-cc-ink-2">{motivo}</p>
                           </div>
                         ))}
                       </div>

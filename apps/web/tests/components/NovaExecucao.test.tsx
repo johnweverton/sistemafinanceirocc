@@ -577,6 +577,154 @@ describe('NovaExecucao — modo "Por médico": sub-lotes de Cateter/Fístula/Ang
   });
 });
 
+// Achado real 2026-09-03 (Dr. Caio Torres, disparo em lote de 66 médicos): a classificação
+// automática de sub-lotes só funcionava no modo "Por médico" — no modo "Por competência" (o fluxo
+// real do dia a dia), TODO médico Angiologista saía com 0 guias (nenhum lote de Cateter/Fístula/
+// Angiografia era buscado), e VH/Imobilizações e Pediatra-com-sub-lote-de-Consulta cobravam a
+// produção completa errada. Este describe cobre a FASE 2/3 do `selecoesInfo` (busca de sub-lotes
+// em paralelo via useQueries + classificação automática) no modo em lote.
+describe('NovaExecucao — modo "Por competência": sub-lotes automáticos (achado 2026-09-03)', () => {
+  const medicoSamanta = {
+    id: 'm-samanta', nome: 'Dra. Samanta', ativo: true, necessitaConfiguracao: false,
+    externalId: 'ext-samanta', especialidade: 'Angiologia',
+  };
+  const medicoHumbertoBulk = {
+    id: 'm-humberto-bulk', nome: 'Dr. Humberto Bulk', ativo: true, necessitaConfiguracao: false,
+    externalId: 'ext-humberto-bulk', especialidade: 'Pediatria',
+  };
+  const medicoCamillaBulk = {
+    id: 'm-camilla-bulk', nome: 'Dra. Camilla Bulk', ativo: true, necessitaConfiguracao: false,
+    externalId: 'ext-camilla-bulk', especialidade: 'Ortopedia', fazImobilizacoes: true,
+  };
+  const apoioFixtureBulk = {
+    medicos: [medicoSamanta, medicoHumbertoBulk, medicoCamillaBulk],
+    clientesOrigem: [
+      { id: 'ext-samanta', nome: 'Samanta', producoes: [{ id: 'p-samanta', nome: 'JULHO - 2026' }] },
+      { id: 'ext-humberto-bulk', nome: 'Humberto', producoes: [{ id: 'p-humberto-bulk', nome: 'JULHO - 2026' }] },
+      { id: 'ext-camilla-bulk', nome: 'Camilla', producoes: [{ id: 'p-camilla-bulk', nome: 'JULHO - 2026' }] },
+    ],
+  };
+
+  function mockLotesPadrao() {
+    mockLotes.mockImplementation(async (...args: unknown[]) => {
+      const producaoId = args[0];
+      if (producaoId === 'p-samanta') {
+        return {
+          lotes: [
+            { id: 'lote-cateter', nome: 'SAMANTA CATETER 1Q' },
+            { id: 'lote-fistula', nome: 'SAMANTA FISTULA 1Q' },
+            { id: 'lote-pacote', nome: 'SAMANTA PACOTE 25K 1Q' },
+            { id: 'lote-carta', nome: 'SAMANTA CARTA DE REDE' },
+          ],
+        };
+      }
+      if (producaoId === 'p-humberto-bulk') {
+        return {
+          lotes: [
+            { id: 'lote-1q', nome: 'HUMBERTO 1Q' },
+            { id: 'lote-consultas', nome: 'HUMBERTO CONSULTAS DE JUNHO' },
+          ],
+        };
+      }
+      if (producaoId === 'p-camilla-bulk') {
+        return {
+          lotes: [
+            { id: 'lote-cir', nome: 'CIRURGIAS - 05/07' },
+            { id: 'lote-imob', nome: 'IMOBILIZAÇÕES - 05/07' },
+          ],
+        };
+      }
+      return { lotes: [] };
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApoio.mockResolvedValue(apoioFixtureBulk);
+    mockListarEmpresas.mockResolvedValue([]);
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: [] });
+    mockLotesPadrao();
+  });
+
+  it('processa Angiologista, Pediatra-com-sub-lote e Imobilizações-VH automaticamente no disparo em lote', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-bulk-1' });
+    renderComProviders();
+
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-07' } });
+    await screen.findByText('Dra. Samanta');
+    await screen.findByText('Dr. Humberto Bulk');
+    await screen.findByText('Dra. Camilla Bulk');
+
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-samanta'));
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-humberto-bulk'));
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-camilla-bulk'));
+
+    const botao = () => screen.getByRole('button', { name: /Processar \d+ médicos/ });
+    await waitFor(() => expect(botao()).toHaveTextContent('Processar 3 médicos'));
+    await waitFor(() => expect(botao()).toBeEnabled());
+    fireEvent.click(botao());
+
+    await waitFor(() => expect(mockDisparar).toHaveBeenCalled());
+    const selecoes = mockDisparar.mock.calls[0]![1] as Record<string, unknown>[];
+
+    const samanta = selecoes.find((s) => s.medicoId === 'm-samanta');
+    expect(samanta).toMatchObject({
+      producaoExternaId: null,
+      producaoNome: null,
+      producaoCateterExternaIds: ['lote-cateter'],
+      producaoFistulaExternaIds: ['lote-fistula'],
+      producaoAngiografiaExternaIds: ['lote-pacote'],
+      producaoCartaRedeExternaId: 'lote-carta',
+    });
+
+    const humberto = selecoes.find((s) => s.medicoId === 'm-humberto-bulk');
+    expect(humberto).toMatchObject({
+      producaoExternaId: null,
+      producaoConsultasLoteExternaIds: ['lote-consultas'],
+      producaoGuiasLoteExternaIds: ['lote-1q'],
+    });
+
+    const camilla = selecoes.find((s) => s.medicoId === 'm-camilla-bulk');
+    expect(camilla).toMatchObject({
+      producaoExternaId: null,
+      producaoGuiasLoteExternaIds: ['lote-cir'],
+      producaoImobilizacoesLoteExternaIds: ['lote-imob'],
+    });
+  });
+
+  it('sub-lote de Angiologista com nome não reconhecido vai para "Requer atenção manual" e não entra no disparo', async () => {
+    mockLotes.mockImplementation(async (...args: unknown[]) =>
+      args[0] === 'p-samanta'
+        ? { lotes: [{ id: 'lote-cateter', nome: 'SAMANTA CATETER 1Q' }, { id: 'lote-estranho', nome: 'SAMANTA EXTRA' }] }
+        : { lotes: [] },
+    );
+    renderComProviders();
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-07' } });
+
+    await screen.findByText('Requer atenção manual (1)');
+    expect(screen.getByText(/Cateter\/Fístula\/Angiografia\/Carta de Rede\)/)).toBeInTheDocument();
+    const prontos = screen.getByText(/Prontos para processar/).closest('div')!;
+    expect(prontos).not.toHaveTextContent('Dra. Samanta');
+  });
+
+  it('preenchendo Carta de Rede — guias no disparo em lote, o número entra no payload do Angiologista', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-bulk-2' });
+    renderComProviders();
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-07' } });
+    await screen.findByText('Dra. Samanta');
+    await waitFor(() => expect(screen.getByRole('button', { name: /Processar \d+ médicos/ })).toHaveTextContent('Processar 3 médicos'));
+
+    fireEvent.change(screen.getByLabelText('Carta de Rede — guias de Dra. Samanta (opcional)'), {
+      target: { value: '7' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Processar \d+ médicos/ }));
+
+    await waitFor(() => expect(mockDisparar).toHaveBeenCalled());
+    const selecoes = mockDisparar.mock.calls[0]![1] as Record<string, unknown>[];
+    expect(selecoes.find((s) => s.medicoId === 'm-samanta')).toMatchObject({ cartaRedeGuias: 7 });
+  });
+});
+
 // Planilha de guias CONFERIDAS MANUALMENTE (migration 0058, aprovado 2026-09-03) — modo
 // "Por competência". O ponto crítico é a EXECUÇÃO MISTA: o total da planilha entra no payload só
 // dos médicos que vieram nela; os demais seguem 100% na contagem automática. E nada disso pode
