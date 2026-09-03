@@ -50,6 +50,34 @@ function classificarSubLoteImobilizacoes(nome: string): ClasseSubLoteImobilizaco
   return null;
 }
 
+/** Mesma ideia de classificarSubLoteImobilizacoes, mas pro sub-lote de Consultas do Pediatra
+ *  (achado 2026-09-03, feedback do dono) — só 1 palavra positiva ("CONSULTA"), sem ambiguidade:
+ *  o que não bate vira guia principal por padrão (mesmo mecanismo já usado desde o achado
+ *  2026-08-21, só que agora automático em vez de exigir 1 clique manual por sub-lote). */
+function ehSubLoteConsultaPediatra(nome: string): boolean {
+  return /consulta/.test(normalizeName(nome));
+}
+
+/** Classificação por nome dos sub-lotes do Angiologista (achado 2026-09-03, feedback do dono) —
+ *  Cateter/Fístula/Carta de Rede usam palavra literal; Angiografia usa "PACOTE" (confirmado pelo
+ *  dono — a origem não nomeia esse sub-lote com a palavra "Angiografia", ver
+ *  docs/integracao/solicitacao-sublotes-angiologista.md). `null` quando nada bate ou mais de uma
+ *  palavra bate — precisa de decisão manual (a distinção 1x1 vs 3x1 afeta valor cobrado). */
+type ClasseSubLoteAngiologista = 'cateter' | 'fistula' | 'angiografia' | 'cartaRede';
+function classificarSubLoteAngiologista(nome: string): ClasseSubLoteAngiologista | null {
+  const norm = normalizeName(nome);
+  const cateter = /cateter/.test(norm);
+  const fistula = /fistula/.test(norm);
+  const cartaRede = /carta.*rede/.test(norm);
+  const angiografia = /pacote/.test(norm);
+  const quantasBateram = [cateter, fistula, cartaRede, angiografia].filter(Boolean).length;
+  if (quantasBateram !== 1) return null;
+  if (cateter) return 'cateter';
+  if (fistula) return 'fistula';
+  if (cartaRede) return 'cartaRede';
+  return 'angiografia';
+}
+
 // Nomes de mês por extenso (sem acento, casa com normalizeName) — usado tanto pelo auto-match do
 // modo "Por competência" quanto pelo pré-preenchimento de Competência dos modos "Por médico"/"Por
 // empresa" (Story de polimento UX, 2026-07-30: mesmo padrão, dois usos).
@@ -165,14 +193,17 @@ export function NovaExecucao() {
   // ARRAYS (achado 2026-08-13): a origem divide cada categoria em quinzenas (1Q/2Q) como
   // sub-lotes separados — o operador marca TODOS os que valem pra esta execução (checkboxes),
   // nunca um-ou-outro, senão a 2ª quinzena fica de fora da cobrança.
-  const [cateterProducaoIds, setCateterProducaoIds] = useState<string[]>([]);
-  const [fistulaProducaoIds, setFistulaProducaoIds] = useState<string[]>([]);
-  const [angiografiaProducaoIds, setAngiografiaProducaoIds] = useState<string[]>([]);
+  // Achado 2026-09-03: os 3 checkboxes manuais (1 por categoria, cada um listando TODOS os
+  // sub-lotes) viraram classificação automática por nome (ver classificarSubLoteAngiologista) —
+  // `subLoteAngiologistaOverride` só entra pros sub-lotes cujo nome não bateu com nenhuma
+  // categoria (nem Cateter, nem Fístula, nem Carta de Rede, nem "PACOTE" de Angiografia).
+  const [subLoteAngiologistaOverride, setSubLoteAngiologistaOverride] = useState<
+    Record<string, ClasseSubLoteAngiologista>
+  >({});
   // Carta de Rede (GATE 2026-08-12) — sem regra de contagem fixa (depende do procedimento
-  // realizado no mês), então o operador digita a quantidade de guias manualmente. O select de
-  // produção aqui é só referência/auditoria (qual lote de origem gerou aquele número), NÃO
-  // alimenta o cálculo — só `cartaRedeGuias` conta.
-  const [cartaRedeProducaoId, setCartaRedeProducaoId] = useState('');
+  // realizado no mês), então o operador digita a quantidade de guias manualmente. O sub-lote de
+  // referência (qual lote de origem gerou aquele número) agora vem da classificação automática
+  // acima — NÃO alimenta o cálculo, só `cartaRedeGuias` conta.
   const [cartaRedeGuias, setCartaRedeGuias] = useState('');
 
   // Seleção do modo "Por empresa" — empresa + produção de guias cardíacas de cada médico
@@ -207,6 +238,18 @@ export function NovaExecucao() {
   });
   const lotesDaProducaoMensal = lotesData?.lotes ?? [];
 
+  // Auto-classificação do sub-lote de Consultas do Pediatra por NOME (achado 2026-09-03) —
+  // generaliza o mecanismo manual do achado 2026-08-21 (escolher 1 sub-lote como consulta, resto
+  // vira guia principal): agora QUALQUER sub-lote cujo nome contenha "CONSULTA" entra
+  // automaticamente nessa classe, e podem ser VÁRIOS (antes só dava pra marcar 1 no dropdown).
+  // Sem ambiguidade possível (1 palavra positiva só) — o que não bate simplesmente vira guia
+  // principal, sem precisar de tela de correção manual.
+  const lotesConsultaAutoDetectados = useMemo(
+    () => lotesDaProducaoMensal.filter((l) => ehSubLoteConsultaPediatra(l.nome)),
+    [lotesDaProducaoMensal],
+  );
+  const temSubLotesConsultaAutoDetectados = lotesConsultaAutoDetectados.length > 0;
+
   // Auto-classificação de sub-lotes de Imobilizações por NOME (achado 2026-09-03) — só entra em
   // jogo quando existe pelo menos 1 sub-lote nomeado "CIRURGIA*": esse é o sinal de que a origem
   // divide a produção mensal INTEIRA deste médico em sub-lotes (padrão VH), então a "Produção"
@@ -215,11 +258,15 @@ export function NovaExecucao() {
   // producaoGuiasLoteExternaIds já usado pro sub-lote de Consultas do Pediatra. Quando NÃO há
   // sub-lote de Cirurgia (padrão antigo: 1 produção flat + no máximo 1 sub-lote de Imobilizações
   // à parte), nada muda — mantém o fluxo manual de sempre (ver bloco "Lote de Imobilizações"
-  // abaixo). Exclui o sub-lote já escolhido como Consultas (pediatra) do universo classificado,
-  // pro raro caso de um médico ser Pediatra E fazImobilizacoes ao mesmo tempo.
+  // abaixo). Exclui os sub-lotes já classificados como Consultas (manual ou automático) do
+  // universo classificado, pro raro caso de um médico ser Pediatra E fazImobilizacoes ao mesmo
+  // tempo.
   const lotesElegiveisImobilizacoes = useMemo(
-    () => lotesDaProducaoMensal.filter((l) => l.id !== consultaProducaoId),
-    [lotesDaProducaoMensal, consultaProducaoId],
+    () =>
+      lotesDaProducaoMensal.filter(
+        (l) => l.id !== consultaProducaoId && !lotesConsultaAutoDetectados.some((c) => c.id === l.id),
+      ),
+    [lotesDaProducaoMensal, consultaProducaoId, lotesConsultaAutoDetectados],
   );
   const classificacaoImobilizacoes = useMemo(() => {
     const cirurgia: typeof lotesElegiveisImobilizacoes = [];
@@ -235,6 +282,26 @@ export function NovaExecucao() {
   }, [lotesElegiveisImobilizacoes, subLoteImobilizacoesOverride]);
   const temSubLotesCirurgiaImobilizacoes =
     Boolean(medicoSelecionado?.fazImobilizacoes) && classificacaoImobilizacoes.cirurgia.length > 0;
+
+  // Auto-classificação dos sub-lotes do Angiologista por NOME (achado 2026-09-03) — substitui os
+  // 3 checkboxes manuais (Cateter/Fístula/Angiografia), cada um listando TODOS os sub-lotes e
+  // exigindo que o operador soubesse identificar de olho qual pertencia a qual categoria.
+  const classificacaoAngiologista = useMemo(() => {
+    const cateter: typeof lotesDaProducaoMensal = [];
+    const fistula: typeof lotesDaProducaoMensal = [];
+    const angiografia: typeof lotesDaProducaoMensal = [];
+    const cartaRede: typeof lotesDaProducaoMensal = [];
+    const naoClassificados: typeof lotesDaProducaoMensal = [];
+    for (const l of lotesDaProducaoMensal) {
+      const classe = subLoteAngiologistaOverride[l.id] ?? classificarSubLoteAngiologista(l.nome);
+      if (classe === 'cateter') cateter.push(l);
+      else if (classe === 'fistula') fistula.push(l);
+      else if (classe === 'angiografia') angiografia.push(l);
+      else if (classe === 'cartaRede') cartaRede.push(l);
+      else naoClassificados.push(l);
+    }
+    return { cateter, fistula, angiografia, cartaRede, naoClassificados };
+  }, [lotesDaProducaoMensal, subLoteAngiologistaOverride]);
 
   const { data: empresas, isLoading: isEmpresasLoading } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
@@ -479,17 +546,27 @@ export function NovaExecucao() {
   // dos 4 lotes próprios preenchido (Cateter/Fístula/Angiografia/Carta de Rede), senão não
   // haveria nada pra processar (GATE 2026-08-07, Carta de Rede GATE 2026-08-12).
   const producaoObrigatoriaOk = medicoSelecionadoAngiologista
-    ? Boolean(cateterProducaoIds.length || fistulaProducaoIds.length || angiografiaProducaoIds.length || cartaRedeGuias !== '')
+    ? Boolean(
+        classificacaoAngiologista.cateter.length ||
+          classificacaoAngiologista.fistula.length ||
+          classificacaoAngiologista.angiografia.length ||
+          cartaRedeGuias !== '',
+      )
     : Boolean(producaoSelecionada);
   // Achado 2026-09-03: com o padrão VH (sub-lotes de Cirurgia detectados), todo sub-lote precisa
   // estar classificado (automático ou manual) antes de disparar — nunca chuta em qual tabela de
   // preço um sub-lote não reconhecido entra.
   const imobilizacoesClassificacaoOk =
     !temSubLotesCirurgiaImobilizacoes || classificacaoImobilizacoes.naoClassificados.length === 0;
+  // Mesmo motivo acima, mas pro Angiologista: 1x1 (Cateter/Fístula) vs 3x1 (Angiografia) muda o
+  // valor cobrado, então um sub-lote não reconhecido bloqueia até decisão manual.
+  const angiologistaClassificacaoOk =
+    !medicoSelecionadoAngiologista || classificacaoAngiologista.naoClassificados.length === 0;
   const canDispararMedico =
     Boolean(medicoId && competenciaValida) &&
     producaoObrigatoriaOk &&
     imobilizacoesClassificacaoOk &&
+    angiologistaClassificacaoOk &&
     !medicoJaTemBoleto &&
     !disparar.isPending;
 
@@ -648,10 +725,7 @@ export function NovaExecucao() {
                     setImobilizacoesProducaoId('');
                     setSubLoteImobilizacoesOverride({});
                     setAngiologistaProducaoMensalId('');
-                    setCateterProducaoIds([]);
-                    setFistulaProducaoIds([]);
-                    setAngiografiaProducaoIds([]);
-                    setCartaRedeProducaoId('');
+                    setSubLoteAngiologistaOverride({});
                     setCartaRedeGuias('');
                   }}
                   disabled={isApoioLoading}
@@ -683,12 +757,9 @@ export function NovaExecucao() {
                       onChange={(e) => {
                         const novoId = e.target.value;
                         setAngiologistaProducaoMensalId(novoId);
-                        // Sub-lotes de outra produção deixam de fazer sentido — evita enviar um
-                        // loteId que pertence à produção mensal anterior.
-                        setCateterProducaoIds([]);
-                        setFistulaProducaoIds([]);
-                        setAngiografiaProducaoIds([]);
-                        setCartaRedeProducaoId('');
+                        // Sub-lotes de outra produção deixam de fazer sentido — evita reaproveitar
+                        // uma correção manual de classificação que pertencia à produção anterior.
+                        setSubLoteAngiologistaOverride({});
                         const producao = producoesDoMedicoSelecionado.find((p) => p.id === novoId);
                         if (producao) preencherCompetenciaAuto(producao.nome);
                       }}
@@ -707,39 +778,6 @@ export function NovaExecucao() {
                       Os lotes de Cateter/Fístula/Angiografia/Carta de Rede vivem dentro desta produção no painel de origem — selecione-a para listá-los abaixo.
                     </p>
                   </div>
-                  {(
-                    [
-                      { label: 'Lote de Cateter', valores: cateterProducaoIds, set: setCateterProducaoIds, id: 'producao-cateter' },
-                      { label: 'Lote de Fístula', valores: fistulaProducaoIds, set: setFistulaProducaoIds, id: 'producao-fistula' },
-                      { label: 'Lote de Angiografia', valores: angiografiaProducaoIds, set: setAngiografiaProducaoIds, id: 'producao-angiografia' },
-                    ] as const
-                  ).map(({ label, valores, set, id }) => (
-                    <div key={id}>
-                      <span className="field-label mb-1.5 block">
-                        {label}{' '}
-                        <span className="font-normal normal-case text-cc-muted">
-                          (opcional — marque mais de um se houver quinzenas separadas, ex.: 1Q e 2Q)
-                        </span>
-                      </span>
-                      <div className="space-y-1.5">
-                        {lotesDaProducaoMensal.map((l) => (
-                          <label key={l.id} htmlFor={`${id}-${l.id}`} className="flex cursor-pointer items-center gap-2.5 text-sm">
-                            <input
-                              id={`${id}-${l.id}`}
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-cc-hairline accent-cc-accent"
-                              checked={valores.includes(l.id)}
-                              onChange={(e) =>
-                                set(e.target.checked ? [...valores, l.id] : valores.filter((v) => v !== l.id))
-                              }
-                              disabled={!angiologistaProducaoMensalId || isLotesLoading}
-                            />
-                            {l.nome}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
                   {isLotesError && (
                     <p role="alert" className="alert-error">
                       Falha ao buscar os sub-lotes na origem:{' '}
@@ -751,39 +789,100 @@ export function NovaExecucao() {
                       Nenhum sub-lote encontrado nesta produção na origem.
                     </p>
                   )}
+                  {/* Achado 2026-09-03: classificação automática pelo nome do sub-lote — Cateter/
+                      Fístula/Carta de Rede usam palavra literal, Angiografia usa "PACOTE"
+                      (confirmado pelo dono). Substitui os 3 checkboxes manuais de antes. */}
+                  {angiologistaProducaoMensalId && lotesDaProducaoMensal.length > 0 && (
+                    <div className="space-y-2 rounded border border-cc-border bg-cc-surface p-2.5">
+                      <p className="text-xs font-medium text-cc-ink">
+                        Sub-lotes classificados automaticamente pelo nome
+                      </p>
+                      <p className="text-xs text-cc-ink-2">
+                        <span className="font-medium">{classificacaoAngiologista.cateter.length}</span> Cateter,{' '}
+                        <span className="font-medium">{classificacaoAngiologista.fistula.length}</span> Fístula,{' '}
+                        <span className="font-medium">{classificacaoAngiologista.angiografia.length}</span> Angiografia
+                        (&ldquo;PACOTE&rdquo;) e{' '}
+                        <span className="font-medium">{classificacaoAngiologista.cartaRede.length}</span> Carta de Rede.
+                      </p>
+                      <details className="text-xs text-cc-muted">
+                        <summary className="cursor-pointer select-none">Ver sub-lotes classificados</summary>
+                        <ul className="mt-1 space-y-0.5 pl-4 list-disc max-h-40 overflow-y-auto">
+                          {classificacaoAngiologista.cateter.map((l) => (
+                            <li key={l.id}>{l.nome} — Cateter</li>
+                          ))}
+                          {classificacaoAngiologista.fistula.map((l) => (
+                            <li key={l.id}>{l.nome} — Fístula</li>
+                          ))}
+                          {classificacaoAngiologista.angiografia.map((l) => (
+                            <li key={l.id}>{l.nome} — Angiografia</li>
+                          ))}
+                          {classificacaoAngiologista.cartaRede.map((l) => (
+                            <li key={l.id}>{l.nome} — Carta de Rede (referência)</li>
+                          ))}
+                        </ul>
+                      </details>
+                      {classificacaoAngiologista.naoClassificados.length > 0 && (
+                        <div className="space-y-1.5 rounded border border-cc-danger/30 bg-cc-danger-soft p-2">
+                          <p role="alert" className="text-xs font-medium text-cc-danger">
+                            {classificacaoAngiologista.naoClassificados.length} sub-lote(s) com nome não reconhecido
+                            (nem &ldquo;CATETER&rdquo;, &ldquo;FISTULA&rdquo;, &ldquo;PACOTE&rdquo; nem &ldquo;CARTA DE REDE&rdquo;) —
+                            escolha a classe manualmente para poder processar este médico.
+                          </p>
+                          {classificacaoAngiologista.naoClassificados.map((l) => (
+                            <div key={l.id} className="flex items-center justify-between gap-2 text-xs text-cc-ink">
+                              <span className="truncate">{l.nome}</span>
+                              <select
+                                className="input text-xs py-0.5 h-auto w-40 shrink-0"
+                                value={subLoteAngiologistaOverride[l.id] ?? ''}
+                                onChange={(e) =>
+                                  setSubLoteAngiologistaOverride((prev) => {
+                                    const valor = e.target.value;
+                                    if (
+                                      valor !== 'cateter' &&
+                                      valor !== 'fistula' &&
+                                      valor !== 'angiografia' &&
+                                      valor !== 'cartaRede'
+                                    ) {
+                                      const { [l.id]: _remover, ...resto } = prev;
+                                      return resto;
+                                    }
+                                    return { ...prev, [l.id]: valor };
+                                  })
+                                }
+                                aria-label={`Classe do sub-lote ${l.nome}`}
+                              >
+                                <option value="">Escolher classe…</option>
+                                <option value="cateter">Cateter (1x1)</option>
+                                <option value="fistula">Fístula (1x1)</option>
+                                <option value="angiografia">Angiografia (3x1)</option>
+                                <option value="cartaRede">Carta de Rede (referência)</option>
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label htmlFor="carta-rede-guias-input" className="field-label mb-1.5">
                       Carta de Rede — guias{' '}
                       <span className="font-normal normal-case text-cc-muted">(manual, opcional)</span>
                     </label>
-                    <div className="flex gap-2">
-                      <select
-                        id="producao-carta-rede-select"
-                        className="input"
-                        value={cartaRedeProducaoId}
-                        onChange={(e) => setCartaRedeProducaoId(e.target.value)}
-                        disabled={!angiologistaProducaoMensalId || isLotesLoading}
-                        aria-label="Lote de Carta de Rede (referência)"
-                      >
-                        <option value="">Sem produção de referência</option>
-                        {lotesDaProducaoMensal.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.nome}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        id="carta-rede-guias-input"
-                        type="number"
-                        min={0}
-                        step={1}
-                        className="input w-28"
-                        placeholder="Guias"
-                        value={cartaRedeGuias}
-                        onChange={(e) => setCartaRedeGuias(e.target.value)}
-                        disabled={!medicoId}
-                      />
-                    </div>
+                    <input
+                      id="carta-rede-guias-input"
+                      type="number"
+                      min={0}
+                      step={1}
+                      className="input w-28"
+                      placeholder="Guias"
+                      value={cartaRedeGuias}
+                      onChange={(e) => setCartaRedeGuias(e.target.value)}
+                      disabled={!medicoId}
+                    />
+                    <p className="mt-1.5 text-xs text-cc-muted">
+                      A quantidade não tem regra fixa de contagem (depende do procedimento) — digite o número já
+                      conferido. O sub-lote de referência é o classificado como Carta de Rede acima, quando houver.
+                    </p>
                   </div>
                 </>
               ) : (
@@ -830,47 +929,67 @@ export function NovaExecucao() {
               )}
 
               {medicoId && isPediatraEspecialidade(validMedicos.find((m) => m.id === medicoId)?.especialidade) && (
-                <div>
-                  <label htmlFor="producao-consultas-select" className="field-label mb-1.5">
-                    Produção de consultas <span className="font-normal normal-case text-cc-muted">(opcional)</span>
-                  </label>
-                  <select
-                    id="producao-consultas-select"
-                    className="input"
-                    value={consultaProducaoId}
-                    onChange={(e) => setConsultaProducaoId(e.target.value)}
-                    disabled={Boolean(producaoId) && isLotesLoading}
-                  >
-                    <option value="">Sem componente de consultas</option>
-                    {/* Sub-lotes da produção mensal selecionada (achado 2026-08-21) — a origem pode
-                        dividir "JULHO - 2026" em sub-lotes de guias (1Q/2Q/PARECER/2,5KG) MAIS um
-                        sub-lote de consultas (ex.: "HUMBERTO CONSULTAS DE JUNHO"). Escolher um
-                        aqui muda o cálculo do guia principal também: os DEMAIS sub-lotes desta
-                        produção passam a somar como guia (em vez do pacote completo), automático,
-                        sem precisar marcar mais nada — ver onClick de "Processar médico" abaixo.
-                        Vem ANTES da lista de produções (achado 2026-08-25, feedback do dono): é a
-                        opção mais usada por quem tem sub-lote, não faz sentido rolar até o fim. */}
-                    {lotesDaProducaoMensal.length > 0 && (
-                      <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
-                        {lotesDaProducaoMensal.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.nome}
+                temSubLotesConsultaAutoDetectados ? (
+                  // Achado 2026-09-03: pelo menos 1 sub-lote da produção mensal já tem "CONSULTA"
+                  // no nome — classificação automática, sem exigir escolha manual. Substitui o
+                  // dropdown abaixo (que continua existindo pro caso sem esse padrão de nome).
+                  <div className="space-y-2 rounded border border-cc-border bg-cc-surface p-2.5">
+                    <p className="text-xs font-medium text-cc-ink">
+                      Sub-lote(s) de Consultas detectados automaticamente pelo nome
+                    </p>
+                    <p className="text-xs text-cc-ink-2">
+                      <span className="font-medium">{lotesConsultaAutoDetectados.length}</span> sub-lote(s) somados
+                      como Consultas; o restante da produção mensal vira guia principal automaticamente.
+                    </p>
+                    <ul className="space-y-0.5 pl-4 text-xs text-cc-muted list-disc max-h-32 overflow-y-auto">
+                      {lotesConsultaAutoDetectados.map((l) => (
+                        <li key={l.id}>{l.nome}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div>
+                    <label htmlFor="producao-consultas-select" className="field-label mb-1.5">
+                      Produção de consultas <span className="font-normal normal-case text-cc-muted">(opcional)</span>
+                    </label>
+                    <select
+                      id="producao-consultas-select"
+                      className="input"
+                      value={consultaProducaoId}
+                      onChange={(e) => setConsultaProducaoId(e.target.value)}
+                      disabled={Boolean(producaoId) && isLotesLoading}
+                    >
+                      <option value="">Sem componente de consultas</option>
+                      {/* Sub-lotes da produção mensal selecionada (achado 2026-08-21) — a origem pode
+                          dividir "JULHO - 2026" em sub-lotes de guias (1Q/2Q/PARECER/2,5KG) MAIS um
+                          sub-lote de consultas. Só chega aqui quando NENHUM sub-lote tem "CONSULTA"
+                          no nome (achado 2026-09-03: senão a classificação automática acima assume o
+                          lugar deste seletor) — mantido como escape manual pro nome atípico. Escolher
+                          um aqui muda o cálculo do guia principal também: os DEMAIS sub-lotes desta
+                          produção passam a somar como guia (em vez do pacote completo), automático,
+                          sem precisar marcar mais nada — ver onClick de "Processar médico" abaixo. */}
+                      {lotesDaProducaoMensal.length > 0 && (
+                        <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
+                          {lotesDaProducaoMensal.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.nome}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {producoesDoMedicoSelecionado
+                        .filter((p) => p.id !== producaoId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nome}
                           </option>
                         ))}
-                      </optgroup>
-                    )}
-                    {producoesDoMedicoSelecionado
-                      .filter((p) => p.id !== producaoId)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nome}
-                        </option>
-                      ))}
-                  </select>
-                  <p className="mt-1.5 text-xs text-cc-muted">
-                    Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias. Se a produção selecionada tiver sub-lotes (ex.: &ldquo;CONSULTAS DE JUNHO&rdquo;), escolher um deles aqui faz o restante dos sub-lotes virar guia principal automaticamente.
-                  </p>
-                </div>
+                    </select>
+                    <p className="mt-1.5 text-xs text-cc-muted">
+                      Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias. Se a produção selecionada tiver sub-lotes (ex.: &ldquo;CONSULTAS DE JUNHO&rdquo;), escolher um deles aqui faz o restante dos sub-lotes virar guia principal automaticamente.
+                    </p>
+                  </div>
+                )
               )}
 
               {medicoId && validMedicos.find((m) => m.id === medicoId)?.fazOutrosHospitais && (
@@ -1018,22 +1137,28 @@ export function NovaExecucao() {
 
               <button
                 onClick={() => {
-                  if (!producaoObrigatoriaOk || !imobilizacoesClassificacaoOk) return;
+                  if (!producaoObrigatoriaOk || !imobilizacoesClassificacaoOk || !angiologistaClassificacaoOk) return;
                   const consultaProd = producoesDoMedicoSelecionado.find((p) => p.id === consultaProducaoId);
                   // Achado 2026-08-21: se a escolha de Consultas é um SUB-LOTE (fin-lotes, não a
                   // lista flat de produções), o principal deixa de ser o pacote inteiro da
                   // produção mensal e passa a ser a soma dos OUTROS sub-lotes — automático, sem o
                   // operador precisar marcar mais nada (anti-dupla-contagem: ver migration 0052).
+                  // Achado 2026-09-03: `lotesConsultaAutoDetectados` (nome contém "CONSULTA") tem
+                  // prioridade sobre a escolha manual — os dois nunca vêm preenchidos juntos na
+                  // prática (a UI só mostra o dropdown manual quando NADA foi auto-detectado).
                   const consultaLote = lotesDaProducaoMensal.find((l) => l.id === consultaProducaoId);
+                  const usaConsultaAuto = temSubLotesConsultaAutoDetectados;
                   // Achado 2026-09-03: padrão VH — quando há sub-lote(s) de Cirurgia detectados, o
                   // guia principal é a soma DELES (já exclui Consultas/Imobilizações por
-                  // construção de `classificacaoImobilizacoes`), não "todo o resto" como no caso
-                  // isolado de Consultas acima.
+                  // construção de `classificacaoImobilizacoes`). Senão, quando há Consultas (manual
+                  // ou automático), o guia principal é "todo o resto" da produção mensal.
                   const guiasLotesRestantes = temSubLotesCirurgiaImobilizacoes
                     ? classificacaoImobilizacoes.cirurgia
-                    : consultaLote
-                      ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLote.id)
-                      : [];
+                    : usaConsultaAuto
+                      ? lotesDaProducaoMensal.filter((l) => !lotesConsultaAutoDetectados.some((c) => c.id === l.id))
+                      : consultaLote
+                        ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLote.id)
+                        : [];
                   const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === outrosHospitaisProducaoId,
                   );
@@ -1051,13 +1176,13 @@ export function NovaExecucao() {
                     : imobilizacoesLoteManual
                       ? [imobilizacoesLoteManual]
                       : [];
-                  // Sub-lotes vêm de fin-lotes (lotesDaProducaoMensal), não da lista flat de
-                  // produções do médico — namespace de ids diferente (GATE 2026-08-13). Cada
-                  // categoria pode ter mais de um lote marcado (1Q + 2Q, achado 2026-08-13).
-                  const cateterProds = lotesDaProducaoMensal.filter((l) => cateterProducaoIds.includes(l.id));
-                  const fistulaProds = lotesDaProducaoMensal.filter((l) => fistulaProducaoIds.includes(l.id));
-                  const angiografiaProds = lotesDaProducaoMensal.filter((l) => angiografiaProducaoIds.includes(l.id));
-                  const cartaRedeProd = lotesDaProducaoMensal.find((l) => l.id === cartaRedeProducaoId);
+                  // Achado 2026-09-03: Cateter/Fístula/Angiografia/Carta de Rede vêm da
+                  // classificação automática por nome (`classificacaoAngiologista`), não mais de
+                  // checkboxes marcados um a um.
+                  const cateterProds = classificacaoAngiologista.cateter;
+                  const fistulaProds = classificacaoAngiologista.fistula;
+                  const angiografiaProds = classificacaoAngiologista.angiografia;
+                  const cartaRedeProd = classificacaoAngiologista.cartaRede[0];
                   disparar.mutate({
                     competencia,
                     selecoes: [
@@ -1068,22 +1193,33 @@ export function NovaExecucao() {
                         // médico no padrão VH de Imobilizações (achado 2026-09-03), também vai
                         // null — o principal vem de producaoGuiasLoteExternaIds abaixo.
                         producaoExternaId:
-                          medicoSelecionadoAngiologista || consultaLote || temSubLotesCirurgiaImobilizacoes
+                          medicoSelecionadoAngiologista ||
+                          consultaLote ||
+                          usaConsultaAuto ||
+                          temSubLotesCirurgiaImobilizacoes
                             ? null
                             : (producaoSelecionada?.id ?? null),
                         producaoNome:
-                          medicoSelecionadoAngiologista || consultaLote || temSubLotesCirurgiaImobilizacoes
+                          medicoSelecionadoAngiologista ||
+                          consultaLote ||
+                          usaConsultaAuto ||
+                          temSubLotesCirurgiaImobilizacoes
                             ? null
                             : (producaoSelecionada?.nome ?? null),
-                        ...(consultaLote
+                        ...(usaConsultaAuto
                           ? {
-                              producaoConsultasLoteExternaIds: [consultaLote.id],
-                              producaoConsultasLoteNomes: [consultaLote.nome],
+                              producaoConsultasLoteExternaIds: lotesConsultaAutoDetectados.map((l) => l.id),
+                              producaoConsultasLoteNomes: lotesConsultaAutoDetectados.map((l) => l.nome),
                             }
-                          : consultaProd
-                            ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
-                            : {}),
-                        ...(consultaLote || temSubLotesCirurgiaImobilizacoes
+                          : consultaLote
+                            ? {
+                                producaoConsultasLoteExternaIds: [consultaLote.id],
+                                producaoConsultasLoteNomes: [consultaLote.nome],
+                              }
+                            : consultaProd
+                              ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
+                              : {}),
+                        ...(consultaLote || usaConsultaAuto || temSubLotesCirurgiaImobilizacoes
                           ? {
                               producaoGuiasLoteExternaIds: guiasLotesRestantes.map((l) => l.id),
                               producaoGuiasLoteNomes: guiasLotesRestantes.map((l) => l.nome),
