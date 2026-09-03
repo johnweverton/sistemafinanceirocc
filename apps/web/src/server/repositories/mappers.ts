@@ -707,10 +707,10 @@ export interface ExecucaoSelecaoRow {
   producao_outros_hospitais_nome?: string | null;
   producao_imobilizacoes_externa_id?: string | null;
   producao_imobilizacoes_nome?: string | null;
-  /** Sub-lote de Imobilizações (achado 2026-08-25, migration 0053) — mutuamente exclusivo com
-   * producao_imobilizacoes_externa_id acima (produção flat). */
-  producao_imobilizacoes_lote_externa_id?: string | null;
-  producao_imobilizacoes_lote_nome?: string | null;
+  /** Sub-lotes de Imobilizações (achado 2026-08-25, migration 0053; virou ARRAY na migration
+   * 0059) — mutuamente exclusivo com producao_imobilizacoes_externa_id acima (produção flat). */
+  producao_imobilizacoes_lote_externa_ids?: string[] | null;
+  producao_imobilizacoes_lote_nomes?: string[] | null;
   /** Lotes de Cateter/Fístula/Angiografia do Angiologista (GATE 2026-08-07). Arrays desde a
    * migration 0046 (achado 2026-08-13): a origem divide cada categoria em quinzenas (1Q/2Q). */
   producao_cateter_externa_ids?: string[] | null;
@@ -725,6 +725,12 @@ export interface ExecucaoSelecaoRow {
   carta_rede_guias?: number | null;
   carta_rede_informado_por?: string | null;
   carta_rede_informado_em?: string | null;
+  /** Contagem de guias conferida MANUALMENTE e importada de planilha (migration 0058) —
+   * substitui a contagem automática do lote principal só deste médico nesta competência. */
+  guias_manuais_total?: number | null;
+  guias_manuais_motivo?: string | null;
+  guias_manuais_informado_por?: string | null;
+  guias_manuais_informado_em?: string | null;
 }
 
 export function toExecucaoSelecaoRow(selecao: {
@@ -742,8 +748,8 @@ export function toExecucaoSelecaoRow(selecao: {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
-  producaoImobilizacoesLoteExternaId?: string | null;
-  producaoImobilizacoesLoteNome?: string | null;
+  producaoImobilizacoesLoteExternaIds?: string[] | null;
+  producaoImobilizacoesLoteNomes?: string[] | null;
   producaoCateterExternaIds?: string[] | null;
   producaoCateterNomes?: string[] | null;
   producaoFistulaExternaIds?: string[] | null;
@@ -755,6 +761,10 @@ export function toExecucaoSelecaoRow(selecao: {
   cartaRedeGuias?: number | null;
   cartaRedeInformadoPor?: string | null;
   cartaRedeInformadoEm?: string | null;
+  guiasManuaisTotal?: number | null;
+  guiasManuaisMotivo?: string | null;
+  guiasManuaisInformadoPor?: string | null;
+  guiasManuaisInformadoEm?: string | null;
 }): ExecucaoSelecaoRow {
   return {
     execucao_id: selecao.execucaoId,
@@ -771,8 +781,8 @@ export function toExecucaoSelecaoRow(selecao: {
     producao_outros_hospitais_nome: selecao.producaoOutrosHospitaisNome ?? null,
     producao_imobilizacoes_externa_id: selecao.producaoImobilizacoesExternaId ?? null,
     producao_imobilizacoes_nome: selecao.producaoImobilizacoesNome ?? null,
-    producao_imobilizacoes_lote_externa_id: selecao.producaoImobilizacoesLoteExternaId ?? null,
-    producao_imobilizacoes_lote_nome: selecao.producaoImobilizacoesLoteNome ?? null,
+    producao_imobilizacoes_lote_externa_ids: selecao.producaoImobilizacoesLoteExternaIds ?? null,
+    producao_imobilizacoes_lote_nomes: selecao.producaoImobilizacoesLoteNomes ?? null,
     producao_cateter_externa_ids: selecao.producaoCateterExternaIds ?? null,
     producao_cateter_nomes: selecao.producaoCateterNomes ?? null,
     producao_fistula_externa_ids: selecao.producaoFistulaExternaIds ?? null,
@@ -784,6 +794,10 @@ export function toExecucaoSelecaoRow(selecao: {
     carta_rede_guias: selecao.cartaRedeGuias ?? null,
     carta_rede_informado_por: selecao.cartaRedeInformadoPor ?? null,
     carta_rede_informado_em: selecao.cartaRedeInformadoEm ?? null,
+    guias_manuais_total: selecao.guiasManuaisTotal ?? null,
+    guias_manuais_motivo: selecao.guiasManuaisMotivo ?? null,
+    guias_manuais_informado_por: selecao.guiasManuaisInformadoPor ?? null,
+    guias_manuais_informado_em: selecao.guiasManuaisInformadoEm ?? null,
   };
 }
 
@@ -803,8 +817,8 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     producaoOutrosHospitaisNome: row.producao_outros_hospitais_nome ?? null,
     producaoImobilizacoesExternaId: row.producao_imobilizacoes_externa_id ?? null,
     producaoImobilizacoesNome: row.producao_imobilizacoes_nome ?? null,
-    producaoImobilizacoesLoteExternaId: row.producao_imobilizacoes_lote_externa_id ?? null,
-    producaoImobilizacoesLoteNome: row.producao_imobilizacoes_lote_nome ?? null,
+    producaoImobilizacoesLoteExternaIds: row.producao_imobilizacoes_lote_externa_ids ?? null,
+    producaoImobilizacoesLoteNomes: row.producao_imobilizacoes_lote_nomes ?? null,
     producaoCateterExternaIds: row.producao_cateter_externa_ids ?? null,
     producaoCateterNomes: row.producao_cateter_nomes ?? null,
     producaoFistulaExternaIds: row.producao_fistula_externa_ids ?? null,
@@ -816,6 +830,10 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     cartaRedeGuias: row.carta_rede_guias ?? null,
     cartaRedeInformadoPor: row.carta_rede_informado_por ?? null,
     cartaRedeInformadoEm: row.carta_rede_informado_em ?? null,
+    guiasManuaisTotal: row.guias_manuais_total ?? null,
+    guiasManuaisMotivo: row.guias_manuais_motivo ?? null,
+    guiasManuaisInformadoPor: row.guias_manuais_informado_por ?? null,
+    guiasManuaisInformadoEm: row.guias_manuais_informado_em ?? null,
   };
 }
 

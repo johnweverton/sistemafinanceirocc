@@ -105,6 +105,29 @@ export interface EntradaProcessamentoMedico {
    */
   guiasCartaRede?: number | null;
   /**
+   * Total de guias do lote PRINCIPAL já conferido MANUALMENTE pelo dono e importado de planilha
+   * (migration 0058, aprovado 2026-09-03) — função ALTERNATIVA, usada pontualmente quando a
+   * contagem automática não bateu com a conferência à mão. Vale para QUALQUER especialidade.
+   *
+   * `null`/`undefined` = comportamento normal (o Engine conta a produção com
+   * `contarGuiasProducao`/`consolidarProducao`). Um número (inclusive 0) = o Engine PULA a
+   * contagem automática do lote principal e usa este valor como `guias` e `guiasConsolidado`;
+   * `cirurgias` vai a 0 (não dá pra saber quantas eram cirurgia a partir de um total agregado).
+   *
+   * O que NÃO muda: `itensConsultas` (consultas ambulatoriais do pediatra) continuam sendo
+   * contadas normalmente — são outra fonte de dado, a planilha só substitui a contagem de GUIAS;
+   * saldo acumulado, limiar mínimo, tabela de preço/faixas e lotes secundários seguem rodando
+   * sobre o número resultante, seja ele automático ou manual.
+   */
+  guiasManuaisTotal?: number | null;
+  /**
+   * Motivo/observação que veio na mesma linha da planilha de `guiasManuaisTotal`. Entra no
+   * ALERTA informativo do relatório interno (nunca no boleto — ver `ResultadoMedico.alertas`).
+   * O Engine monta o texto do alerta para que ele seja testável isoladamente; quem chama só
+   * repassa o que o operador importou.
+   */
+  guiasManuaisMotivo?: string | null;
+  /**
    * Competência da execução (AAAA-MM) — Story 10.6. Usada SÓ para filtrar `itensOutrosHospitais`
    * pelo mês real do item (`item.data`): na origem, "Outros Hospitais" não abre uma produção por
    * mês como o lote principal, um único lote acumula vários meses. Opcional (comportamento
@@ -139,6 +162,17 @@ export interface ResultadoMedico {
   subtotais: Subtotal[];
   totalValor: number;
   status: ExecucaoResultado['status'];
+  /**
+   * Avisos de conferência do resultado. Renderizados SÓ na tela de relatório interno
+   * (`RelatorioGrupos`) — nunca no boleto nem em qualquer coisa que o médico/gateway veja. Por
+   * isso é também o canal de AUDITORIA de números informados manualmente (`guiasManuaisTotal`,
+   * migration 0058): a marca de "contagem manual" é uma linha aqui, e não um campo novo do
+   * resultado, justamente para não vazar para fora do relatório.
+   *
+   * ATENÇÃO: `alertas` não vazio NÃO implica `status === 'alerta'`. A marca de contagem manual é
+   * a única exceção (GATE do dono 2026-09-03): ela informa/audita, mas não é pendência de
+   * conferência, então não bloqueia a emissão. Qualquer outro alerta continua derrubando o status.
+   */
   alertas: string[];
   /**
    * Estado FINAL do saldo retido após este processamento — presente sempre que havia

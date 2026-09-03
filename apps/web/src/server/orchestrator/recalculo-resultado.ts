@@ -121,13 +121,12 @@ export async function recalcularResultado(
   const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
     ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
     : undefined;
-  // Sub-lote de Imobilizações (achado 2026-08-25) tem prioridade sobre a produção flat — mesmo
-  // padrão do orquestrador principal.
-  const itensImobilizacoes = selecao.producaoImobilizacoesLoteExternaId
-    ? await deps.buscarItensPorLote(selecao.producaoImobilizacoesLoteExternaId)
-    : selecao.producaoImobilizacoesExternaId
-      ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
-      : undefined;
+  // Sub-lote(s) de Imobilizações (achado 2026-08-25, migration 0059: virou ARRAY) têm prioridade
+  // sobre a produção flat — mesmo padrão do orquestrador principal.
+  const itensImobilizacoesPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoImobilizacoesLoteExternaIds);
+  const itensImobilizacoes =
+    itensImobilizacoesPorLote ??
+    (selecao.producaoImobilizacoesExternaId ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId) : undefined);
   // Sub-lotes vêm de fin-lotes, não fin-producoes — busca via loteId (GATE 2026-08-13). ARRAY
   // (migration 0046): soma todas as quinzenas (1Q/2Q) selecionadas de cada categoria.
   const itensCateter = await buscarItensDeVariosLotes(deps, selecao.producaoCateterExternaIds);
@@ -135,6 +134,14 @@ export async function recalcularResultado(
   const itensAngiografia = await buscarItensDeVariosLotes(deps, selecao.producaoAngiografiaExternaIds);
   // GATE 2026-08-12: Carta de Rede não busca itens — re-lê o número já gravado na seleção.
   const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;
+  // Migration 0058: mesma coisa para a contagem manual por planilha — o número (e o motivo) já
+  // estão na seleção gravada, é só relê-los. NÃO ESQUECER de manter em paridade com
+  // `processarUmMedico` (execucao-orchestrator.ts): o achado 2026-09-02 (A1) foi exatamente um
+  // campo novo que o orquestrador principal passava e o recálculo não — o resultado recalculava
+  // com o dado faltando e zerava. Aqui a falha seria pior ainda: o recálculo voltaria a usar a
+  // contagem AUTOMÁTICA (a que o dono já sabe estar errada pra este médico) por baixo do pano.
+  const guiasManuaisTotal = selecao.guiasManuaisTotal ?? undefined;
+  const guiasManuaisMotivo = selecao.guiasManuaisMotivo ?? undefined;
 
   const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, execucao.competencia);
   const valorConsultaPediatria = await deps.lerValorConsultaPediatria();
@@ -155,6 +162,8 @@ export async function recalcularResultado(
       itensFistula,
       itensAngiografia,
       guiasCartaRede,
+      guiasManuaisTotal,
+      guiasManuaisMotivo,
       competencia: execucao.competencia,
     },
     undefined,

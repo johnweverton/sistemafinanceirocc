@@ -70,6 +70,9 @@ export interface FakeState {
     producaoFistulaNomes?: string[] | null;
     producaoAngiografiaExternaIds?: string[] | null;
     producaoAngiografiaNomes?: string[] | null;
+    /** Contagem de guias conferida MANUALMENTE por planilha (migration 0058). */
+    guiasManuaisTotal?: number | null;
+    guiasManuaisMotivo?: string | null;
   }[];
   itensPorProducao: Record<string, ItemProducao[]>;
   /** Itens por LOTE (Cateter/Fístula/Angiografia do Angiologista) — namespace separado de

@@ -7,7 +7,8 @@ import type {
   Medico,
   LoteExterna,
 } from '@cobranca/shared';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import type { ApiErrorBody } from '@/lib/api-error';
 
 export interface ExecucaoSelecaoPayload {
   medicoId: string;
@@ -30,11 +31,12 @@ export interface ExecucaoSelecaoPayload {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
-  /** Sub-lote de Imobilizações (achado 2026-08-25) — mutuamente exclusivo com
-   * `producaoImobilizacoesExternaId`. Mesmo mecanismo do sub-lote de consultas, mas sem "guias
-   * restantes": Imobilizações já é classe separada da produção principal. */
-  producaoImobilizacoesLoteExternaId?: string | null;
-  producaoImobilizacoesLoteNome?: string | null;
+  /** Sub-lotes de Imobilizações (achado 2026-08-25, virou ARRAY na migration 0059) — mutuamente
+   * exclusivo com `producaoImobilizacoesExternaId`. Médico VH com Imobilizações pode ter a
+   * produção mensal dividida em vários sub-lotes por dia/período, classificados automaticamente
+   * pelo nome ("CIRURGIA*" → producaoGuiasLoteExternaIds, "IMOBILIZ*" → aqui) — todos somados. */
+  producaoImobilizacoesLoteExternaIds?: string[] | null;
+  producaoImobilizacoesLoteNomes?: string[] | null;
   /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
    * Arrays desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
    * quinzenas (1Q/2Q) como sub-lotes separados — todos os selecionados são somados. */
@@ -48,6 +50,28 @@ export interface ExecucaoSelecaoPayload {
   producaoCartaRedeExternaId?: string | null;
   producaoCartaRedeNome?: string | null;
   cartaRedeGuias?: number | null;
+  /** Total de guias conferido MANUALMENTE pelo dono, vindo da planilha (migration 0058) — quando
+   *  presente, o motor pula a contagem automática deste médico. `motivo` é obrigatório junto. */
+  guiasManuaisTotal?: number | null;
+  guiasManuaisMotivo?: string | null;
+}
+
+/** Uma linha da planilha de guias manuais já casada com um médico do cadastro (por CPF). */
+export interface GuiasManuaisLinha {
+  linha: number;
+  medicoId: string;
+  medicoNome: string;
+  cpf: string;
+  nomePlanilha: string;
+  competencia: string;
+  guiasManuaisTotal: number;
+  guiasManuaisMotivo: string;
+}
+
+/** Preview da planilha: o que casou e o que deu erro por linha — nada é gravado até o disparo. */
+export interface GuiasManuaisPreview {
+  linhas: GuiasManuaisLinha[];
+  erros: { linha: number; chave: string; erro: string }[];
 }
 
 export interface ApoioData {
@@ -90,6 +114,31 @@ export const execucoesService = {
         ...(ehAdicional ? { ehAdicional } : {}),
       }),
     }),
+  /**
+   * Lê a planilha de guias conferidas MANUALMENTE (migration 0058) e devolve o preview resolvido
+   * por CPF. Não grava nada nem dispara execução — o número só entra no cálculo quando o operador
+   * confirma o disparo. FormData (não JSON), mesmo padrão de `medicosService.importar`.
+   */
+  previewGuiasManuais: async (arquivo: File, competencia: string): Promise<GuiasManuaisPreview> => {
+    const form = new FormData();
+    form.append('arquivo', arquivo);
+    form.append('competencia', competencia);
+    const res = await fetch('/api/execucoes/guias-manuais', { method: 'POST', body: form });
+    if (!res.ok) {
+      let body: ApiErrorBody | null = null;
+      try {
+        body = (await res.json()) as ApiErrorBody;
+      } catch {
+        /* corpo não-JSON */
+      }
+      throw new ApiClientError(
+        res.status,
+        body?.error?.message ?? `Erro ${res.status}`,
+        body?.error?.code ?? 'ERROR',
+      );
+    }
+    return res.json() as Promise<GuiasManuaisPreview>;
+  },
   listar: () => apiFetch<Execucao[]>('/execucoes'),
   detalhe: (id: string) => apiFetch<Execucao>(`/execucoes/${id}`),
   /**

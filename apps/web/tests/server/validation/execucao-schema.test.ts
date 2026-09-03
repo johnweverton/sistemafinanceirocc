@@ -224,3 +224,88 @@ describe('dispararExecucaoSchema — adicional semestral (Story 11.4)', () => {
     expect(r.success).toBe(false);
   });
 });
+
+// Contagem de guias conferida MANUALMENTE por planilha (migration 0058, aprovado 2026-09-03).
+describe('dispararExecucaoSchema — contagem manual de guias (migration 0058)', () => {
+  const selecao = {
+    medicoId: '11111111-1111-1111-1111-111111111111',
+    producaoExternaId: 'p-guias',
+    producaoNome: 'Junho 2026',
+  };
+
+  it('total + motivo preenchidos passa', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: 42, guiasManuaisMotivo: 'Conferencia manual do dono' }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('total SEM motivo → rejeita (o motivo é o texto do alerta de auditoria)', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: 42 }],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => i.message.includes('motivo'))).toBe(true);
+    }
+  });
+
+  it('total com motivo null explícito → rejeita', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: 42, guiasManuaisMotivo: null }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('total com motivo só de espaços → rejeita (trim antes do min(1))', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: 42, guiasManuaisMotivo: '   ' }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('total 0 também exige motivo (0 é um número informado, não "ausente")', () => {
+    const semMotivo = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: 0 }],
+    });
+    expect(semMotivo.success).toBe(false);
+
+    const comMotivo = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: 0, guiasManuaisMotivo: 'Sem producao no mes' }],
+    });
+    expect(comMotivo.success).toBe(true);
+  });
+
+  it('total negativo → rejeita', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisTotal: -1, guiasManuaisMotivo: 'x' }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('motivo sozinho (sem total) não quebra — nada de contagem manual naquela seleção', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisMotivo: 'anotacao solta' }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('execução MISTA: uma seleção com contagem manual e outra sem, no mesmo payload', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [
+        { ...selecao, guiasManuaisTotal: 42, guiasManuaisMotivo: 'Conferencia manual' },
+        { ...selecao, medicoId: '33333333-3333-3333-3333-333333333333' },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+});

@@ -2,7 +2,13 @@
 import { useState, useMemo, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { ApiClientError } from '@/lib/api-client';
-import { execucoesService, execucaoQueryKeys, type ExecucaoSelecaoPayload } from '@/services/execucoes';
+import {
+  execucoesService,
+  execucaoQueryKeys,
+  type ExecucaoSelecaoPayload,
+  type GuiasManuaisLinha,
+  type GuiasManuaisPreview,
+} from '@/services/execucoes';
 import { empresasService, empresaQueryKeys } from '@/services/empresas';
 import { ProgressoExecucao } from './ProgressoExecucao';
 import { RelatorioGrupos } from './RelatorioGrupos';
@@ -27,6 +33,21 @@ function normalizeName(name: string) {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .trim();
+}
+
+/** Classe detectada pelo NOME do sub-lote (achado 2026-09-03, feedback do dono): médico VH que
+ *  faz Imobilizações tem a produção mensal inteira dividida em sub-lotes por dia/período, cada
+ *  um já nomeado com a classe ("CIRURGIAS - 05/08", "IMOBILIZAÇÕES 11/08 AO 12/08", ...). `null`
+ *  quando o nome não bate com nenhum padrão (ou bate com os dois) — nesse caso o sub-lote fica
+ *  sem classe automática e precisa de decisão manual (nunca chuta valor). */
+type ClasseSubLoteImobilizacoes = 'cirurgia' | 'imobilizacao';
+function classificarSubLoteImobilizacoes(nome: string): ClasseSubLoteImobilizacoes | null {
+  const norm = normalizeName(nome);
+  const cirurgia = /cirurgi/.test(norm);
+  const imobilizacao = /imobiliz/.test(norm);
+  if (cirurgia && !imobilizacao) return 'cirurgia';
+  if (imobilizacao && !cirurgia) return 'imobilizacao';
+  return null;
 }
 
 // Nomes de mês por extenso (sem acento, casa com normalizeName) — usado tanto pelo auto-match do
@@ -105,12 +126,34 @@ export function NovaExecucao() {
   const [outrosHospitaisSelections, setOutrosHospitaisSelections] = useState<Record<string, string>>({});
   const [imobilizacoesSelections, setImobilizacoesSelections] = useState<Record<string, string>>({});
 
+  // Planilha de guias CONFERIDAS MANUALMENTE (migration 0058) — modo "Por competência". Dois
+  // estados de propósito: `guiasManuaisPreview` é o que a planilha diz (ainda NÃO afeta o
+  // disparo), `guiasManuaisAplicadas` é o que o operador confirmou depois de conferir. Enquanto
+  // ele não clica em aplicar, nada muda no valor cobrado.
+  // Os dois guardam a competência em que foram lidos: trocar a competência invalida a planilha
+  // (as linhas foram validadas contra AQUELE mês) — em vez de um efeito que limpa o estado,
+  // comparamos na hora de usar, que é impossível de esquecer.
+  const [guiasManuaisPreview, setGuiasManuaisPreview] = useState<
+    { competencia: string; arquivoNome: string; preview: GuiasManuaisPreview } | null
+  >(null);
+  const [guiasManuaisAplicadas, setGuiasManuaisAplicadas] = useState<
+    { competencia: string; arquivoNome: string; linhas: GuiasManuaisLinha[] } | null
+  >(null);
+  const [guiasManuaisErro, setGuiasManuaisErro] = useState<string | null>(null);
+  const guiasManuaisInputRef = useRef<HTMLInputElement>(null);
+
   // Seleção do modo "Por médico"
   const [medicoId, setMedicoId] = useState('');
   const [producaoId, setProducaoId] = useState('');
   const [consultaProducaoId, setConsultaProducaoId] = useState('');
   const [outrosHospitaisProducaoId, setOutrosHospitaisProducaoId] = useState('');
   const [imobilizacoesProducaoId, setImobilizacoesProducaoId] = useState('');
+  // Correção manual de classificação (achado 2026-09-03) — só usada para sub-lotes cujo NOME não
+  // bateu com nenhum padrão automático (nem "CIRURGIA*" nem "IMOBILIZ*"). Chave = id do sub-lote
+  // (fin-lotes), valor = classe escolhida à mão. Vazio no caso comum (tudo classificado sozinho).
+  const [subLoteImobilizacoesOverride, setSubLoteImobilizacoesOverride] = useState<
+    Record<string, ClasseSubLoteImobilizacoes>
+  >({});
   // Produção MENSAL do médico Angiologista (ex.: "JULHO - 2026") — os sub-lotes de Cateter/
   // Fístula/Angiografia/Carta de Rede vivem DENTRO dela no painel de origem, mas fin-producoes
   // não os expõe: precisa de uma busca separada em fin-lotes (devolutiva do desenvolvedor, GATE
@@ -163,6 +206,35 @@ export function NovaExecucao() {
     retry: false,
   });
   const lotesDaProducaoMensal = lotesData?.lotes ?? [];
+
+  // Auto-classificação de sub-lotes de Imobilizações por NOME (achado 2026-09-03) — só entra em
+  // jogo quando existe pelo menos 1 sub-lote nomeado "CIRURGIA*": esse é o sinal de que a origem
+  // divide a produção mensal INTEIRA deste médico em sub-lotes (padrão VH), então a "Produção"
+  // completa não pode ser usada como guia principal (contaria os itens de Imobilizações 2x) — o
+  // guia principal passa a ser a soma dos sub-lotes de Cirurgia, mesmo mecanismo de
+  // producaoGuiasLoteExternaIds já usado pro sub-lote de Consultas do Pediatra. Quando NÃO há
+  // sub-lote de Cirurgia (padrão antigo: 1 produção flat + no máximo 1 sub-lote de Imobilizações
+  // à parte), nada muda — mantém o fluxo manual de sempre (ver bloco "Lote de Imobilizações"
+  // abaixo). Exclui o sub-lote já escolhido como Consultas (pediatra) do universo classificado,
+  // pro raro caso de um médico ser Pediatra E fazImobilizacoes ao mesmo tempo.
+  const lotesElegiveisImobilizacoes = useMemo(
+    () => lotesDaProducaoMensal.filter((l) => l.id !== consultaProducaoId),
+    [lotesDaProducaoMensal, consultaProducaoId],
+  );
+  const classificacaoImobilizacoes = useMemo(() => {
+    const cirurgia: typeof lotesElegiveisImobilizacoes = [];
+    const imobilizacao: typeof lotesElegiveisImobilizacoes = [];
+    const naoClassificados: typeof lotesElegiveisImobilizacoes = [];
+    for (const l of lotesElegiveisImobilizacoes) {
+      const classe = subLoteImobilizacoesOverride[l.id] ?? classificarSubLoteImobilizacoes(l.nome);
+      if (classe === 'cirurgia') cirurgia.push(l);
+      else if (classe === 'imobilizacao') imobilizacao.push(l);
+      else naoClassificados.push(l);
+    }
+    return { cirurgia, imobilizacao, naoClassificados };
+  }, [lotesElegiveisImobilizacoes, subLoteImobilizacoesOverride]);
+  const temSubLotesCirurgiaImobilizacoes =
+    Boolean(medicoSelecionado?.fazImobilizacoes) && classificacaoImobilizacoes.cirurgia.length > 0;
 
   const { data: empresas, isLoading: isEmpresasLoading } = useQuery({
     queryKey: empresaQueryKeys.empresas(),
@@ -224,10 +296,20 @@ export function NovaExecucao() {
 
   // Derived selections (modo "Por competência")
   const selecoesInfo = useMemo(() => {
-    const matched: Array<{ medico: any; producao: any }> = [];
+    const matched: Array<{ medico: any; producao: any; guiasManuais?: GuiasManuaisLinha }> = [];
     const unmatched: Array<{ medico: any; producoesDisponiveis: any[] }> = [];
     const jaEmitidos: any[] = [];
     const finalPayload: ExecucaoSelecaoPayload[] = [];
+
+    // Guias conferidas manualmente (migration 0058), só as APLICADAS e só se a competência ainda
+    // for a mesma em que a planilha foi lida. Médico fora deste mapa segue 100% no fluxo
+    // automático — é isso que viabiliza a execução mista na mesma competência.
+    const manuaisPorMedico = new Map<string, GuiasManuaisLinha>(
+      guiasManuaisAplicadas && guiasManuaisAplicadas.competencia === competencia
+        ? guiasManuaisAplicadas.linhas.map((l) => [l.medicoId, l])
+        : [],
+    );
+    const manuaisUsados = new Set<string>();
 
     const compValida = /^\d{4}-\d{2}$/.test(competencia);
     const split = compValida ? competencia.split('-') : ['', ''];
@@ -265,7 +347,9 @@ export function NovaExecucao() {
       }
 
       if (match) {
-        matched.push({ medico: med, producao: match });
+        const guiasManuais = manuaisPorMedico.get(med.id);
+        if (guiasManuais) manuaisUsados.add(med.id);
+        matched.push({ medico: med, producao: match, guiasManuais });
         // Produção de consultas é sempre escolha manual do operador (nunca auto-match) —
         // só entra no payload se o pediatra tiver uma selecionada.
         const consultaProdId = consultaSelections[med.id];
@@ -301,13 +385,27 @@ export function NovaExecucao() {
                 producaoImobilizacoesNome: imobilizacoesProd.nome,
               }
             : {}),
+          // Migration 0058: substitui a contagem automática SÓ deste médico. Vai junto com a
+          // produção normal — o motor ignora a contagem dela para as guias, mas o resto do
+          // pipeline (consultas de pediatria, lotes secundários) continua igual.
+          ...(guiasManuais
+            ? {
+                guiasManuaisTotal: guiasManuais.guiasManuaisTotal,
+                guiasManuaisMotivo: guiasManuais.guiasManuaisMotivo,
+              }
+            : {}),
         });
       } else {
         unmatched.push({ medico: med, producoesDisponiveis: producoesDoMedico });
       }
     }
 
-    return { matched, unmatched, jaEmitidos, finalPayload };
+    // Linhas da planilha que NÃO entraram em nenhuma seleção (médico sem produção pareada, já
+    // com boleto emitido, ou fora do filtro de tipo). Silenciar isso seria o pior caso: o
+    // operador acharia que a conferência manual dele foi usada quando ela nem foi enviada.
+    const manuaisForaDaSelecao = [...manuaisPorMedico.values()].filter((l) => !manuaisUsados.has(l.medicoId));
+
+    return { matched, unmatched, jaEmitidos, finalPayload, manuaisForaDaSelecao, totalManuais: manuaisUsados.size };
   }, [
     medicosParaCompetencia,
     producoes,
@@ -315,9 +413,33 @@ export function NovaExecucao() {
     consultaSelections,
     outrosHospitaisSelections,
     imobilizacoesSelections,
+    guiasManuaisAplicadas,
     competencia,
     medicosComBoletoAtivo,
   ]);
+
+  // Upload + leitura da planilha de guias manuais (migration 0058). Só PREVIEW: nada é gravado e
+  // nada muda no disparo até o operador clicar em "Aplicar" abaixo.
+  const lerGuiasManuais = useMutation({
+    mutationFn: (arquivo: File) => execucoesService.previewGuiasManuais(arquivo, competencia),
+    onSuccess: (preview, arquivo) => {
+      setGuiasManuaisPreview({ competencia, arquivoNome: arquivo.name, preview });
+      setGuiasManuaisErro(null);
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiClientError ? e.message : 'Erro ao ler a planilha';
+      setGuiasManuaisPreview(null);
+      setGuiasManuaisErro(msg);
+      toast(msg, 'error');
+    },
+  });
+
+  function limparGuiasManuais() {
+    setGuiasManuaisPreview(null);
+    setGuiasManuaisAplicadas(null);
+    setGuiasManuaisErro(null);
+    if (guiasManuaisInputRef.current) guiasManuaisInputRef.current.value = '';
+  }
 
   const disparar = useMutation({
     mutationFn: (vars: { competencia: string; selecoes: ExecucaoSelecaoPayload[]; empresaId?: string }) =>
@@ -359,8 +481,17 @@ export function NovaExecucao() {
   const producaoObrigatoriaOk = medicoSelecionadoAngiologista
     ? Boolean(cateterProducaoIds.length || fistulaProducaoIds.length || angiografiaProducaoIds.length || cartaRedeGuias !== '')
     : Boolean(producaoSelecionada);
+  // Achado 2026-09-03: com o padrão VH (sub-lotes de Cirurgia detectados), todo sub-lote precisa
+  // estar classificado (automático ou manual) antes de disparar — nunca chuta em qual tabela de
+  // preço um sub-lote não reconhecido entra.
+  const imobilizacoesClassificacaoOk =
+    !temSubLotesCirurgiaImobilizacoes || classificacaoImobilizacoes.naoClassificados.length === 0;
   const canDispararMedico =
-    Boolean(medicoId && competenciaValida) && producaoObrigatoriaOk && !medicoJaTemBoleto && !disparar.isPending;
+    Boolean(medicoId && competenciaValida) &&
+    producaoObrigatoriaOk &&
+    imobilizacoesClassificacaoOk &&
+    !medicoJaTemBoleto &&
+    !disparar.isPending;
 
   const medicosDaEmpresa = validMedicos.filter((m) => m.empresaGrupoId === empresaId);
   const empresaSelecoesPayload: ExecucaoSelecaoPayload[] = medicosDaEmpresa
@@ -515,6 +646,7 @@ export function NovaExecucao() {
                     setConsultaProducaoId('');
                     setOutrosHospitaisProducaoId('');
                     setImobilizacoesProducaoId('');
+                    setSubLoteImobilizacoesOverride({});
                     setAngiologistaProducaoMensalId('');
                     setCateterProducaoIds([]);
                     setFistulaProducaoIds([]);
@@ -671,6 +803,10 @@ export function NovaExecucao() {
                       // produção sem limpar deixava uma seleção de consulta "fantasma" da
                       // produção ANTERIOR ainda marcada no seletor.
                       setConsultaProducaoId('');
+                      // Mesmo motivo acima, pra correção manual de classificação de Imobilizações
+                      // (achado 2026-09-03) — os sub-lotes mudam junto com a produção mensal.
+                      setSubLoteImobilizacoesOverride({});
+                      setImobilizacoesProducaoId('');
                       const producao = producoesDoMedicoSelecionado.find((p) => p.id === novaProducaoId);
                       if (producao) preencherCompetenciaAuto(producao.nome);
                     }}
@@ -764,46 +900,112 @@ export function NovaExecucao() {
               )}
 
               {medicoId && validMedicos.find((m) => m.id === medicoId)?.fazImobilizacoes && (
-                <div>
-                  <label htmlFor="producao-imobilizacoes-select" className="field-label mb-1.5">
-                    Lote de Imobilizações
-                  </label>
-                  <select
-                    id="producao-imobilizacoes-select"
-                    className="input"
-                    value={imobilizacoesProducaoId}
-                    onChange={(e) => setImobilizacoesProducaoId(e.target.value)}
-                    disabled={Boolean(producaoId) && isLotesLoading}
-                  >
-                    <option value="">Selecione o lote…</option>
-                    {/* Sub-lotes da produção mensal selecionada (achado 2026-08-25) — mesmo mecanismo
-                        do sub-lote de consultas acima: a origem pode dividir a produção mensal em
-                        sub-lotes de guias MAIS um sub-lote de imobilizações (ex.: "1º QUINZENA
-                        IMOBILIZAÇÕES"). Vem ANTES da lista de produções (feedback do dono,
-                        2026-08-25): é a opção mais usada por quem tem sub-lote. Ao contrário do
-                        sub-lote de consulta, escolher um aqui NÃO afeta o cálculo do lote principal
-                        — Imobilizações já é classe separada, com tabela de preço própria. */}
-                    {lotesDaProducaoMensal.length > 0 && (
-                      <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
-                        {lotesDaProducaoMensal.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.nome}
+                temSubLotesCirurgiaImobilizacoes ? (
+                  // Padrão VH (achado 2026-09-03): a produção mensal inteira vem dividida em
+                  // sub-lotes por dia/período, já nomeados com a classe — soma automática, sem
+                  // exigir marcar um por um. "Produção" (seletor principal acima) deixa de ser
+                  // usada pra este médico: o guia principal passa a vir da soma dos sub-lotes de
+                  // Cirurgia (ver onClick de "Processar médico" abaixo).
+                  <div className="space-y-2 rounded border border-cc-border bg-cc-surface p-2.5">
+                    <p className="text-xs font-medium text-cc-ink">
+                      Sub-lotes classificados automaticamente pelo nome
+                    </p>
+                    <p className="text-xs text-cc-ink-2">
+                      <span className="font-medium">{classificacaoImobilizacoes.cirurgia.length}</span> sub-lote(s) de{' '}
+                      <span className="font-medium">Cirurgia</span> (tabela normal, guia principal) e{' '}
+                      <span className="font-medium">{classificacaoImobilizacoes.imobilizacao.length}</span> sub-lote(s) de{' '}
+                      <span className="font-medium">Imobilizações</span> (tabela própria) — a &ldquo;Produção&rdquo;
+                      selecionada acima não é usada para este médico.
+                    </p>
+                    <details className="text-xs text-cc-muted">
+                      <summary className="cursor-pointer select-none">Ver sub-lotes classificados</summary>
+                      <ul className="mt-1 space-y-0.5 pl-4 list-disc max-h-40 overflow-y-auto">
+                        {classificacaoImobilizacoes.cirurgia.map((l) => (
+                          <li key={l.id}>{l.nome} — Cirurgia</li>
+                        ))}
+                        {classificacaoImobilizacoes.imobilizacao.map((l) => (
+                          <li key={l.id}>{l.nome} — Imobilizações</li>
+                        ))}
+                      </ul>
+                    </details>
+                    {classificacaoImobilizacoes.naoClassificados.length > 0 && (
+                      <div className="space-y-1.5 rounded border border-cc-danger/30 bg-cc-danger-soft p-2">
+                        <p role="alert" className="text-xs font-medium text-cc-danger">
+                          {classificacaoImobilizacoes.naoClassificados.length} sub-lote(s) com nome não reconhecido
+                          (nem &ldquo;CIRURGIA&rdquo; nem &ldquo;IMOBILIZ&rdquo;) — escolha a classe manualmente para poder
+                          processar este médico.
+                        </p>
+                        {classificacaoImobilizacoes.naoClassificados.map((l) => (
+                          <div key={l.id} className="flex items-center justify-between gap-2 text-xs text-cc-ink">
+                            <span className="truncate">{l.nome}</span>
+                            <select
+                              className="input text-xs py-0.5 h-auto w-36 shrink-0"
+                              value={subLoteImobilizacoesOverride[l.id] ?? ''}
+                              onChange={(e) =>
+                                setSubLoteImobilizacoesOverride((prev) => {
+                                  const valor = e.target.value;
+                                  if (valor !== 'cirurgia' && valor !== 'imobilizacao') {
+                                    const { [l.id]: _remover, ...resto } = prev;
+                                    return resto;
+                                  }
+                                  return { ...prev, [l.id]: valor };
+                                })
+                              }
+                              aria-label={`Classe do sub-lote ${l.nome}`}
+                            >
+                              <option value="">Escolher classe…</option>
+                              <option value="cirurgia">Cirurgia (tabela normal)</option>
+                              <option value="imobilizacao">Imobilizações (tabela própria)</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <label htmlFor="producao-imobilizacoes-select" className="field-label mb-1.5">
+                      Lote de Imobilizações
+                    </label>
+                    <select
+                      id="producao-imobilizacoes-select"
+                      className="input"
+                      value={imobilizacoesProducaoId}
+                      onChange={(e) => setImobilizacoesProducaoId(e.target.value)}
+                      disabled={Boolean(producaoId) && isLotesLoading}
+                    >
+                      <option value="">Selecione o lote…</option>
+                      {/* Sub-lotes da produção mensal selecionada (achado 2026-08-25) — mesmo mecanismo
+                          do sub-lote de consultas acima: a origem pode dividir a produção mensal em
+                          sub-lotes de guias MAIS um sub-lote de imobilizações (ex.: "1º QUINZENA
+                          IMOBILIZAÇÕES"). Vem ANTES da lista de produções (feedback do dono,
+                          2026-08-25): é a opção mais usada por quem tem sub-lote. Ao contrário do
+                          sub-lote de consulta, escolher um aqui NÃO afeta o cálculo do lote principal
+                          — Imobilizações já é classe separada, com tabela de preço própria. Só aparece
+                          aqui quando NÃO há sub-lote de Cirurgia (senão a classificação automática
+                          acima assume o lugar deste seletor). */}
+                      {lotesDaProducaoMensal.length > 0 && (
+                        <optgroup label={`Sub-lotes de ${producaoSelecionada?.nome ?? 'produção selecionada'}`}>
+                          {lotesDaProducaoMensal.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.nome}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {producoesDoMedicoSelecionado
+                        .filter((p) => p.id !== producaoId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nome}
                           </option>
                         ))}
-                      </optgroup>
-                    )}
-                    {producoesDoMedicoSelecionado
-                      .filter((p) => p.id !== producaoId)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nome}
-                        </option>
-                      ))}
-                  </select>
-                  <p className="mt-1.5 text-xs text-cc-muted">
-                    Este médico faz Imobilizações: produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
-                  </p>
-                </div>
+                    </select>
+                    <p className="mt-1.5 text-xs text-cc-muted">
+                      Este médico faz Imobilizações: produção SEPARADA da normal, com tabela de preço própria. Sem selecionar, essas guias NÃO são cobradas (o motor gera alerta em vez de chutar).
+                    </p>
+                  </div>
+                )
               )}
 
               <CampoCompetencia
@@ -816,27 +1018,39 @@ export function NovaExecucao() {
 
               <button
                 onClick={() => {
-                  if (!producaoObrigatoriaOk) return;
+                  if (!producaoObrigatoriaOk || !imobilizacoesClassificacaoOk) return;
                   const consultaProd = producoesDoMedicoSelecionado.find((p) => p.id === consultaProducaoId);
                   // Achado 2026-08-21: se a escolha de Consultas é um SUB-LOTE (fin-lotes, não a
                   // lista flat de produções), o principal deixa de ser o pacote inteiro da
                   // produção mensal e passa a ser a soma dos OUTROS sub-lotes — automático, sem o
                   // operador precisar marcar mais nada (anti-dupla-contagem: ver migration 0052).
                   const consultaLote = lotesDaProducaoMensal.find((l) => l.id === consultaProducaoId);
-                  const guiasLotesRestantes = consultaLote
-                    ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLote.id)
-                    : [];
+                  // Achado 2026-09-03: padrão VH — quando há sub-lote(s) de Cirurgia detectados, o
+                  // guia principal é a soma DELES (já exclui Consultas/Imobilizações por
+                  // construção de `classificacaoImobilizacoes`), não "todo o resto" como no caso
+                  // isolado de Consultas acima.
+                  const guiasLotesRestantes = temSubLotesCirurgiaImobilizacoes
+                    ? classificacaoImobilizacoes.cirurgia
+                    : consultaLote
+                      ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLote.id)
+                      : [];
                   const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === outrosHospitaisProducaoId,
                   );
-                  // Achado 2026-08-25: mesmo mecanismo do consultaLote acima — a escolha de
-                  // Imobilizações pode ser um SUB-LOTE (fin-lotes) em vez de produção flat. Ao
-                  // contrário de Consultas, não precisa recalcular "guias restantes": Imobilizações
-                  // já é classe separada da produção principal, o sub-lote não afeta o principal.
-                  const imobilizacoesLote = lotesDaProducaoMensal.find((l) => l.id === imobilizacoesProducaoId);
-                  const imobilizacoesProd = imobilizacoesLote
+                  // Achado 2026-08-25 (migration 0059: virou ARRAY): a escolha de Imobilizações
+                  // pode ser um ou vários SUB-LOTES (fin-lotes) em vez de produção flat. Padrão VH
+                  // (achado 2026-09-03): quando há sub-lote de Cirurgia, TODOS os sub-lotes
+                  // classificados como Imobilização entram — não só o escolhido no dropdown manual
+                  // (que nem aparece nesse caso, ver bloco "Lote de Imobilizações" acima).
+                  const imobilizacoesLoteManual = lotesDaProducaoMensal.find((l) => l.id === imobilizacoesProducaoId);
+                  const imobilizacoesProd = imobilizacoesLoteManual
                     ? undefined
                     : producoesDoMedicoSelecionado.find((p) => p.id === imobilizacoesProducaoId);
+                  const imobilizacoesLotes = temSubLotesCirurgiaImobilizacoes
+                    ? classificacaoImobilizacoes.imobilizacao
+                    : imobilizacoesLoteManual
+                      ? [imobilizacoesLoteManual]
+                      : [];
                   // Sub-lotes vêm de fin-lotes (lotesDaProducaoMensal), não da lista flat de
                   // produções do médico — namespace de ids diferente (GATE 2026-08-13). Cada
                   // categoria pode ter mais de um lote marcado (1Q + 2Q, achado 2026-08-13).
@@ -850,32 +1064,41 @@ export function NovaExecucao() {
                       {
                         medicoId,
                         // Angiologista não tem lote principal (GATE 2026-08-07) — vai null.
-                        // Pediatra com sub-lote de consulta escolhido (achado 2026-08-21) também
-                        // vai null — o principal vem de producaoGuiasLoteExternaIds abaixo.
+                        // Pediatra com sub-lote de consulta escolhido (achado 2026-08-21), ou
+                        // médico no padrão VH de Imobilizações (achado 2026-09-03), também vai
+                        // null — o principal vem de producaoGuiasLoteExternaIds abaixo.
                         producaoExternaId:
-                          medicoSelecionadoAngiologista || consultaLote ? null : (producaoSelecionada?.id ?? null),
+                          medicoSelecionadoAngiologista || consultaLote || temSubLotesCirurgiaImobilizacoes
+                            ? null
+                            : (producaoSelecionada?.id ?? null),
                         producaoNome:
-                          medicoSelecionadoAngiologista || consultaLote ? null : (producaoSelecionada?.nome ?? null),
+                          medicoSelecionadoAngiologista || consultaLote || temSubLotesCirurgiaImobilizacoes
+                            ? null
+                            : (producaoSelecionada?.nome ?? null),
                         ...(consultaLote
                           ? {
                               producaoConsultasLoteExternaIds: [consultaLote.id],
                               producaoConsultasLoteNomes: [consultaLote.nome],
-                              producaoGuiasLoteExternaIds: guiasLotesRestantes.map((l) => l.id),
-                              producaoGuiasLoteNomes: guiasLotesRestantes.map((l) => l.nome),
                             }
                           : consultaProd
                             ? { producaoConsultasExternaId: consultaProd.id, producaoConsultasNome: consultaProd.nome }
                             : {}),
+                        ...(consultaLote || temSubLotesCirurgiaImobilizacoes
+                          ? {
+                              producaoGuiasLoteExternaIds: guiasLotesRestantes.map((l) => l.id),
+                              producaoGuiasLoteNomes: guiasLotesRestantes.map((l) => l.nome),
+                            }
+                          : {}),
                         ...(outrosHospitaisProd
                           ? {
                               producaoOutrosHospitaisExternaId: outrosHospitaisProd.id,
                               producaoOutrosHospitaisNome: outrosHospitaisProd.nome,
                             }
                           : {}),
-                        ...(imobilizacoesLote
+                        ...(imobilizacoesLotes.length
                           ? {
-                              producaoImobilizacoesLoteExternaId: imobilizacoesLote.id,
-                              producaoImobilizacoesLoteNome: imobilizacoesLote.nome,
+                              producaoImobilizacoesLoteExternaIds: imobilizacoesLotes.map((l) => l.id),
+                              producaoImobilizacoesLoteNomes: imobilizacoesLotes.map((l) => l.nome),
                             }
                           : imobilizacoesProd
                             ? {
@@ -967,9 +1190,147 @@ export function NovaExecucao() {
                   disabled={!canDispararCompetencia}
                   className="btn-primary w-full py-2.5"
                 >
-                  {disparar.isPending ? 'Disparando...' : `Processar ${selecoesInfo.finalPayload.length} médicos`}
+                  {disparar.isPending
+                    ? 'Disparando...'
+                    : `Processar ${selecoesInfo.finalPayload.length} médicos${
+                        selecoesInfo.totalManuais > 0 ? ` (${selecoesInfo.totalManuais} com contagem manual)` : ''
+                      }`}
                 </button>
               </form>
+            </div>
+
+            {/* Planilha de guias conferidas MANUALMENTE (migration 0058, aprovado 2026-09-03).
+                Função ALTERNATIVA e pontual: quando a contagem automática não bate com a
+                conferência do dono, ele informa o total já conferido desses médicos e o motor
+                pula a contagem só neles. Quem não está na planilha segue 100% automático na
+                MESMA emissão. Upload → preview → aplicar: o número nunca entra no cálculo sem o
+                operador ter visto médico por médico antes (é dinheiro real). */}
+            <div className="card p-6 space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-cc-ink">Guias conferidas manualmente (opcional)</h3>
+                <p className="mt-1 text-xs text-cc-muted">
+                  Substitui a contagem automática de guias APENAS dos médicos que vierem na planilha, nesta
+                  competência. Os demais continuam no cálculo normal. A marca de contagem manual aparece só no
+                  relatório interno — nunca no boleto.
+                </p>
+                <a href="/templates/guias-manuais-modelo.csv" download className="mt-1.5 inline-block text-xs text-cc-accent underline">
+                  Baixar modelo da planilha (.csv)
+                </a>
+              </div>
+
+              <input
+                ref={guiasManuaisInputRef}
+                id="guias-manuais-arquivo"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="input text-xs"
+                aria-label="Planilha de guias conferidas manualmente"
+                disabled={!competenciaValida || lerGuiasManuais.isPending}
+                onChange={(e) => {
+                  const arquivo = e.target.files?.[0];
+                  if (arquivo) lerGuiasManuais.mutate(arquivo);
+                }}
+              />
+              {!competenciaValida && (
+                <p className="text-xs text-cc-muted">Informe a competência antes de enviar a planilha.</p>
+              )}
+              {lerGuiasManuais.isPending && <p className="text-xs text-cc-muted">Lendo a planilha…</p>}
+              {guiasManuaisErro && <p role="alert" className="alert-error">{guiasManuaisErro}</p>}
+
+              {/* Preview: ainda NÃO afeta o disparo. */}
+              {guiasManuaisPreview && guiasManuaisPreview.competencia === competencia && !guiasManuaisAplicadas && (
+                <div className="space-y-2 rounded border border-cc-border bg-cc-surface p-2">
+                  <p className="text-xs text-cc-ink-2">
+                    <span className="font-medium">{guiasManuaisPreview.arquivoNome}</span> —{' '}
+                    {guiasManuaisPreview.preview.linhas.length} médico(s) casado(s) por CPF,{' '}
+                    {guiasManuaisPreview.preview.erros.length} linha(s) com erro.
+                  </p>
+                  {guiasManuaisPreview.preview.linhas.length > 0 && (
+                    <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                      {guiasManuaisPreview.preview.linhas.map((l) => (
+                        <div key={l.medicoId} className="rounded bg-cc-surface-2/60 p-1.5 text-xs text-cc-ink">
+                          <div className="flex justify-between gap-2">
+                            <span className="truncate font-medium">{l.medicoNome}</span>
+                            <span className="shrink-0 tabular">{l.guiasManuaisTotal} guias</span>
+                          </div>
+                          <p className="mt-0.5 text-cc-muted">
+                            CPF {l.cpf} · linha {l.linha} · {l.guiasManuaisMotivo}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {guiasManuaisPreview.preview.erros.length > 0 && (
+                    <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-cc-danger/25 p-1.5">
+                      {guiasManuaisPreview.preview.erros.map((e) => (
+                        <p key={`${e.linha}-${e.chave}`} className="text-xs text-cc-danger">
+                          Linha {e.linha} ({e.chave || 'sem CPF'}): {e.erro}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="btn-primary btn btn-sm"
+                      disabled={guiasManuaisPreview.preview.linhas.length === 0}
+                      onClick={() =>
+                        setGuiasManuaisAplicadas({
+                          competencia: guiasManuaisPreview.competencia,
+                          arquivoNome: guiasManuaisPreview.arquivoNome,
+                          linhas: guiasManuaisPreview.preview.linhas,
+                        })
+                      }
+                    >
+                      Aplicar a {guiasManuaisPreview.preview.linhas.length} médico(s)
+                    </button>
+                    <button type="button" className="btn-ghost btn btn-sm" onClick={limparGuiasManuais}>
+                      Descartar
+                    </button>
+                  </div>
+                  <p className="text-xs text-cc-muted">
+                    Linhas com erro nunca entram: corrija a planilha e envie de novo, ou siga sem elas (esses
+                    médicos ficam na contagem automática).
+                  </p>
+                </div>
+              )}
+
+              {/* Já aplicado: é o que de fato vai no disparo. */}
+              {guiasManuaisAplicadas && guiasManuaisAplicadas.competencia === competencia && (
+                <div className="space-y-2 rounded border border-cc-warning/25 bg-cc-warning-soft p-2">
+                  <p className="text-xs text-cc-ink">
+                    <span className="font-medium">{selecoesInfo.totalManuais} médico(s)</span> vão entrar com
+                    contagem MANUAL nesta emissão (de {guiasManuaisAplicadas.arquivoNome}).
+                  </p>
+                  {selecoesInfo.manuaisForaDaSelecao.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-cc-danger">
+                        {selecoesInfo.manuaisForaDaSelecao.length} médico(s) da planilha NÃO entram nesta emissão
+                        (sem produção pareada, já com boleto emitido, ou fora do filtro de tipo) — o total
+                        conferido deles será ignorado:
+                      </p>
+                      {selecoesInfo.manuaisForaDaSelecao.map((l) => (
+                        <p key={l.medicoId} className="text-xs text-cc-ink-2">
+                          {l.medicoNome} ({l.guiasManuaisTotal} guias)
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <button type="button" className="btn-ghost btn btn-sm" onClick={limparGuiasManuais}>
+                    Remover contagem manual
+                  </button>
+                </div>
+              )}
+
+              {/* A planilha foi lida contra outra competência — não vale mais. */}
+              {(guiasManuaisPreview ?? guiasManuaisAplicadas) &&
+                (guiasManuaisAplicadas ?? guiasManuaisPreview)!.competencia !== competencia && (
+                  <p role="alert" className="alert-error">
+                    A planilha foi lida para a competência{' '}
+                    {(guiasManuaisAplicadas ?? guiasManuaisPreview)!.competencia} e não vale para {competencia || '—'}.
+                    Envie novamente.
+                  </p>
+                )}
             </div>
 
             {!isApoioLoading && invalidMedicos.length > 0 && (
@@ -1011,7 +1372,7 @@ export function NovaExecucao() {
                       <p className="text-sm text-cc-muted">Nenhum médico pareado para esta competência.</p>
                     ) : (
                       <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-                        {selecoesInfo.matched.map(({ medico, producao }) => {
+                        {selecoesInfo.matched.map(({ medico, producao, guiasManuais }) => {
                           const producoesDoMedico = producoes.filter((p) => p.clienteId === medico.externalId);
                           const outrasProducoes = producoesDoMedico.filter((p) => p.id !== producao.id);
                           const pediatra = isPediatraEspecialidade(medico.especialidade);
@@ -1033,6 +1394,13 @@ export function NovaExecucao() {
                                   </button>
                                 </div>
                               </div>
+                              {/* Migration 0058: deixa explícito, ANTES do disparo, que este
+                                  médico não vai ser contado pelo motor. */}
+                              {guiasManuais && (
+                                <p className="rounded bg-cc-warning-soft px-1.5 py-1 text-xs text-cc-warning">
+                                  Contagem MANUAL: {guiasManuais.guiasManuaisTotal} guias — {guiasManuais.guiasManuaisMotivo}
+                                </p>
+                              )}
                               {pediatra && outrasProducoes.length > 0 && (
                                 <select
                                   className="input text-xs py-1 h-auto w-full"

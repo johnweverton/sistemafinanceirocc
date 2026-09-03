@@ -109,12 +109,15 @@ export interface SelecaoDeps {
   producaoOutrosHospitaisNome?: string | null;
   producaoImobilizacoesExternaId?: string | null;
   producaoImobilizacoesNome?: string | null;
-  /** Sub-lote de Imobilizações (achado 2026-08-25) — mutuamente exclusivo com
-   * `producaoImobilizacoesExternaId` acima. Ao contrário do sub-lote de consulta, não precisa de
-   * um campo irmão "resto vira guia principal": Imobilizações já é classe separada da produção
-   * principal (tabela de preço própria), então marcar o sub-lote não afeta o lote principal. */
-  producaoImobilizacoesLoteExternaId?: string | null;
-  producaoImobilizacoesLoteNome?: string | null;
+  /** Sub-lotes de Imobilizações (achado 2026-08-25, virou ARRAY na migration 0059) — mutuamente
+   * exclusivo com `producaoImobilizacoesExternaId` acima. Médico VH com Imobilizações pode ter a
+   * produção mensal inteira dividida em vários sub-lotes por dia/período, classificados pelo nome
+   * ("CIRURGIA*" vira guia principal via `producaoGuiasLoteExternaIds`, "IMOBILIZ*" entra aqui) —
+   * todos os classificados como Imobilização são somados. Não precisa de um campo irmão "resto
+   * vira guia principal" isolado: Imobilizações já é classe separada da produção principal (tabela
+   * de preço própria); quando há sub-lotes de Cirurgia, o "resto" já é `producaoGuiasLoteExternaIds`. */
+  producaoImobilizacoesLoteExternaIds?: string[] | null;
+  producaoImobilizacoesLoteNomes?: string[] | null;
   /** Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
    * ARRAYS desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
    * quinzenas (1Q/2Q) como sub-lotes separados — todos os selecionados são somados. */
@@ -128,6 +131,16 @@ export interface SelecaoDeps {
   producaoCartaRedeExternaId?: string | null;
   producaoCartaRedeNome?: string | null;
   cartaRedeGuias?: number | null;
+  /**
+   * Contagem de guias do lote PRINCIPAL conferida MANUALMENTE pelo dono e importada de planilha
+   * (migration 0058, aprovado 2026-09-03) — quando preenchida, o Engine PULA `contarGuiasProducao`
+   * para este médico nesta competência e usa este número. Null/ausente = fluxo automático normal
+   * (caso comum). Execução mista é esperada: só os médicos que vieram na planilha têm o campo.
+   * `guiasManuaisMotivo` é obrigatório junto (validado no `dispararExecucaoSchema`) — é o texto
+   * que aparece no alerta de auditoria do relatório interno.
+   */
+  guiasManuaisTotal?: number | null;
+  guiasManuaisMotivo?: string | null;
 }
 
 export interface OrchestratorDeps {
@@ -162,8 +175,8 @@ export interface OrchestratorDeps {
       producaoOutrosHospitaisNome?: string | null;
       producaoImobilizacoesExternaId?: string | null;
       producaoImobilizacoesNome?: string | null;
-      producaoImobilizacoesLoteExternaId?: string | null;
-      producaoImobilizacoesLoteNome?: string | null;
+      producaoImobilizacoesLoteExternaIds?: string[] | null;
+      producaoImobilizacoesLoteNomes?: string[] | null;
       producaoCateterExternaIds?: string[] | null;
       producaoCateterNomes?: string[] | null;
       producaoFistulaExternaIds?: string[] | null;
@@ -173,6 +186,9 @@ export interface OrchestratorDeps {
       producaoCartaRedeExternaId?: string | null;
       producaoCartaRedeNome?: string | null;
       cartaRedeGuias?: number | null;
+      /** Contagem manual por planilha (migration 0058) — ver `SelecaoDeps.guiasManuaisTotal`. */
+      guiasManuaisTotal?: number | null;
+      guiasManuaisMotivo?: string | null;
     }[],
     empresaId?: string | null,
     clienteContabilidadeId?: string | null,
@@ -342,6 +358,9 @@ export async function iniciarExecucao(
     producaoCartaRedeExternaId?: string | null;
     producaoCartaRedeNome?: string | null;
     cartaRedeGuias?: number | null;
+    /** Contagem manual por planilha (migration 0058) — ver `SelecaoDeps.guiasManuaisTotal`. */
+    guiasManuaisTotal?: number | null;
+    guiasManuaisMotivo?: string | null;
   }[],
   usuarioId: string,
   deps: OrchestratorDeps = depsPadrao(),
@@ -601,14 +620,14 @@ async function processarUmMedico(
     const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
       ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
       : undefined;
-    // Achado 2026-08-25: sub-lote de Imobilizações (`producaoImobilizacoesLoteExternaId`) tem
-    // prioridade sobre a produção flat — mesmo padrão de itensConsultasPorLote acima, mas sem
-    // "guias restantes": Imobilizações já é classe separada, o sub-lote não afeta o principal.
-    const itensImobilizacoes = selecao.producaoImobilizacoesLoteExternaId
-      ? await deps.buscarItensPorLote(selecao.producaoImobilizacoesLoteExternaId)
-      : selecao.producaoImobilizacoesExternaId
-        ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId)
-        : undefined;
+    // Achado 2026-08-25 (migration 0059: virou ARRAY): sub-lote(s) de Imobilizações
+    // (`producaoImobilizacoesLoteExternaIds`) têm prioridade sobre a produção flat — mesmo padrão
+    // de itensConsultasPorLote acima. Médico VH pode ter vários sub-lotes de Imobilizações no mês
+    // (um por dia/período) — todos somados, mesmo mecanismo de itensCateter/itensFistula abaixo.
+    const itensImobilizacoesPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoImobilizacoesLoteExternaIds);
+    const itensImobilizacoes =
+      itensImobilizacoesPorLote ??
+      (selecao.producaoImobilizacoesExternaId ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId) : undefined);
     // GATE 2026-08-07: lotes de Cateter/Fístula/Angiografia (médico Angiologista, sem lote
     // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima. Esses
     // ids vêm de `listarLotes` (fin-lotes), NÃO de fin-producoes — busca via `buscarItensPorLote`
@@ -622,6 +641,11 @@ async function processarUmMedico(
     // (depende do procedimento realizado no mês), então o operador informa o número diretamente
     // (`carta_rede_guias`). `producaoCartaRedeExternaId` é só referência/auditoria, nunca lido aqui.
     const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;
+    // Migration 0058: total de guias conferido à mão pelo dono e importado de planilha. Não busca
+    // nada na origem — o número já veio na seleção. Quando presente, o Engine pula a contagem
+    // automática DESTE médico; os demais médicos do mesmo lote seguem no fluxo normal.
+    const guiasManuaisTotal = selecao.guiasManuaisTotal ?? undefined;
+    const guiasManuaisMotivo = selecao.guiasManuaisMotivo ?? undefined;
 
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
     const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, competencia);
@@ -641,6 +665,8 @@ async function processarUmMedico(
         itensFistula,
         itensAngiografia,
         guiasCartaRede,
+        guiasManuaisTotal,
+        guiasManuaisMotivo,
         competencia,
         saldoAcumulado: saldoExistente,
         saldoAcumuladoDesde: saldoExistente?.competenciaOrigem ?? null,

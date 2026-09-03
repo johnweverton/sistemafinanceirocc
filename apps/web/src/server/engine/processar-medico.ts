@@ -36,6 +36,23 @@ import { aplicarRegraPreco } from './regra-preco';
  */
 const LIMIAR_MINIMO_GUIAS = 5;
 
+/**
+ * Prefixo do alerta de auditoria da contagem manual por planilha (migration 0058).
+ *
+ * GATE do dono (2026-09-03): este é o ÚNICO alerta que NÃO derruba o status para 'alerta'. Todos
+ * os outros são achados de CONFERÊNCIA (dado incompleto, variação anômala, lote não selecionado)
+ * — coisas que o motor não soube resolver e que pedem olho humano antes de virar boleto. A marca
+ * de contagem manual é o oposto disso: o número JÁ foi conferido à mão pelo dono, é a versão mais
+ * confiável que existe. Deixá-la derrubar o status obrigaria o operador a passar cada médico da
+ * planilha pelo "Revisar e liberar" (emissão exige status 'ok', ver `validarResultadoParaEmissao`)
+ * — atrito puro sobre um dado que já nasceu conferido.
+ *
+ * O alerta continua no array `alertas` (rastro no relatório interno, nunca no boleto); só não
+ * conta para o status. Se houver QUALQUER outro alerta junto (ex.: VARIAÇÃO ALTA contra o mês
+ * anterior), o status vira 'alerta' normalmente — a checagem de sanidade não é enfraquecida.
+ */
+export const PREFIXO_ALERTA_CONTAGEM_MANUAL = 'CONTAGEM MANUAL (planilha):';
+
 /** Saldo "vazio" — usado quando `entrada.saldoAcumulado` é null/undefined (médico sem retenção). */
 const SALDO_VAZIO: SaldoAcumulado = {
   guiasPrincipal: 0,
@@ -47,7 +64,8 @@ const SALDO_VAZIO: SaldoAcumulado = {
 /**
  * Processa um médico de ponta a ponta (PRD §8.3):
  *   1. valida linhas (PRD §5.6)
- *   2. conta guias e cirurgias (PRD §5.2)
+ *   2. conta guias e cirurgias (PRD §5.2) — ou usa `guiasManuaisTotal` no lugar da contagem
+ *      automática, quando o total daquele médico veio conferido à mão numa planilha (0058)
  *   3. roda a trava de conferência (PRD §5.3, §5.6, §8.5)
  *   4. combina com saldo retido de competências anteriores (achado 2026-08-13) e decide se bate o
  *      limiar mínimo de guias — se não bater, retém tudo de novo em vez de gerar boleto
@@ -72,10 +90,21 @@ export function processarMedico(
     itensFistula,
     itensAngiografia,
     guiasCartaRede,
+    guiasManuaisTotal,
+    guiasManuaisMotivo,
     competencia,
     saldoAcumulado,
     saldoAcumuladoDesde,
   } = entrada;
+
+  /**
+   * Contagem manual por planilha (migration 0058, aprovado 2026-09-03): para ESTE médico nesta
+   * competência, o total de guias do lote principal já foi conferido à mão pelo dono — o motor
+   * pula `contarGuiasProducao`/`consolidarProducao` e usa o número informado. Função alternativa,
+   * usada pontualmente quando a contagem automática não bateu; quem não vem na planilha continua
+   * 100% no fluxo automático na MESMA execução (execução mista é o caso normal).
+   */
+  const contagemManual = guiasManuaisTotal != null;
 
   // Angiologista NÃO tem lote principal (GATE 2026-08-07) — a produção inteira vem de Cateter
   // (1x1) + Fístula (1x1) + Angiografia (3x1 + exceção Intra-operatório) + Carta de Rede (manual,
@@ -118,7 +147,11 @@ export function processarMedico(
   const temSaldoAnterior =
     s.guiasPrincipal > 0 || s.guiasOutrosHospitais > 0 || s.guiasImobilizacoes > 0 || s.valorBasePercentual > 0;
 
-  if (validos.length === 0 && !temSaldoAnterior) {
+  // `contagemManual` conta como "tem dado": o número da planilha existe INDEPENDENTE de a
+  // produção da origem ter itens válidos (é justamente o caso de uso — a contagem automática não
+  // bateu). Sem esta guarda, um médico com total manual e produção vazia cairia em 'sem_dados' e
+  // o número conferido à mão seria descartado em silêncio.
+  if (validos.length === 0 && !temSaldoAnterior && !contagemManual) {
     // Story 10.2: pediatra sem guias hospitalares na competência, mas COM consultas
     // ambulatoriais (lote separado) — cobra só o componente de consultas, em vez de cair em
     // 'sem_dados' e perder o valor silenciosamente (PRD §2, nunca chuta E nunca perde valor).
@@ -150,18 +183,41 @@ export function processarMedico(
     };
   }
 
-  const { guias, cirurgias } = contarGuiasProducao(validos, medico.especialidade);
-  const guiasConsolidado = consolidarProducao(validos, medico.especialidade);
-  const modoObservado = detectarModoProducao(validos);
+  // Contagem manual (migration 0058) substitui SÓ a contagem de guias do lote principal:
+  //  - `cirurgias` vai a 0 — um total agregado digitado não diz quantas eram cirurgia;
+  //  - `guiasConsolidado` recebe o mesmo número — não existe distinção consolidado/não-consolidado
+  //    num número único informado à mão (o consolidado é um reagrupamento da produção, e aqui não
+  //    há produção sendo agrupada);
+  //  - `modoObservado` fica `undefined` — a trava de MODO INCONSISTENTE conferia como a contagem
+  //    AUTOMÁTICA agrupou os itens; sem contagem automática ela não teria o que conferir, e
+  //    dispararia ruído sobre um número que não veio daqueles itens.
+  const { guias, cirurgias } = contagemManual
+    ? { guias: guiasManuaisTotal!, cirurgias: 0 }
+    : contarGuiasProducao(validos, medico.especialidade);
+  const guiasConsolidado = contagemManual ? guiasManuaisTotal! : consolidarProducao(validos, medico.especialidade);
+  const modoObservado = contagemManual ? undefined : detectarModoProducao(validos);
   // Compara SEMPRE a produção BRUTA deste mês (não o total combinado com saldo) contra o
   // histórico — é o número comparável a uma competência normal. `historicoGuias` (guiasExecucaoAnterior)
   // já exclui resultados 'acumulado' (não é produção real comparável), mas pode refletir um total
   // JÁ COMBINADO de um mês que consumiu saldo — limitação conhecida, aceitável (é só um alerta
   // informativo, nunca bloqueia).
+  //
+  // `checar` continua rodando com o número manual de propósito: o alerta de VARIAÇÃO ALTA contra o
+  // mês anterior é uma checagem de sanidade que vale AINDA MAIS pra um número digitado à mão.
   const alertas = [
     ...alertasDescarte,
     ...checar(validos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade, modoObservado),
   ];
+  // Auditoria da contagem manual (aprovado 2026-09-03): entra no array de `alertas`, que é
+  // renderizado SÓ no relatório interno — nunca no boleto, nunca visível ao médico/Cora. Vai na
+  // PRIMEIRA posição porque a visão resumida do relatório mostra apenas `alertas[0]`, e "este
+  // número não veio do motor" é a informação que o operador não pode deixar de ver.
+  if (contagemManual) {
+    alertas.unshift(
+      `${PREFIXO_ALERTA_CONTAGEM_MANUAL} ${guiasManuaisTotal} guia(s) informada(s) manualmente. ` +
+        `Motivo: ${guiasManuaisMotivo?.trim() || 'não informado'}`,
+    );
+  }
 
   // Lotes secundários (Outros Hospitais/Imobilizações) — só no modo faixa_guias (mesmo escopo de
   // sempre: percentual_producao/preco_proprio nunca cruzaram com essas classes, Story 10.5).
@@ -375,6 +431,11 @@ export function processarMedico(
     valorBasePercentual: medico.modoCobranca === 'percentual_producao' ? 0 : s.valorBasePercentual,
   };
 
+  // A marca de contagem manual é auditoria, não pendência de conferência — não derruba o status
+  // (GATE do dono 2026-09-03, ver PREFIXO_ALERTA_CONTAGEM_MANUAL). Qualquer OUTRO alerta continua
+  // valendo normalmente, inclusive quando aparece junto com ela.
+  const alertasDeConferencia = alertas.filter((a) => !a.startsWith(PREFIXO_ALERTA_CONTAGEM_MANUAL));
+
   return {
     cpf: medico.cpf ?? '',
     nome: medico.nome,
@@ -384,7 +445,7 @@ export function processarMedico(
     guiasConsolidado,
     subtotais,
     totalValor,
-    status: alertas.length > 0 ? 'alerta' : 'ok',
+    status: alertasDeConferencia.length > 0 ? 'alerta' : 'ok',
     alertas,
     saldoParaProximaCompetencia: saldoFinal,
   };

@@ -42,12 +42,13 @@ export const dispararExecucaoSchema = z
           producaoOutrosHospitaisNome: z.string().min(1).nullable().optional(),
           producaoImobilizacoesExternaId: z.string().min(1).nullable().optional(),
           producaoImobilizacoesNome: z.string().min(1).nullable().optional(),
-          // Sub-lote de Imobilizações (achado 2026-08-25, migration 0053) — mesmo mecanismo do
-          // sub-lote de consulta acima, mas sem "guias restantes": Imobilizações já é uma classe
-          // separada da produção principal, então marcar o sub-lote não afeta o lote principal.
-          // Mutuamente exclusivo com `producaoImobilizacoesExternaId` acima.
-          producaoImobilizacoesLoteExternaId: z.string().min(1).nullable().optional(),
-          producaoImobilizacoesLoteNome: z.string().min(1).nullable().optional(),
+          // Sub-lotes de Imobilizações (achado 2026-08-25, migration 0053; virou ARRAY na migration
+          // 0059): médico VH com Imobilizações pode ter a produção mensal inteira dividida em
+          // vários sub-lotes por dia/período, nomeados "CIRURGIA*"/"IMOBILIZ*" — a UI classifica
+          // pelo nome e soma todos os de cada classe. Mutuamente exclusivo com
+          // `producaoImobilizacoesExternaId` acima (produção flat).
+          producaoImobilizacoesLoteExternaIds: z.array(z.string().min(1)).nullable().optional(),
+          producaoImobilizacoesLoteNomes: z.array(z.string().min(1)).nullable().optional(),
           // Lotes de Cateter/Fístula/Angiografia (médico Angiologista, GATE 2026-08-07) — opcionais.
           // Arrays desde a migration 0046 (achado 2026-08-13): a origem divide cada categoria em
           // quinzenas (1Q/2Q) como sub-lotes separados, todos somados na mesma execução.
@@ -63,6 +64,13 @@ export const dispararExecucaoSchema = z
           producaoCartaRedeExternaId: z.string().min(1).nullable().optional(),
           producaoCartaRedeNome: z.string().min(1).nullable().optional(),
           cartaRedeGuias: z.number().int().min(0).nullable().optional(),
+          // Contagem de guias conferida MANUALMENTE pelo dono, importada de planilha (migration
+          // 0058, aprovado 2026-09-03) — função ALTERNATIVA à contagem automática, aplicada só
+          // aos médicos que vierem na planilha (execução mista é o caso normal). `motivo` é
+          // obrigatório junto (refine abaixo): é o texto que aparece no alerta de auditoria do
+          // relatório interno, e um alerta "Motivo: não informado" não audita nada.
+          guiasManuaisTotal: z.number().int().min(0).nullable().optional(),
+          guiasManuaisMotivo: z.string().trim().min(1).nullable().optional(),
         }),
       )
       .default([]),
@@ -100,6 +108,35 @@ export const dispararExecucaoSchema = z
     {
       message:
         'A mesma produção não pode ser usada como produção principal e como produção de consultas (contaria em dobro)',
+      path: ['selecoes'],
+    },
+  )
+  // Migration 0058: a contagem manual só é auditável se o operador disser POR QUE aquele médico
+  // saiu do fluxo automático — o motivo é exatamente o texto que vai para o alerta do relatório
+  // interno. Sem ele, o número apareceria no relatório sem nenhuma justificativa e a marca de
+  // auditoria viraria enfeite. Barra aqui (payload), não como CHECK de banco: é coerência entre
+  // dois campos de uma seleção, mesma responsabilidade das demais regras deste schema.
+  .refine(
+    (d) => d.selecoes.every((s) => s.guiasManuaisTotal == null || !!s.guiasManuaisMotivo),
+    {
+      message: 'Contagem manual de guias exige o motivo preenchido (coluna "motivo" da planilha)',
+      path: ['selecoes'],
+    },
+  )
+  // Migration 0059: sub-lotes classificados como Cirurgia (guia principal) e como Imobilizações
+  // vêm da MESMA lista de sub-lotes da produção mensal — um mesmo id nos dois arrays contaria o
+  // sub-lote 2x (uma vez em cada tabela de preço). A UI nunca gera essa combinação, mas o payload
+  // é público (rota HTTP) e o custo de barrar aqui é zero (mesmo espírito do refine de
+  // producaoExternaId/producaoConsultasExternaId acima).
+  .refine(
+    (d) =>
+      d.selecoes.every((s) => {
+        const guias = new Set(s.producaoGuiasLoteExternaIds ?? []);
+        return (s.producaoImobilizacoesLoteExternaIds ?? []).every((id) => !guias.has(id));
+      }),
+    {
+      message:
+        'O mesmo sub-lote não pode ser classificado como guia principal e como Imobilizações ao mesmo tempo (contaria em dobro)',
       path: ['selecoes'],
     },
   );

@@ -211,4 +211,43 @@ describe('recalcularResultado', () => {
     // Nunca cai na produção flat quando os sub-lotes vieram preenchidos (anti-dupla-contagem).
     expect(deps.buscarItens).not.toHaveBeenCalled();
   });
+
+  // Migration 0058 (contagem manual por planilha) — MESMA classe de bug do achado A1 acima: um
+  // campo que o orquestrador principal passa e o recálculo esquece. Aqui a falha seria ainda pior
+  // que zerar: o recálculo voltaria silenciosamente para a contagem AUTOMÁTICA que o dono já sabe
+  // estar errada para este médico, mudando o valor cobrado sem ninguém pedir.
+  it('preserva a contagem manual gravada na seleção (não volta para a contagem automática)', async () => {
+    const itens = Array.from({ length: 15 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({
+      buscarItens: vi.fn(async () => itens),
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          guiasManuaisTotal: 42,
+          guiasManuaisMotivo: 'Conferencia manual do dono',
+        }),
+      ]),
+    });
+
+    const resultado = await recalcularResultado('res-1', 'user-financeiro', deps);
+
+    // 15 itens dariam 15 guias na contagem automática — o número conferido à mão prevalece.
+    expect(resultado.guias).toBe(42);
+    expect(resultado.alertas[0]).toContain('CONTAGEM MANUAL (planilha): 42 guia(s)');
+    expect(resultado.alertas[0]).toContain('Conferencia manual do dono');
+    // Recalcular não pode "rebaixar" o resultado: a marca de contagem manual é auditoria, e o
+    // status segue 'ok' (GATE do dono 2026-09-03) — senão o recálculo bloquearia a emissão.
+    expect(resultado.status).toBe('ok');
+  });
+
+  it('seleção sem contagem manual continua recalculando pela produção (regressão)', async () => {
+    const itens = Array.from({ length: 15 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({ buscarItens: vi.fn(async () => itens) });
+
+    const resultado = await recalcularResultado('res-1', 'user-financeiro', deps);
+
+    expect(resultado.guias).toBe(15);
+    expect(resultado.alertas.some((a) => a.includes('CONTAGEM MANUAL'))).toBe(false);
+  });
 });

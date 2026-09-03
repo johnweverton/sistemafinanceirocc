@@ -49,10 +49,10 @@ export async function criarExecucao(
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
-    /** Sub-lote de Imobilizações (achado 2026-08-25, migration 0053) — mutuamente exclusivo com
-     *  producaoImobilizacoesExternaId acima. */
-    producaoImobilizacoesLoteExternaId?: string | null;
-    producaoImobilizacoesLoteNome?: string | null;
+    /** Sub-lotes de Imobilizações (achado 2026-08-25, migration 0053; virou ARRAY na migration
+     *  0059) — mutuamente exclusivo com producaoImobilizacoesExternaId acima. */
+    producaoImobilizacoesLoteExternaIds?: string[] | null;
+    producaoImobilizacoesLoteNomes?: string[] | null;
     producaoCateterExternaIds?: string[] | null;
     producaoCateterNomes?: string[] | null;
     producaoFistulaExternaIds?: string[] | null;
@@ -63,6 +63,11 @@ export async function criarExecucao(
     producaoCartaRedeExternaId?: string | null;
     producaoCartaRedeNome?: string | null;
     cartaRedeGuias?: number | null;
+    /** Contagem de guias conferida MANUALMENTE, importada de planilha (migration 0058) — quando
+     *  preenchida, o motor pula a contagem automática do lote principal DESTE médico. `motivo` é
+     *  obrigatório junto (validado no dispararExecucaoSchema): é o texto do alerta de auditoria. */
+    guiasManuaisTotal?: number | null;
+    guiasManuaisMotivo?: string | null;
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
@@ -109,8 +114,8 @@ export async function criarExecucao(
       producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
       producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,
       producao_imobilizacoes_nome: s.producaoImobilizacoesNome ?? null,
-      producao_imobilizacoes_lote_externa_id: s.producaoImobilizacoesLoteExternaId ?? null,
-      producao_imobilizacoes_lote_nome: s.producaoImobilizacoesLoteNome ?? null,
+      producao_imobilizacoes_lote_externa_ids: s.producaoImobilizacoesLoteExternaIds ?? null,
+      producao_imobilizacoes_lote_nomes: s.producaoImobilizacoesLoteNomes ?? null,
       producao_cateter_externa_ids: s.producaoCateterExternaIds ?? null,
       producao_cateter_nomes: s.producaoCateterNomes ?? null,
       producao_fistula_externa_ids: s.producaoFistulaExternaIds ?? null,
@@ -124,6 +129,12 @@ export async function criarExecucao(
       // grava quando o operador de fato informou um número nesta seleção.
       carta_rede_informado_por: s.cartaRedeGuias != null ? iniciadoPor : null,
       carta_rede_informado_em: s.cartaRedeGuias != null ? new Date().toISOString() : null,
+      guias_manuais_total: s.guiasManuaisTotal ?? null,
+      guias_manuais_motivo: s.guiasManuaisMotivo ?? null,
+      // Mesma auditoria do carta_rede_informado_por/_em acima (migration 0058): só grava quem/
+      // quando quando a seleção de fato traz um total conferido à mão.
+      guias_manuais_informado_por: s.guiasManuaisTotal != null ? iniciadoPor : null,
+      guias_manuais_informado_em: s.guiasManuaisTotal != null ? new Date().toISOString() : null,
     }))
   );
   if (selecoesError) {

@@ -1,0 +1,3 @@
+cpf,nome,competencia,total_guias,motivo
+11144477735,Dr. Fulano de Tal,2026-06,42,Conferencia manual do dono - contagem automatica divergiu em 3 guias
+98765432100,Dra. Ciclana,2026-06,7,Exceções de procedimento nao cobertas pela regra automatica
