@@ -1741,14 +1741,6 @@ export function NovaExecucao() {
             <div className="card p-6 space-y-3">
               <div>
                 <h3 className="text-sm font-medium text-cc-ink">Guias conferidas manualmente (opcional)</h3>
-                <p className="mt-1 text-xs text-cc-muted">
-                  Substitui a contagem automática APENAS dos médicos/classes que vierem na planilha, nesta
-                  competência. Guias normais, consultas do pediatra, imobilizações e outros hospitais têm colunas
-                  separadas — cada tabela de preço é diferente, então preencha só a(s) coluna(s) que conferiu (o
-                  resto continua automático). Os demais médicos continuam no cálculo normal. A marca de contagem
-                  manual aparece só no relatório interno — nunca no boleto. Não vale para médico Angiologista
-                  (produção vem de Cateter/Fístula/Angiografia/Carta de Rede, sem lote principal).
-                </p>
                 <a href="/templates/guias-manuais-modelo.csv" download className="mt-1.5 inline-block text-xs text-cc-accent underline">
                   Baixar modelo da planilha (.csv)
                 </a>
