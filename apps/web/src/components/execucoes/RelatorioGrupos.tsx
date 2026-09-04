@@ -450,15 +450,33 @@ function Grupo({
                   <span className="tabular font-semibold text-cc-ink">{brl(r.totalValor ?? 0)}</span>
                 )}
               </div>
-              {!resumido && (
-                <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
-                  {totalGuiasTodosLotes(r)} guias
-                  {r.subtotais && r.subtotais.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length > 1 && ' (todos os lotes)'}
-                  {' · '}
-                  {r.cirurgias ?? 0} cirurgias · consolidado {r.guiasConsolidado ?? 0}
-                  {r.subtotais && r.subtotais.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length > 1 && ' (lote principal)'}
-                </div>
-              )}
+              {!resumido && (() => {
+                const temMultiplosLotes =
+                  (r.subtotais?.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length ?? 0) > 1;
+                // Achado real 2026-09-04 (conferência da competência AGOSTO): mostrar guias ·
+                // cirurgias · consolidado lado a lado, sem dizer qual é o valor COBRADO, deixava
+                // quem confere manualmente sem saber contra qual número comparar — pra alguns
+                // médicos "batia" com guias, pra outros com consolidado, dependendo se havia
+                // atendimento espalhado em mais de 1 dia (MODO INCONSISTENTE). Agora só 1 número
+                // em destaque (o cobrado, somando todos os lotes) — o detalhe de agrupamento 3x1
+                // fica na tabela abaixo, por classe (inclusive Outros Hospitais/Imobilizações, que
+                // antes não tinham NENHUM diagnóstico equivalente ao do lote principal).
+                const consolidadoDivergente =
+                  r.guiasConsolidado != null && r.guias != null && r.guiasConsolidado !== r.guias;
+                return (
+                  <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
+                    <span className="font-semibold text-cc-ink">{totalGuiasTodosLotes(r)} guias cobradas</span>
+                    {temMultiplosLotes && ' (todos os lotes — ver detalhe abaixo)'}
+                    {consolidadoDivergente && (
+                      <>
+                        {' · '}
+                        consolidado (ignora a data no agrupamento) {r.guiasConsolidado} — diverge por atendimento em
+                        mais de 1 dia, ver alerta
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
               {!resumido && r.subtotais && r.subtotais.length > 0 && (
                 <div className="overflow-x-auto">
                 <table className="mt-3 w-full text-xs">
@@ -473,7 +491,14 @@ function Grupo({
                             ? '—'
                             : s.classe === 'CONSULTA_PEDIATRIA'
                               ? `${s.guias} consultas`
-                              : `${s.guias} guias`}
+                              : // Achado 2026-09-04: quando a classe usa a regra 3x1 (Pediatra/
+                                // Urologista/Ginecologista/Ortopedista/Angiologista), mostra o
+                                // agrupamento explícito — "12 atendimentos → 8 guias" — em vez de
+                                // só o número final, que sozinho não explica por que é menor que
+                                // uma contagem manual de atendimentos.
+                                s.atendimentos && s.atendimentos !== s.guias
+                                  ? `${s.atendimentos} atend. → ${s.guias} guias (3x1)`
+                                  : `${s.guias} guias`}
                         </td>
                         <td className="py-1.5 text-cc-muted">{s.faixa}</td>
                         <td className="py-1.5 text-right tabular text-cc-ink">{brl(s.valor)}</td>

@@ -32,6 +32,18 @@ export interface Subtotal {
   guias: number;
   valor: number;
   faixa: string;
+  /**
+   * Achado real 2026-09-04 (conferência da competência AGOSTO): quando esta classe usa a regra
+   * "3x1" (Pediatra/Urologista/Ginecologista/Ortopedista/Angiologista — ver `usaRegra3x1`), o
+   * número de ATENDIMENTOS distintos que entraram no agrupamento, ANTES do teto(n/3). Permite o
+   * relatório mostrar "12 atendimentos → 8 guias" em vez de só "8 guias" — sem isso, quem confere
+   * manualmente não sabia dizer se a contagem manual devia bater com o bruto ou com o já agrupado,
+   * confusão real reportada pelo dono (guias/cirurgias/consolidado do lote PRINCIPAL apareciam
+   * juntos mas Outros Hospitais/Imobilizações não tinham NENHUM diagnóstico equivalente).
+   * `undefined`/ausente quando a classe não usa 3x1 (1 atendimento = 1 guia, nada a explicar) OU
+   * quando não é uma classe derivada de `contarGuiasProducao` (ex.: PERCENTUAL_PRODUCAO).
+   */
+  atendimentos?: number;
 }
 
 export interface Execucao {

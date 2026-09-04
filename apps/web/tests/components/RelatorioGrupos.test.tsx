@@ -364,8 +364,48 @@ describe('RelatorioGrupos — total de guias somando todos os lotes (achado real
     renderComProviders();
     await screen.findByText('FELIPE DE BRITO ROCHA');
 
-    expect(screen.getByText(/63 guias \(todos os lotes\)/)).toBeInTheDocument();
-    expect(screen.getByText(/139 cirurgias · consolidado 52 \(lote principal\)/)).toBeInTheDocument();
+    expect(screen.getByText(/63 guias cobradas/)).toBeInTheDocument();
+    expect(screen.getByText(/\(todos os lotes — ver detalhe abaixo\)/)).toBeInTheDocument();
+  });
+});
+
+// Achado real 2026-09-04 (conferência da competência AGOSTO): "guias · cirurgias · consolidado"
+// lado a lado não dizia qual número era o COBRADO, e sumia pra quem confere manualmente qual
+// coluna comparar — pior ainda pra Outros Hospitais/Imobilizações, que não tinham NENHUM
+// diagnóstico de agrupamento 3x1 (só o lote principal tinha `cirurgias`/`guiasConsolidado`).
+describe('RelatorioGrupos — diagnóstico de agrupamento 3x1 por classe (achado 2026-09-04)', () => {
+  const resultadoOrtopedista = {
+    ...resultadoOk,
+    id: 'r-ortopedista',
+    nome: 'DRA CAMILLA',
+    guias: 8,
+    guiasConsolidado: 6,
+    subtotais: [
+      { classe: 'HAPVIDA_NAO_CRED', guias: 8, valor: 400, faixa: 'até 30 guias', atendimentos: 20 },
+      { classe: 'IMOBILIZACOES', guias: 5, valor: 150, faixa: 'até 30 guias', atendimentos: 12 },
+    ],
+    totalValor: 550,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoOrtopedista]);
+    mockListarMedicos.mockResolvedValue([]);
+  });
+
+  it('mostra "atendimentos → guias" na tabela quando a classe usa a regra 3x1, incluindo Imobilizações', async () => {
+    renderComProviders();
+    await screen.findByText('DRA CAMILLA');
+
+    expect(screen.getByText('20 atend. → 8 guias (3x1)')).toBeInTheDocument();
+    expect(screen.getByText('12 atend. → 5 guias (3x1)')).toBeInTheDocument();
+  });
+
+  it('mostra o consolidado divergente como diagnóstico quando difere do valor cobrado do lote principal', async () => {
+    renderComProviders();
+    await screen.findByText('DRA CAMILLA');
+
+    expect(screen.getByText(/consolidado \(ignora a data no agrupamento\) 6/)).toBeInTheDocument();
   });
 
   it('resultado de lote único (sem Outros Hospitais/Imobilizações) não mostra o qualificador "(todos os lotes)"', async () => {

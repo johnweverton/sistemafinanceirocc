@@ -224,6 +224,11 @@ export function processarMedico(
   const ehFaixaGuias = medico.modoCobranca !== 'percentual_producao' && medico.modoCobranca !== 'preco_proprio';
   let guiasOutrosHospitaisEsteMes: number | undefined;
   let guiasImobilizacoesEsteMes: number | undefined;
+  // Atendimentos ANTES do teto(n/3) de cada classe secundária (achado 2026-09-04) — só populado
+  // quando a especialidade usa a regra 3x1 (senão fica 0, mesma semântica de `cirurgias` acima:
+  // "nada a agrupar/explicar", ver contagem-producao.ts). Alimenta `Subtotal.atendimentos`.
+  let cirurgiasOutrosHospitaisEsteMes = 0;
+  let cirurgiasImobilizacoesEsteMes = 0;
   if (ehFaixaGuias) {
     if (medico.fazOutrosHospitais) {
       if (itensOutrosHospitais !== undefined) {
@@ -235,7 +240,9 @@ export function processarMedico(
         const { itensDaCompetencia, ignoradosPorCompetencia } = competencia
           ? filtrarPorCompetencia(itensOutrosHospitais, competencia)
           : { itensDaCompetencia: itensOutrosHospitais, ignoradosPorCompetencia: 0 };
-        guiasOutrosHospitaisEsteMes = contarGuiasProducao(itensDaCompetencia, medico.especialidade).guias;
+        const contagemOutrosHospitais = contarGuiasProducao(itensDaCompetencia, medico.especialidade);
+        guiasOutrosHospitaisEsteMes = contagemOutrosHospitais.guias;
+        cirurgiasOutrosHospitaisEsteMes = contagemOutrosHospitais.cirurgias;
         if (ignoradosPorCompetencia > 0) {
           alertas.push(
             `${ignoradosPorCompetencia} item(ns) do lote de Outros Hospitais são de outra ` +
@@ -250,7 +257,9 @@ export function processarMedico(
     }
     if (medico.fazImobilizacoes) {
       if (itensImobilizacoes !== undefined) {
-        guiasImobilizacoesEsteMes = contarGuiasProducao(itensImobilizacoes, medico.especialidade).guias;
+        const contagemImobilizacoes = contarGuiasProducao(itensImobilizacoes, medico.especialidade);
+        guiasImobilizacoesEsteMes = contagemImobilizacoes.guias;
+        cirurgiasImobilizacoesEsteMes = contagemImobilizacoes.cirurgias;
       } else {
         alertas.push(
           'Médico faz Imobilizações mas o lote separado de produção não foi selecionado nesta execução. Guias de Imobilizações NÃO cobradas, selecionar a produção correspondente.',
@@ -363,6 +372,7 @@ export function processarMedico(
       guias: guiasPrincipalTotal,
       valor: totalValor,
       faixa: `${percentual}% × R$${valorBasePercentualTotal.toFixed(2)} (produção cobrada)${notaAcumulo}`,
+      ...(cirurgias ? { atendimentos: cirurgias } : {}),
     });
   } else if (medico.modoCobranca === 'preco_proprio') {
     // Story 10.1 — GATE do dono (2026-07-20): preço negociado fora da tabela de faixas
@@ -379,6 +389,7 @@ export function processarMedico(
         guias: guiasPrincipalTotal,
         valor: resultado.valor,
         faixa: `${resultado.subtotalFaixa}${notaAcumulo}`,
+        ...(cirurgias ? { atendimentos: cirurgias } : {}),
       });
     }
   } else {
@@ -389,6 +400,12 @@ export function processarMedico(
     const guiasPorLoteSecundario: Partial<Record<Classe, number>> = {};
     if (outrosHospitaisAtivo) guiasPorLoteSecundario.OUTROS_HOSPITAIS = guiasOutrosHospitaisTotal!;
     if (imobilizacoesAtivo) guiasPorLoteSecundario.IMOBILIZACOES = guiasImobilizacoesTotal!;
+    // Achado 2026-09-04: atendimentos ANTES do teto(n/3), por classe secundária — alimenta
+    // `Subtotal.atendimentos` (0/ausente = classe não usa 3x1, nada a explicar no relatório).
+    const atendimentosPorLoteSecundario: Partial<Record<Classe, number>> = {
+      OUTROS_HOSPITAIS: cirurgiasOutrosHospitaisEsteMes,
+      IMOBILIZACOES: cirurgiasImobilizacoesEsteMes,
+    };
 
     for (const classe of classesDoMedico(medico)) {
       const ehClasseSecundaria = classe === 'OUTROS_HOSPITAIS' || classe === 'IMOBILIZACOES';
@@ -397,13 +414,20 @@ export function processarMedico(
         // Lote separado não informado (alerta já registrado acima) — nunca chuta valor.
         continue;
       }
+      const atendimentosClasse = ehClasseSecundaria ? atendimentosPorLoteSecundario[classe] : cirurgias;
       // Story 10.7: contrato antigo sem excedente por guia (Dr. Adilson) — mesma tabela/faixas
       // de todo mundo, só capa no teto da última faixa em vez de somar por guia acima dele.
       const tabelaClasse = medico.semExcedentePorGuia
         ? tabelaSemExcedentePorGuia(tabela[classe])
         : tabela[classe];
       const { valor, faixa } = valorDaFaixa(tabelaClasse, guiasClasse);
-      subtotais.push({ classe, guias: guiasClasse, valor: valor ?? 0, faixa: `${faixa}${notaAcumulo}` });
+      subtotais.push({
+        classe,
+        guias: guiasClasse,
+        valor: valor ?? 0,
+        faixa: `${faixa}${notaAcumulo}`,
+        ...(atendimentosClasse ? { atendimentos: atendimentosClasse } : {}),
+      });
       totalValor += valor ?? 0;
       // valor null = fora da tabela (PRD §11 outros hospitais > 80) → vira alerta, não chuta.
       if (valor == null) {
