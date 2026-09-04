@@ -579,7 +579,7 @@ function Grupo({
                     {mostraAuditoria3x1 && (
                       <button
                         type="button"
-                        className="btn-ghost btn btn-sm"
+                        className="btn-primary btn btn-sm"
                         disabled={auditoria3x1PendingId != null}
                         title="Baixa uma planilha mostrando cada procedimento e em qual guia (grupo de até 3) ele foi contado, para conferência manual"
                         onClick={() => onAuditoria3x1!(r)}
@@ -590,7 +590,7 @@ function Grupo({
                     {mostraRecalcular && (
                       <button
                         type="button"
-                        className="btn-ghost btn btn-sm"
+                        className="btn-primary btn btn-sm"
                         disabled={recalcularPendingId != null}
                         title="Reprocessa este resultado com os itens de produção atuais da origem"
                         onClick={() => onRecalcular!(r.id)}

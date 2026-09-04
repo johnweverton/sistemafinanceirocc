@@ -1,7 +1,7 @@
 // Teste da emissão de boleto a partir do relatório de execução (gap identificado 2026-07-07:
 // a rota /api/boletos/emitir existia mas não havia nenhuma ação na UI para chamá-la).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../src/components/ui/Toast';
 import { ApiClientError } from '../../src/lib/api-client';
@@ -302,7 +302,7 @@ describe('RelatorioGrupos — auditoria visual 3x1 (achado 2026-09-04)', () => {
     mockListarMedicos.mockResolvedValue([{ id: 'm-emilie', especialidade: 'Pediatria', contaEmissora: 'mc' }]);
   });
 
-  it('mostra o botão para médico de especialidade 3x1 e baixa a planilha ao clicar', async () => {
+  it('mostra o botão MESMO no grupo "Prontos para emissão" (status ok, não só em "Requerem revisão") e baixa a planilha ao clicar', async () => {
     const blob = new Blob(['xlsx'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     mockAuditoria3x1.mockResolvedValue(blob);
 
@@ -317,7 +317,12 @@ describe('RelatorioGrupos — auditoria visual 3x1 (achado 2026-09-04)', () => {
     renderComProviders();
     await screen.findByText('DRA EMILIE');
 
-    const botao = screen.getByRole('button', { name: 'Auditoria 3x1' });
+    // resultadoEmilie tem status 'ok' (herdado de resultadoOk) — confirma que a linha está no
+    // grupo "Prontos para emissão", não em "Requerem revisão".
+    const prontos = screen.getByText('Prontos para emissão').closest('section')!;
+    expect(within(prontos).getByText('DRA EMILIE')).toBeInTheDocument();
+
+    const botao = within(prontos).getByRole('button', { name: 'Auditoria 3x1' });
     fireEvent.click(botao);
 
     await waitFor(() => expect(mockAuditoria3x1).toHaveBeenCalledWith('r-emilie'));
