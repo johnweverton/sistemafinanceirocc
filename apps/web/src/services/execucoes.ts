@@ -181,6 +181,15 @@ export const execucoesService = {
       `/execucoes/resultados/${resultadoId}/recalcular`,
       { method: 'POST' },
     ),
+  /** Atalho "usar consolidado" (achado 2026-09-04): aceita o valor CONSOLIDADO (ignora a data no
+   *  agrupamento) já calculado pro resultado como o novo total do lote principal, sem precisar
+   *  preparar planilha — grava como contagem manual normal (mesma trilha da migration 0058) e
+   *  reprocessa. Só existe quando `guiasConsolidado` diverge de `guias`. */
+  usarConsolidado: (resultadoId: string, motivo: string) =>
+    apiFetch<{ resultado: ExecucaoResultado }>(
+      `/execucoes/resultados/${resultadoId}/usar-consolidado`,
+      { method: 'POST', body: JSON.stringify({ motivo }) },
+    ),
   /** Auditoria visual da regra 3x1 (achado 2026-09-04) — planilha .xlsx com cada procedimento
    *  bruto marcado/colorido por qual "guia" (grupo de até 3) ele foi somado, pra conferência
    *  manual contra o valor cobrado. Sem a trava de boleto emitido do recálculo (só lê, nunca

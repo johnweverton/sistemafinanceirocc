@@ -5,7 +5,15 @@
 // os dados de entrada (a seleção já gravada da execução original, não uma nova seleção do
 // operador). Dependências injetáveis pelo mesmo motivo do orchestrator principal: testar sem
 // tocar Supabase nem a API da Carmem.
-import type { ExecucaoResultado, Execucao, Medico, ItemProducao, ResultadoMedico, Boleto } from '@cobranca/shared';
+import type {
+  ExecucaoResultado,
+  Execucao,
+  Medico,
+  ItemProducao,
+  ResultadoMedico,
+  Boleto,
+  EntradaProcessamentoMedico,
+} from '@cobranca/shared';
 import { processarMedico } from '@/server/engine';
 import { buscarItens, buscarItensPorLote } from '@/server/integration/fin-api-client';
 import { buscarMedico } from '@/server/repositories/medico-repository';
@@ -15,6 +23,7 @@ import {
   listarSelecoes,
   guiasExecucaoAnterior,
   atualizarResultado,
+  definirGuiasManuaisTotalDaSelecao,
 } from '@/server/repositories/execucao-repository';
 import { buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { lerValorConsultaPediatria } from '@/server/repositories/config-cobranca-repository';
@@ -39,6 +48,15 @@ export interface RecalculoDeps {
    *  da planilha de auditoria, quando o valor gravado inclui saldo retido de competência anterior
    *  (nunca usado por `recalcularResultado` em si — ver comentário na função). */
   buscarSaldoAcumulado: (medicoId: string) => Promise<SaldoAcumuladoPersistido | null>;
+  /** Achado 2026-09-04 (atalho "usar consolidado"): grava o override manual do lote PRINCIPAL na
+   *  seleção — ver doc de `definirGuiasManuaisTotalDaSelecao` no repositório. */
+  definirGuiasManuaisTotalDaSelecao: (
+    execucaoId: string,
+    medicoId: string,
+    total: number,
+    motivo: string,
+    informadoPor: string,
+  ) => Promise<void>;
 }
 
 export function depsPadrao(): RecalculoDeps {
@@ -54,6 +72,7 @@ export function depsPadrao(): RecalculoDeps {
     buscarBoletoEmitido,
     atualizarResultado,
     buscarSaldoAcumulado,
+    definirGuiasManuaisTotalDaSelecao,
   };
 }
 
@@ -170,6 +189,37 @@ export async function buscarItensDoResultado(
 }
 
 /**
+ * Monta a entrada de `processarMedico` a partir dos buckets já buscados — extraído (achado
+ * 2026-09-04, atalho "usar consolidado") pra ser reaproveitado tanto por `recalcularResultado`
+ * (usa o override de `dados`, o que já estava gravado na seleção) quanto por
+ * `usarConsolidadoNoResultado` (substitui SÓ o total/motivo do lote principal por um valor novo,
+ * sem depender de reler a seleção logo após escrevê-la).
+ */
+function entradaDoProcessamento(
+  dados: BucketsDeItensResultado,
+  overridePrincipal?: { guiasManuaisTotal: number; guiasManuaisMotivo: string },
+): EntradaProcessamentoMedico {
+  return {
+    medico: dados.medico,
+    itens: dados.lotePrincipal,
+    historicoGuias: dados.historicoGuias,
+    itensConsultas: dados.itensConsultas,
+    itensOutrosHospitais: dados.outrosHospitais,
+    itensImobilizacoes: dados.imobilizacoes,
+    itensCateter: dados.cateter,
+    itensFistula: dados.fistula,
+    itensAngiografia: dados.angiografia,
+    guiasCartaRede: dados.guiasCartaRede,
+    guiasManuaisTotal: overridePrincipal ? overridePrincipal.guiasManuaisTotal : dados.guiasManuaisTotal,
+    guiasManuaisConsultas: dados.guiasManuaisConsultas,
+    guiasManuaisImobilizacoes: dados.guiasManuaisImobilizacoes,
+    guiasManuaisOutrosHospitais: dados.guiasManuaisOutrosHospitais,
+    guiasManuaisMotivo: overridePrincipal ? overridePrincipal.guiasManuaisMotivo : dados.guiasManuaisMotivo,
+    competencia: dados.execucao.competencia,
+  };
+}
+
+/**
  * Recalcula um resultado de MÉDICO (não empresa/cliente contábil — esses não têm produção
  * individual para reprocessar). Bloqueado se já existir boleto ativo (emitido/pago) para o
  * resultado: recalcular por baixo de um boleto já emitido deixaria o valor cobrado e o valor
@@ -223,25 +273,64 @@ export async function recalcularResultado(
   // `medicos_saldo_acumulado` — não há o que reinjetar aqui, e o ciclo de acumulação do médico
   // continua rodando normalmente nas próximas execuções. `buscarItensDoResultado` busca
   // `saldoAcumulado` mesmo assim (é usado pela auditoria 3x1, não por este caminho).
+  const novoResultado = processarMedico(entradaDoProcessamento(dados), undefined, dados.valorConsultaPediatria);
+
+  return deps.atualizarResultado(resultadoId, novoResultado, usuarioId);
+}
+
+/**
+ * Atalho "usar consolidado" (achado 2026-09-04, feedback do dono ao ver "92 guias cobradas ·
+ * consolidado (ignora a data no agrupamento) 65 — diverge por atendimento em mais de 1 dia"):
+ * aceita o valor CONSOLIDADO já calculado como o novo total do lote PRINCIPAL deste resultado,
+ * grava como contagem manual (mesma trilha de auditoria da migration 0058/0060) e reprocessa —
+ * sem precisar preparar planilha nenhuma pra corrigir só este médico.
+ *
+ * Só existe quando `guiasConsolidado` diverge de `guias` (mesmo campo `consolidadoDivergente` que
+ * a UI usa pra decidir se mostra o número) — sem divergência, não há o que "usar". Mesmas travas
+ * de `recalcularResultado` (sem medicoId, sem boleto ativo): reaproveita a MESMA validação, só
+ * troca o que vai pra `guiasManuaisTotal` antes de rodar o Engine.
+ */
+export async function usarConsolidadoNoResultado(
+  resultadoId: string,
+  motivo: string,
+  usuarioId: string,
+  deps: RecalculoDeps = depsPadrao(),
+): Promise<ExecucaoResultado> {
+  const resultado = await deps.buscarResultado(resultadoId);
+  if (!resultado) throw new ApiError(404, 'Resultado de execução não encontrado', 'RESULTADO_NAO_ENCONTRADO');
+  if (!resultado.medicoId) {
+    throw new ApiError(
+      422,
+      'Só é suportado para resultados de médico (não empresa/cliente contábil)',
+      'RECALCULO_NAO_SUPORTADO',
+    );
+  }
+  if (resultado.guiasConsolidado == null || resultado.guias == null || resultado.guiasConsolidado === resultado.guias) {
+    throw new ApiError(
+      422,
+      'Este resultado não tem divergência entre guias cobradas e consolidado — nada a substituir.',
+      'SEM_DIVERGENCIA_CONSOLIDADO',
+    );
+  }
+
+  const boletoAtivo = await deps.buscarBoletoEmitido(resultadoId);
+  if (boletoAtivo) {
+    throw new ApiError(
+      409,
+      'Este resultado já tem boleto emitido — cancele o boleto antes de usar o consolidado.',
+      'BOLETO_JA_EMITIDO',
+    );
+  }
+
+  const dados = await buscarItensDoResultado(resultadoId, deps);
+
+  // Grava a auditoria na seleção ANTES de reprocessar (mesma ordem de sempre: o Engine só usa o
+  // número, quem persiste é o repositório) — sobrevive a um "Recalcular" comum depois, que passa
+  // a ler este total gravado em vez de voltar pra contagem automática.
+  await deps.definirGuiasManuaisTotalDaSelecao(resultado.execucaoId, resultado.medicoId, resultado.guiasConsolidado, motivo, usuarioId);
+
   const novoResultado = processarMedico(
-    {
-      medico: dados.medico,
-      itens: dados.lotePrincipal,
-      historicoGuias: dados.historicoGuias,
-      itensConsultas: dados.itensConsultas,
-      itensOutrosHospitais: dados.outrosHospitais,
-      itensImobilizacoes: dados.imobilizacoes,
-      itensCateter: dados.cateter,
-      itensFistula: dados.fistula,
-      itensAngiografia: dados.angiografia,
-      guiasCartaRede: dados.guiasCartaRede,
-      guiasManuaisTotal: dados.guiasManuaisTotal,
-      guiasManuaisConsultas: dados.guiasManuaisConsultas,
-      guiasManuaisImobilizacoes: dados.guiasManuaisImobilizacoes,
-      guiasManuaisOutrosHospitais: dados.guiasManuaisOutrosHospitais,
-      guiasManuaisMotivo: dados.guiasManuaisMotivo,
-      competencia: dados.execucao.competencia,
-    },
+    entradaDoProcessamento(dados, { guiasManuaisTotal: resultado.guiasConsolidado, guiasManuaisMotivo: motivo }),
     undefined,
     dados.valorConsultaPediatria,
   );

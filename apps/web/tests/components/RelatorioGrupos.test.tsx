@@ -11,6 +11,7 @@ const mockRevisarResultado = vi.fn();
 const mockContribuicoes = vi.fn();
 const mockRecalcularResultado = vi.fn();
 const mockAuditoria3x1 = vi.fn();
+const mockUsarConsolidado = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     resultados: (...a: unknown[]) => mockResultados(...a),
@@ -18,6 +19,7 @@ vi.mock('../../src/services/execucoes', () => ({
     contribuicoes: (...a: unknown[]) => mockContribuicoes(...a),
     recalcularResultado: (...a: unknown[]) => mockRecalcularResultado(...a),
     auditoria3x1: (...a: unknown[]) => mockAuditoria3x1(...a),
+    usarConsolidado: (...a: unknown[]) => mockUsarConsolidado(...a),
   },
   execucaoQueryKeys: {
     resultados: (id: string) => ['execucoes', id, 'resultados'],
@@ -486,6 +488,41 @@ describe('RelatorioGrupos — diagnóstico de agrupamento 3x1 por classe (achado
     await screen.findByText('DRA CAMILLA');
 
     expect(screen.getByText(/consolidado \(ignora a data no agrupamento\) 6/)).toBeInTheDocument();
+  });
+
+  // Achado 2026-09-04 (pergunta do dono: "poderia ter a opção de apertar em consolidado e aí o
+  // número mudar para o consolidado e calcular de acordo"): atalho pra aceitar o consolidado sem
+  // precisar de planilha.
+  it('"Usar consolidado" pede motivo, chama o serviço com o valor consolidado e recalcula ao confirmar', async () => {
+    mockUsarConsolidado.mockResolvedValue({
+      resultado: { ...resultadoOrtopedista, guias: 6, guiasConsolidado: 6, totalValor: 465.07 },
+    });
+    renderComProviders();
+    await screen.findByText('DRA CAMILLA');
+
+    fireEvent.click(screen.getByRole('button', { name: /Usar consolidado \(6 guias\) no lugar de 8/ }));
+
+    const motivo = await screen.findByLabelText('Motivo de usar o consolidado');
+    // Vem pré-preenchido (editável) — nunca dispara sem o operador confirmar.
+    expect((motivo as HTMLTextAreaElement).value).toContain('consolidado');
+    expect(mockUsarConsolidado).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Usar 6$/ }));
+
+    await waitFor(() =>
+      expect(mockUsarConsolidado).toHaveBeenCalledWith(
+        'r-ortopedista',
+        expect.stringContaining('consolidado'),
+      ),
+    );
+  });
+
+  it('"Usar consolidado" some quando não há divergência (guias === guiasConsolidado)', async () => {
+    mockResultados.mockResolvedValue([{ ...resultadoOk, guias: 10, guiasConsolidado: 10 }]);
+    renderComProviders();
+    await screen.findByText('Dr. Teste');
+
+    expect(screen.queryByText(/Usar consolidado/)).not.toBeInTheDocument();
   });
 
   it('resultado de lote único (sem Outros Hospitais/Imobilizações) não mostra o qualificador "(todos os lotes)"', async () => {

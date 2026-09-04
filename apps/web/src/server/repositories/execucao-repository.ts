@@ -518,6 +518,39 @@ export async function atualizarResultado(
   return toExecucaoResultado(data as ExecucaoResultadoRow);
 }
 
+/**
+ * Sobrescreve guias_manuais_total/motivo (+ auditoria informado_por/_em) de UMA seleção já
+ * gravada de uma execução — atalho "usar consolidado" (achado 2026-09-04): em vez de o operador
+ * preparar uma planilha antes de disparar, ele aceita direto na tela do relatório o valor
+ * CONSOLIDADO (ignora a data no agrupamento) que o Engine já calculou pro resultado atual. Grava
+ * na SELEÇÃO (não só no resultado) pra sobreviver a um "Recalcular" futuro — sem isso, recalcular
+ * reprocessaria pela contagem automática de novo e desfaria a correção em silêncio.
+ * Só mexe no total/motivo do lote PRINCIPAL — os outros 3 campos (guias_manuais_consultas/
+ * imobilizacoes/outros_hospitais) ficam intocados, sejam null ou já preenchidos por outra via.
+ */
+export async function definirGuiasManuaisTotalDaSelecao(
+  execucaoId: string,
+  medicoId: string,
+  total: number,
+  motivo: string,
+  informadoPor: string,
+): Promise<void> {
+  const db = getSupabaseAdmin();
+  const { error } = await db
+    .from('execucao_selecoes')
+    .update({
+      guias_manuais_total: total,
+      guias_manuais_motivo: motivo,
+      guias_manuais_informado_por: informadoPor,
+      guias_manuais_informado_em: new Date().toISOString(),
+    })
+    .eq('execucao_id', execucaoId)
+    .eq('medico_id', medicoId);
+  if (error) {
+    throw new ApiError(500, 'Falha ao gravar contagem manual na seleção', 'DB_ERROR', { error: error.message });
+  }
+}
+
 export async function atualizarProgresso(execucaoId: string, progresso: number): Promise<void> {
   const db = getSupabaseAdmin();
   const { error } = await db

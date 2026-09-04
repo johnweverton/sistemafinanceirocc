@@ -209,6 +209,27 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     },
   });
 
+  // Atalho "usar consolidado" (achado 2026-09-04, feedback do dono ao ver "92 guias cobradas ·
+  // consolidado (ignora a data no agrupamento) 65 — diverge por atendimento em mais de 1 dia"):
+  // aceita o valor CONSOLIDADO já calculado como o novo total do lote principal deste resultado,
+  // sem precisar preparar planilha. Grava como contagem manual (mesma trilha da migration 0058)
+  // e recalcula — sobrevive a um "Recalcular" comum depois.
+  const usarConsolidado = useMutation({
+    mutationFn: ({ resultadoId, motivo }: { resultadoId: string; motivo: string }) =>
+      execucoesService.usarConsolidado(resultadoId, motivo),
+    onSuccess: () => {
+      toast('Valor consolidado aplicado — resultado recalculado', 'success');
+      void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) });
+    },
+    onError: (e) => {
+      if (e instanceof ApiClientError) {
+        toast(e.message, 'error');
+        return;
+      }
+      toast('Erro ao usar o valor consolidado', 'error');
+    },
+  });
+
   // Recalcula um resultado já gravado com os itens de produção ATUAIS da origem (achado real
   // 2026-08-04: dado corrigido no sistema de origem depois que a execução já tinha rodado, sem
   // forma de refletir a correção sem criar uma execução nova inteira).
@@ -294,6 +315,8 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         onReenviar={(id) => reenviar.mutate(id)}
         onRecalcular={(id) => recalcular.mutate(id)}
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
+        onUsarConsolidado={(id, motivo) => usarConsolidado.mutate({ resultadoId: id, motivo })}
+        usarConsolidadoPendingId={usarConsolidado.isPending ? usarConsolidado.variables?.resultadoId : null}
         onAuditoria3x1={(r) => auditoria3x1.mutate(r)}
         auditoria3x1PendingId={auditoria3x1.isPending ? auditoria3x1.variables?.id : null}
         usaRegra3x1={(medicoId) => usaRegra3x1Cliente(especialidadePorMedico.get(medicoId))}
@@ -315,6 +338,8 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         revisarPendingId={revisar.isPending ? revisar.variables?.resultadoId : null}
         onRecalcular={(id) => recalcular.mutate(id)}
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
+        onUsarConsolidado={(id, motivo) => usarConsolidado.mutate({ resultadoId: id, motivo })}
+        usarConsolidadoPendingId={usarConsolidado.isPending ? usarConsolidado.variables?.resultadoId : null}
         onAuditoria3x1={(r) => auditoria3x1.mutate(r)}
         auditoria3x1PendingId={auditoria3x1.isPending ? auditoria3x1.variables?.id : null}
         usaRegra3x1={(medicoId) => usaRegra3x1Cliente(especialidadePorMedico.get(medicoId))}
@@ -431,6 +456,8 @@ function Grupo({
   onReenviar,
   onRecalcular,
   recalcularPendingId,
+  onUsarConsolidado,
+  usarConsolidadoPendingId,
   onAuditoria3x1,
   auditoria3x1PendingId,
   usaRegra3x1,
@@ -453,6 +480,11 @@ function Grupo({
    *  resultados de médico (não empresa/cliente) sem boleto emitido ainda. */
   onRecalcular?: (resultadoId: string) => void;
   recalcularPendingId?: string | null;
+  /** Atalho "usar consolidado" (achado 2026-09-04) — aceita `guiasConsolidado` como o novo total
+   *  do lote principal, grava como contagem manual e recalcula. Só oferecido quando há
+   *  divergência (`guiasConsolidado !== guias`) e nas mesmas condições de `onRecalcular`. */
+  onUsarConsolidado?: (resultadoId: string, motivo: string) => void;
+  usarConsolidadoPendingId?: string | null;
   /** Auditoria visual da regra 3x1 (achado 2026-09-04) — planilha .xlsx por procedimento, cor
    *  por grupo. Ao contrário de `onRecalcular`, disponível mesmo com boleto já emitido (só lê,
    *  nunca grava). */
@@ -515,18 +547,35 @@ function Grupo({
                 // antes não tinham NENHUM diagnóstico equivalente ao do lote principal).
                 const consolidadoDivergente =
                   r.guiasConsolidado != null && r.guias != null && r.guiasConsolidado !== r.guias;
+                // Achado 2026-09-04 (feedback do dono): a divergência sozinha era só um "ver
+                // alerta" sem ação — oferece direto o atalho "usar consolidado" (mesmas condições
+                // de `onRecalcular`: precisa de médico e ainda não pode ter boleto emitido).
+                const podeUsarConsolidado =
+                  Boolean(onUsarConsolidado) &&
+                  r.medicoId != null &&
+                  !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0));
                 return (
-                  <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
-                    <span className="font-semibold text-cc-ink">{totalGuiasTodosLotes(r)} guias cobradas</span>
-                    {temMultiplosLotes && ' (todos os lotes — ver detalhe abaixo)'}
-                    {consolidadoDivergente && (
-                      <>
-                        {' · '}
-                        consolidado (ignora a data no agrupamento) {r.guiasConsolidado} — diverge por atendimento em
-                        mais de 1 dia, ver alerta
-                      </>
+                  <>
+                    <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
+                      <span className="font-semibold text-cc-ink">{totalGuiasTodosLotes(r)} guias cobradas</span>
+                      {temMultiplosLotes && ' (todos os lotes — ver detalhe abaixo)'}
+                      {consolidadoDivergente && (
+                        <>
+                          {' · '}
+                          consolidado (ignora a data no agrupamento) {r.guiasConsolidado} — diverge por atendimento
+                          em mais de 1 dia
+                        </>
+                      )}
+                    </div>
+                    {consolidadoDivergente && podeUsarConsolidado && (
+                      <UsarConsolidadoAcao
+                        guias={r.guias!}
+                        guiasConsolidado={r.guiasConsolidado!}
+                        pending={usarConsolidadoPendingId === r.id}
+                        onConfirmar={(motivo) => onUsarConsolidado!(r.id, motivo)}
+                      />
                     )}
-                  </div>
+                  </>
                 );
               })()}
               {!resumido && r.subtotais && r.subtotais.length > 0 && (
@@ -733,6 +782,96 @@ function AcaoRevisar({
           onClick={() => onConfirmar(motivo.trim())}
         >
           {pending ? 'Confirmando…' : 'Confirmar liberação'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Atalho "usar consolidado" (achado 2026-09-04, feedback do dono ao ver "92 guias cobradas ·
+ * consolidado (ignora a data no agrupamento) 65 — diverge por atendimento em mais de 1 dia" e não
+ * ter como fazer nada com esse número na tela): expande sob demanda, mesmo espírito de
+ * `AcaoRevisar` acima — motivo obrigatório, foco vai para o campo ao abrir e volta pro gatilho ao
+ * fechar. Motivo vem pré-preenchido com um texto padrão (editável) pra reduzir atrito no caso
+ * comum, mas nunca dispara sem o operador confirmar.
+ */
+function UsarConsolidadoAcao({
+  guias,
+  guiasConsolidado,
+  pending,
+  onConfirmar,
+}: {
+  guias: number;
+  guiasConsolidado: number;
+  pending: boolean;
+  onConfirmar: (motivo: string) => void;
+}) {
+  const MOTIVO_PADRAO =
+    'Aceito o valor consolidado (ignora a data no agrupamento) por divergência de atendimento em mais de 1 dia.';
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState(MOTIVO_PADRAO);
+  const painelId = useId();
+  const gatilhoRef = useRef<HTMLButtonElement>(null);
+  const motivoRef = useRef<HTMLTextAreaElement>(null);
+
+  const jaAbriu = useRef(false);
+  useEffect(() => {
+    if (aberto) {
+      jaAbriu.current = true;
+      motivoRef.current?.focus();
+      motivoRef.current?.select();
+    } else if (jaAbriu.current) {
+      gatilhoRef.current?.focus();
+    }
+  }, [aberto]);
+
+  function fechar() {
+    setAberto(false);
+    setMotivo(MOTIVO_PADRAO);
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        ref={gatilhoRef}
+        type="button"
+        className="mt-1 text-2xs normal-case tracking-normal text-cc-accent underline decoration-dotted hover:decoration-solid"
+        aria-expanded={false}
+        aria-controls={painelId}
+        onClick={() => setAberto(true)}
+      >
+        Usar consolidado ({guiasConsolidado} guias) no lugar de {guias}
+      </button>
+    );
+  }
+
+  return (
+    <div id={painelId} className="mt-1.5 space-y-1.5 rounded border border-cc-border bg-cc-surface-2/60 p-2 normal-case">
+      <p className="text-xs text-cc-ink-2">
+        Substitui <strong>{guias} guias cobradas</strong> por <strong>{guiasConsolidado} (consolidado)</strong> e
+        recalcula o valor deste médico.
+      </p>
+      <textarea
+        ref={motivoRef}
+        value={motivo}
+        onChange={(e) => setMotivo(e.target.value)}
+        aria-label="Motivo de usar o consolidado"
+        rows={2}
+        disabled={pending}
+        className="input w-full text-xs"
+      />
+      <div className="flex items-center justify-end gap-2">
+        <button type="button" className="btn-ghost btn btn-sm" disabled={pending} onClick={fechar}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="btn-primary btn btn-sm"
+          disabled={pending || motivo.trim().length < MOTIVO_MIN}
+          onClick={() => onConfirmar(motivo.trim())}
+        >
+          {pending ? 'Aplicando…' : `Usar ${guiasConsolidado}`}
         </button>
       </div>
     </div>
