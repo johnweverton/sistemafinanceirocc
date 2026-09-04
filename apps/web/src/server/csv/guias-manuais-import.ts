@@ -12,7 +12,7 @@
 // Regra de ouro (PRD §2, nunca chuta): toda linha que não resolve com certeza vira ERRO EXPLÍCITO
 // de linha — nunca é ignorada em silêncio, nunca "escolhe o mais parecido". É dinheiro real.
 import type { Medico } from '@cobranca/shared';
-import { parseCsv, parseExcel, type ErroLinha } from './planilha-import';
+import { parseCsv, parseExcel, normalizarNome, type ErroLinha } from './planilha-import';
 import { isPediatra, isAngiologista } from '../engine/contagem-producao';
 
 export { parseCsv, parseExcel };
@@ -71,6 +71,26 @@ export function normalizarCpf(valor: string | null | undefined): string {
 }
 
 /**
+ * Normaliza competência para `AAAA-MM`, aceitando os formatos:
+ *  - `AAAA-MM` (canônico, sem conversão)
+ *  - `DD/MM/AAAA` (ex.: `01/08/2026` → `2026-08`) — formato comum em CSVs brasileiros
+ *  - `MM/AAAA` (ex.: `08/2026` → `2026-08`)
+ * Retorna a string original se não reconhecer nenhum formato (a validação downstream barrrará).
+ */
+export function normalizarCompetencia(valor: string): string {
+  const s = valor.trim();
+  // Já no formato canônico
+  if (/^\d{4}-\d{2}$/.test(s)) return s;
+  // DD/MM/AAAA — o dia é descartado; só mês e ano importam
+  const ddMmAaaa = s.match(/^(\d{1,2})\/(\d{2})\/(\d{4})$/);
+  if (ddMmAaaa) return `${ddMmAaaa[3]}-${ddMmAaaa[2]!.padStart(2, '0')}`;
+  // MM/AAAA
+  const mmAaaa = s.match(/^(\d{1,2})\/(\d{4})$/);
+  if (mmAaaa) return `${mmAaaa[2]}-${mmAaaa[1]!.padStart(2, '0')}`;
+  return s;
+}
+
+/**
  * Resolve as linhas da planilha contra o cadastro de médicos.
  *
  * `medicos` deve ser a lista de médicos do cadastro (a rota passa os ATIVOS); o cruzamento é
@@ -108,6 +128,20 @@ export function resolverGuiasManuais(
     if (cpf) medicosPorCpf.set(cpf, m);
   }
 
+  // Índice secundário por NOME NORMALIZADO — usado como FALLBACK quando o CPF da linha não bate
+  // com nenhum médico do cadastro (ex.: médico cadastrado sem CPF, ou CPF diferente do que o
+  // operador tem na planilha). Match por nome é ambíguo (homônimos), então:
+  //  1. Só entra quando CPF realmente não encontra;
+  //  2. Match com mais de 1 resultado vira erro (impossível escolher);
+  //  3. A linha casada por nome recebe aviso explícito no preview — nunca silencioso.
+  const medicosPorNome = new Map<string, Medico[]>();
+  for (const m of medicos) {
+    const nomeNorm = normalizarNome(m.nome);
+    const lista = medicosPorNome.get(nomeNorm) ?? [];
+    lista.push(m);
+    medicosPorNome.set(nomeNorm, lista);
+  }
+
   // Pré-varredura de CPFs repetidos: precisa ser feita ANTES de montar as linhas válidas, senão a
   // primeira ocorrência já teria entrado na lista antes de a segunda aparecer.
   const ocorrencias = new Map<string, number>();
@@ -143,10 +177,27 @@ export function resolverGuiasManuais(
       continue;
     }
 
-    const medico = medicosPorCpf.get(cpf);
+    let medico = medicosPorCpf.get(cpf);
+    let casadoPorNome = false;
     if (!medico) {
-      erro(`CPF ${cpf} não encontrado no cadastro de médicos`);
-      continue;
+      // Fallback: tenta casar pelo nome normalizado (match parcial tolerante a acentos/caixa)
+      const nomeNorm = normalizarNome((row.nome ?? '').trim());
+      if (nomeNorm) {
+        const candidatos = medicosPorNome.get(nomeNorm) ?? [];
+        if (candidatos.length === 1 && candidatos[0]) {
+          medico = candidatos[0];
+          casadoPorNome = true;
+        } else if (candidatos.length > 1) {
+          erro(
+            `CPF ${cpf} não encontrado e o nome "${(row.nome ?? '').trim()}" casou com ${candidatos.length} médicos no cadastro — informe o CPF correto para desambiguar`,
+          );
+          continue;
+        }
+      }
+      if (!medico) {
+        erro(`CPF ${cpf} não encontrado no cadastro de médicos (e o nome "${(row.nome ?? '').trim()}" também não casou)`);
+        continue;
+      }
     }
     if (!medico.ativo) {
       erro(`${medico.nome} (CPF ${cpf}) está inativo no cadastro`);
@@ -161,9 +212,10 @@ export function resolverGuiasManuais(
       continue;
     }
 
-    const competencia = (row.competencia ?? '').trim();
+    const competenciaBruta = (row.competencia ?? '').trim();
+    const competencia = normalizarCompetencia(competenciaBruta);
     if (!/^\d{4}-\d{2}$/.test(competencia)) {
-      erro(`Competência "${competencia}" inválida — use o formato AAAA-MM (ex.: ${competenciaExecucao})`);
+      erro(`Competência "${competenciaBruta}" inválida — use o formato AAAA-MM ou DD/MM/AAAA (ex.: ${competenciaExecucao})`);
       continue;
     }
     if (competencia !== competenciaExecucao) {
@@ -248,8 +300,10 @@ export function resolverGuiasManuais(
       linha,
       medicoId: medico.id,
       medicoNome: medico.nome,
-      cpf,
-      nomePlanilha: (row.nome ?? '').trim(),
+      cpf: normalizarCpf(medico.cpf) || cpf,
+      nomePlanilha: casadoPorNome
+        ? `${(row.nome ?? '').trim()} ⚠️ casado por NOME (CPF ${cpf} não encontrado — confirme que é o médico correto)`
+        : (row.nome ?? '').trim(),
       competencia,
       ...(guiasManuaisTotal !== undefined ? { guiasManuaisTotal } : {}),
       ...(guiasManuaisConsultas !== undefined ? { guiasManuaisConsultas } : {}),
