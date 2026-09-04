@@ -377,6 +377,91 @@ describe('NovaExecucao — modo "Por médico": sub-lotes de consulta de pediatri
   });
 });
 
+// Achado 2026-09-04 (feedback do dono): a origem gera as guias de Consultas do Pediatra com 1 mês
+// de atraso — o sub-lote de Consultas da competência de agosto fica dentro da produção mensal de
+// JULHO, não da de agosto. A UI busca essa produção automaticamente (mesma heurística de nome/
+// data do casamento principal) e soma os sub-lotes "CONSULTA" dela, sem exigir escolha manual.
+describe('NovaExecucao — modo "Por médico": sub-lote de Consultas do mês ANTERIOR (achado 2026-09-04)', () => {
+  const medicoIracema = {
+    id: 'm-iracema', nome: 'Dra. Iracema', ativo: true, necessitaConfiguracao: false,
+    externalId: 'ext-iracema', especialidade: 'Pediatria',
+  };
+  const apoioIracemaFixture = {
+    medicos: [medicoIracema],
+    clientesOrigem: [
+      {
+        id: 'ext-iracema',
+        nome: 'Iracema',
+        producoes: [
+          { id: 'p-iracema-julho', nome: 'JULHO - 2026' },
+          { id: 'p-iracema-agosto', nome: 'AGOSTO - 2026' },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApoio.mockResolvedValue(apoioIracemaFixture);
+    mockListarEmpresas.mockResolvedValue([]);
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: [] });
+    mockLotes.mockImplementation(async (...args: unknown[]) => {
+      const producaoId = args[0];
+      if (producaoId === 'p-iracema-agosto') {
+        return { lotes: [{ id: 'lote-ago-1q', nome: 'IRACEMA 1Q' }, { id: 'lote-ago-2q', nome: 'IRACEMA 2Q' }] };
+      }
+      if (producaoId === 'p-iracema-julho') {
+        return { lotes: [{ id: 'lote-jul-consultas', nome: 'IRACEMA CONSULTAS DE JULHO' }] };
+      }
+      return { lotes: [] };
+    });
+  });
+
+  async function selecionarAgostoComCompetenciaAgosto() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Por médico' }));
+    fireEvent.change(screen.getByLabelText('Médico'), { target: { value: 'm-iracema' } });
+    fireEvent.change(screen.getByLabelText('Produção'), { target: { value: 'p-iracema-agosto' } });
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-08' } });
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-iracema-agosto'));
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-iracema-julho'));
+  }
+
+  it('detecta o sub-lote de Consultas na produção de JULHO mesmo com "Produção" apontando para AGOSTO', async () => {
+    renderComProviders();
+    await selecionarAgostoComCompetenciaAgosto();
+
+    await screen.findByText('Sub-lote(s) de Consultas detectados automaticamente pelo nome');
+    expect(screen.getByText('IRACEMA CONSULTAS DE JULHO')).toBeInTheDocument();
+  });
+
+  it('dispara com o sub-lote de Consultas de julho e TODOS os sub-lotes de agosto como guia principal (nada excluído)', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-iracema' });
+    renderComProviders();
+    await selecionarAgostoComCompetenciaAgosto();
+    await screen.findByText('Sub-lote(s) de Consultas detectados automaticamente pelo nome');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Processar médico' }));
+
+    await waitFor(() =>
+      expect(mockDisparar).toHaveBeenCalledWith(
+        '2026-08',
+        [
+          expect.objectContaining({
+            medicoId: 'm-iracema',
+            producaoExternaId: null,
+            producaoNome: null,
+            producaoConsultasLoteExternaIds: ['lote-jul-consultas'],
+            producaoConsultasLoteNomes: ['IRACEMA CONSULTAS DE JULHO'],
+            producaoGuiasLoteExternaIds: ['lote-ago-1q', 'lote-ago-2q'],
+            producaoGuiasLoteNomes: ['IRACEMA 1Q', 'IRACEMA 2Q'],
+          }),
+        ],
+        undefined,
+      ),
+    );
+  });
+});
+
 // Achado real 2026-09-03 (feedback do dono): médico VH que faz Imobilizações tem a produção
 // mensal INTEIRA dividida em vários sub-lotes por dia/período, já nomeados com a classe
 // ("CIRURGIAS - 05/08", "IMOBILIZAÇÕES 11/08 AO 12/08", ...) — a UI classifica pelo nome e soma
@@ -722,6 +807,68 @@ describe('NovaExecucao — modo "Por competência": sub-lotes automáticos (acha
     await waitFor(() => expect(mockDisparar).toHaveBeenCalled());
     const selecoes = mockDisparar.mock.calls[0]![1] as Record<string, unknown>[];
     expect(selecoes.find((s) => s.medicoId === 'm-samanta')).toMatchObject({ cartaRedeGuias: 7 });
+  });
+});
+
+// Achado 2026-09-04 (feedback do dono): mesmo achado do modo "Por médico", mas no disparo em
+// lote — a origem gera as guias de Consultas do Pediatra com 1 mês de atraso, então a competência
+// disparada (ex.: agosto) precisa buscar o sub-lote de Consultas na produção mensal de JULHO.
+describe('NovaExecucao — modo "Por competência": sub-lote de Consultas do mês ANTERIOR (achado 2026-09-04)', () => {
+  const medicoOtavia = {
+    id: 'm-otavia', nome: 'Dra. Otavia', ativo: true, necessitaConfiguracao: false,
+    externalId: 'ext-otavia', especialidade: 'Pediatria',
+  };
+  const apoioOtaviaFixture = {
+    medicos: [medicoOtavia],
+    clientesOrigem: [
+      {
+        id: 'ext-otavia',
+        nome: 'Otavia',
+        producoes: [
+          { id: 'p-otavia-julho', nome: 'JULHO - 2026' },
+          { id: 'p-otavia-agosto', nome: 'AGOSTO - 2026' },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApoio.mockResolvedValue(apoioOtaviaFixture);
+    mockListarEmpresas.mockResolvedValue([]);
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: [] });
+    mockLotes.mockImplementation(async (...args: unknown[]) => {
+      const producaoId = args[0];
+      if (producaoId === 'p-otavia-agosto') {
+        return { lotes: [{ id: 'lote-ago-1q', nome: 'OTAVIA 1Q' }] };
+      }
+      if (producaoId === 'p-otavia-julho') {
+        return { lotes: [{ id: 'lote-jul-consultas', nome: 'OTAVIA CONSULTAS DE JULHO' }] };
+      }
+      return { lotes: [] };
+    });
+  });
+
+  it('casa a competência de agosto com a produção "AGOSTO - 2026" e busca Consultas na de julho', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-otavia' });
+    renderComProviders();
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-08' } });
+    await screen.findByText('Dra. Otavia');
+
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-otavia-agosto'));
+    await waitFor(() => expect(mockLotes).toHaveBeenCalledWith('p-otavia-julho'));
+
+    const botao = () => screen.getByRole('button', { name: /Processar \d+ médicos/ });
+    await waitFor(() => expect(botao()).toBeEnabled());
+    fireEvent.click(botao());
+
+    await waitFor(() => expect(mockDisparar).toHaveBeenCalled());
+    const selecoes = mockDisparar.mock.calls[0]![1] as Record<string, unknown>[];
+    expect(selecoes.find((s) => s.medicoId === 'm-otavia')).toMatchObject({
+      producaoExternaId: null,
+      producaoConsultasLoteExternaIds: ['lote-jul-consultas'],
+      producaoGuiasLoteExternaIds: ['lote-ago-1q'],
+    });
   });
 });
 

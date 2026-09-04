@@ -156,6 +156,49 @@ function extrairCompetenciaDoNome(nome: string): string | null {
   return null;
 }
 
+/**
+ * Acha, numa lista de produções de um médico, a que corresponde a uma competência (AAAA-MM) —
+ * mesma heurística de nome/data usada no casamento principal do modo "Por competência" (aceita
+ * "AAAA-MM", "MM/AAAA", "MM-AAAA" no nome, ou o mês por extenso + ano). Extraída do match
+ * principal (achado 2026-09-04) pra ser reaproveitada na busca do sub-lote de Consultas do
+ * Pediatra na competência ANTERIOR (ver `competenciaAnterior` abaixo).
+ */
+function encontrarProducaoPorCompetencia<T extends { nome: string }>(
+  producoesDoMedico: T[],
+  competencia: string,
+): T | undefined {
+  if (!/^\d{4}-\d{2}$/.test(competencia)) return undefined;
+  const split = competencia.split('-');
+  const ano = split[0] || '';
+  const mes = split[1] || '';
+  const mesIndex = parseInt(mes, 10) - 1;
+  const mesNome = MESES_NFD[mesIndex] || '';
+  return producoesDoMedico.find((p) => {
+    const norm = normalizeName(p.nome);
+    const hasData = norm.includes(`${ano}-${mes}`) || norm.includes(`${mes}/${ano}`) || norm.includes(`${mes}-${ano}`);
+    const hasExtenso = norm.includes(mesNome) && norm.includes(ano);
+    return hasData || hasExtenso;
+  });
+}
+
+/**
+ * Competência (AAAA-MM) anterior à informada — trata virada de ano (janeiro → dezembro do ano
+ * anterior). Achado 2026-09-04 (feedback do dono): a origem gera as guias de Consultas do
+ * Pediatra com 1 mês de atraso em relação ao resto da produção — competência de agosto usa o
+ * sub-lote de Consultas de julho.
+ */
+function competenciaAnterior(competencia: string): string | null {
+  const m = competencia.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  let ano = parseInt(m[1] || '', 10);
+  let mes = parseInt(m[2] || '', 10) - 1;
+  if (mes < 1) {
+    mes = 12;
+    ano -= 1;
+  }
+  return `${ano}-${String(mes).padStart(2, '0')}`;
+}
+
 type Modo = 'competencia' | 'medico' | 'empresa';
 
 // "VH"/"Credenciado" são os rótulos que o time usa no dia a dia; tecnicamente mapeiam para o
@@ -291,15 +334,49 @@ export function NovaExecucao() {
   });
   const lotesDaProducaoMensal = lotesData?.lotes ?? [];
 
+  // Sub-lote de Consultas do Pediatra vive na produção mensal do MÊS ANTERIOR à competência
+  // informada (achado 2026-09-04, feedback do dono: "a parte de consulta é sempre no lote do mês
+  // anterior" — competência de agosto usa o sub-lote de Consultas de julho). Busca sob demanda,
+  // SEPARADA da produção selecionada no seletor "Produção" acima (que continua sendo a fonte do
+  // guia principal / demais sub-lotes do mês atual): acha, na lista de produções do médico
+  // selecionado, a que bate com a competência anterior (mesma heurística de nome/data do match
+  // principal) e busca os sub-lotes dela.
+  const producoesDoMedicoSelecionadoParaConsultaAnterior = useMemo(() => {
+    if (!apoio || !medicoSelecionado) return [];
+    return apoio.clientesOrigem
+      .flatMap((c) => c.producoes.map((p) => ({ ...p, clienteId: c.id })))
+      .filter((p) => p.clienteId === medicoSelecionado.externalId);
+  }, [apoio, medicoSelecionado]);
+  const competenciaAnteriorValue = useMemo(() => competenciaAnterior(competencia), [competencia]);
+  const producaoMesAnteriorConsulta = useMemo(() => {
+    if (!medicoSelecionadoEhPediatra || !competenciaAnteriorValue) return undefined;
+    return encontrarProducaoPorCompetencia(
+      producoesDoMedicoSelecionadoParaConsultaAnterior.filter((p) => p.id !== producaoId),
+      competenciaAnteriorValue,
+    );
+  }, [medicoSelecionadoEhPediatra, competenciaAnteriorValue, producoesDoMedicoSelecionadoParaConsultaAnterior, producaoId]);
+  const { data: lotesMesAnteriorConsultaData, isLoading: isLotesMesAnteriorConsultaLoading } = useQuery({
+    queryKey: execucaoQueryKeys.lotes(producaoMesAnteriorConsulta?.id ?? ''),
+    queryFn: () => execucoesService.lotes(producaoMesAnteriorConsulta!.id),
+    enabled: Boolean(producaoMesAnteriorConsulta?.id),
+    retry: false,
+  });
+  const lotesMesAnteriorTodos = lotesMesAnteriorConsultaData?.lotes ?? [];
+
   // Auto-classificação do sub-lote de Consultas do Pediatra por NOME (achado 2026-09-03) —
   // generaliza o mecanismo manual do achado 2026-08-21 (escolher 1 sub-lote como consulta, resto
   // vira guia principal): agora QUALQUER sub-lote cujo nome contenha "CONSULTA" entra
   // automaticamente nessa classe, e podem ser VÁRIOS (antes só dava pra marcar 1 no dropdown).
   // Sem ambiguidade possível (1 palavra positiva só) — o que não bate simplesmente vira guia
-  // principal, sem precisar de tela de correção manual.
+  // principal, sem precisar de tela de correção manual. Acha na produção mensal do mês ANTERIOR
+  // primeiro (achado 2026-09-04, caso comum) e também na do mês atual (fallback, caso a origem
+  // não esteja mais defasada pra este médico específico).
   const lotesConsultaAutoDetectados = useMemo(
-    () => lotesDaProducaoMensal.filter((l) => ehSubLoteConsultaPediatra(l.nome)),
-    [lotesDaProducaoMensal],
+    () => [
+      ...lotesMesAnteriorTodos.filter((l) => ehSubLoteConsultaPediatra(l.nome)),
+      ...lotesDaProducaoMensal.filter((l) => ehSubLoteConsultaPediatra(l.nome)),
+    ],
+    [lotesDaProducaoMensal, lotesMesAnteriorTodos],
   );
   const temSubLotesConsultaAutoDetectados = lotesConsultaAutoDetectados.length > 0;
 
@@ -412,13 +489,6 @@ export function NovaExecucao() {
         : [],
     );
 
-    const compValida = /^\d{4}-\d{2}$/.test(competencia);
-    const split = compValida ? competencia.split('-') : ['', ''];
-    const ano = split[0] || '';
-    const mes = split[1] || '';
-    const mesIndex = compValida ? parseInt(mes, 10) - 1 : -1;
-    const mesNome = mesIndex >= 0 ? (MESES_NFD[mesIndex] || '') : '';
-
     for (const med of medicosParaCompetencia) {
       if (medicosComBoletoAtivo.has(med.id)) {
         jaEmitidos.push(med);
@@ -433,16 +503,9 @@ export function NovaExecucao() {
         continue;
       }
 
-      let match = producoesDoMedico.find((p) => p.id === manualProdId);
-
-      if (!match && compValida) {
-        match = producoesDoMedico.find((p) => {
-          const norm = normalizeName(p.nome);
-          const hasData = norm.includes(`${ano}-${mes}`) || norm.includes(`${mes}/${ano}`) || norm.includes(`${mes}-${ano}`);
-          const hasExtenso = norm.includes(mesNome) && norm.includes(ano);
-          return hasData || hasExtenso;
-        });
-      }
+      const match =
+        producoesDoMedico.find((p) => p.id === manualProdId) ??
+        encontrarProducaoPorCompetencia(producoesDoMedico, competencia);
 
       if (match) {
         matched.push({ medico: med, producao: match, guiasManuais: manuaisPorMedico.get(med.id) });
@@ -489,7 +552,46 @@ export function NovaExecucao() {
     });
     return mapa;
   }, [medicosNecessitandoLotesBulk, queriesLotesBulk]);
-  const algumLoteBulkCarregando = queriesLotesBulk.some((q) => q.isLoading);
+
+  // FASE 2b: sub-lote de Consultas do Pediatra vem da produção mensal do MÊS ANTERIOR à
+  // competência disparada (achado 2026-09-04, feedback do dono: "a parte de consulta é sempre no
+  // lote do mês anterior" — competência de agosto usa o sub-lote de Consultas de julho). Busca
+  // ADICIONAL, em paralelo, só pros médicos Pediatra já casados na FASE 1: acha a produção do
+  // médico que bate com a competência anterior (mesma heurística de nome/data do match principal)
+  // e busca os sub-lotes dela — SEPARADA da busca acima (que continua alimentando Cirurgia/
+  // Imobilizações/guia principal do mês atual). Reaproveita `competenciaAnteriorValue` (calculado
+  // acima, no bloco de sub-lotes do modo "Por médico") — mesma competência disparada.
+  const medicosNecessitandoLotesConsultaMesAnteriorBulk = useMemo(() => {
+    if (!competenciaAnteriorValue) return [];
+    const resultado: Array<{ medicoId: string; producaoId: string }> = [];
+    for (const { medico, producao } of matchResultado.matched) {
+      if (!isPediatraEspecialidade(medico.especialidade)) continue;
+      const producoesDoMedico = producoes.filter((p) => p.clienteId === medico.externalId && p.id !== producao.id);
+      const anterior = encontrarProducaoPorCompetencia(producoesDoMedico, competenciaAnteriorValue);
+      if (anterior) resultado.push({ medicoId: medico.id as string, producaoId: anterior.id as string });
+    }
+    return resultado;
+  }, [matchResultado, producoes, competenciaAnteriorValue]);
+  const queriesLotesConsultaMesAnteriorBulk = useQueries({
+    queries: medicosNecessitandoLotesConsultaMesAnteriorBulk.map(({ producaoId }) => ({
+      queryKey: execucaoQueryKeys.lotes(producaoId),
+      queryFn: () => execucoesService.lotes(producaoId),
+      enabled: Boolean(producaoId),
+      retry: false,
+      staleTime: 5 * 60_000,
+    })),
+  });
+  const lotesConsultaMesAnteriorPorMedicoIdBulk = useMemo(() => {
+    const mapa = new Map<string, { lotes: { id: string; nome: string }[]; isLoading: boolean }>();
+    medicosNecessitandoLotesConsultaMesAnteriorBulk.forEach(({ medicoId }, i) => {
+      const q = queriesLotesConsultaMesAnteriorBulk[i];
+      mapa.set(medicoId, { lotes: q?.data?.lotes ?? [], isLoading: Boolean(q?.isLoading) });
+    });
+    return mapa;
+  }, [medicosNecessitandoLotesConsultaMesAnteriorBulk, queriesLotesConsultaMesAnteriorBulk]);
+
+  const algumLoteBulkCarregando =
+    queriesLotesBulk.some((q) => q.isLoading) || queriesLotesConsultaMesAnteriorBulk.some((q) => q.isLoading);
 
   // FASE 3: combina o match (fase 1) com a classificação automática de sub-lotes (fase 2, mesmos
   // classificadores puros do modo "Por médico") e as seleções manuais (planilha, Outros
@@ -518,9 +620,13 @@ export function NovaExecucao() {
       const producoesDoMedico = producoes.filter((p) => p.clienteId === med.externalId);
       const precisaDeLotes = angiologista || pediatra || med.fazImobilizacoes;
       const infoLote = lotesPorMedicoIdBulk.get(med.id);
+      const infoLoteConsultaMesAnterior = pediatra ? lotesConsultaMesAnteriorPorMedicoIdBulk.get(med.id) : undefined;
 
       if (precisaDeLotes && (!infoLote || infoLote.isLoading)) {
         continue; // ainda carregando os sub-lotes deste médico — fica de fora por enquanto
+      }
+      if (pediatra && infoLoteConsultaMesAnterior?.isLoading) {
+        continue; // ainda carregando o sub-lote de Consultas do mês anterior — fica de fora por enquanto
       }
       const lotesDoMedico = infoLote?.lotes ?? [];
 
@@ -567,8 +673,15 @@ export function NovaExecucao() {
       }
 
       // Pediatra/fazImobilizacoes: mesma classificação automática de sub-lotes do modo "Por
-      // médico" (Consultas por "CONSULTA" no nome; Cirurgia/Imobilizações do padrão VH).
-      const lotesConsulta = pediatra ? lotesDoMedico.filter((l) => ehSubLoteConsultaPediatra(l.nome)) : [];
+      // médico" (Consultas por "CONSULTA" no nome; Cirurgia/Imobilizações do padrão VH). Consultas
+      // busca primeiro na produção do MÊS ANTERIOR (achado 2026-09-04, caso comum) e também na do
+      // mês atual (fallback, caso a origem não esteja mais defasada pra este médico específico).
+      const lotesConsultaMesAnterior = (infoLoteConsultaMesAnterior?.lotes ?? []).filter((l) =>
+        ehSubLoteConsultaPediatra(l.nome),
+      );
+      const lotesConsulta = pediatra
+        ? [...lotesConsultaMesAnterior, ...lotesDoMedico.filter((l) => ehSubLoteConsultaPediatra(l.nome))]
+        : [];
       const usaConsultaAuto = lotesConsulta.length > 0;
       const cImob = med.fazImobilizacoes
         ? classificarLotesImobilizacoes(lotesDoMedico.filter((l) => !lotesConsulta.some((c) => c.id === l.id)))
@@ -667,6 +780,7 @@ export function NovaExecucao() {
   }, [
     matchResultado,
     lotesPorMedicoIdBulk,
+    lotesConsultaMesAnteriorPorMedicoIdBulk,
     producoes,
     consultaSelections,
     outrosHospitaisSelections,
@@ -761,6 +875,10 @@ export function NovaExecucao() {
     imobilizacoesClassificacaoOk &&
     angiologistaClassificacaoOk &&
     !medicoJaTemBoleto &&
+    // Achado 2026-09-04: com a busca do sub-lote de Consultas do mês anterior ainda em
+    // andamento, o botão fica desabilitado — disparar nesse meio-tempo poderia cair no fallback
+    // manual (sem Consultas) por engano, mesmo quando o sub-lote existe.
+    !isLotesMesAnteriorConsultaLoading &&
     !disparar.isPending;
 
   const medicosDaEmpresa = validMedicos.filter((m) => m.empresaGrupoId === empresaId);
@@ -1132,7 +1250,9 @@ export function NovaExecucao() {
                     </p>
                     <p className="text-xs text-cc-ink-2">
                       <span className="font-medium">{lotesConsultaAutoDetectados.length}</span> sub-lote(s) somados
-                      como Consultas; o restante da produção mensal vira guia principal automaticamente.
+                      como Consultas (buscados primeiro na produção mensal do MÊS ANTERIOR, onde a origem
+                      costuma gerá-los, e também na do mês atual); o restante da produção mensal atual vira
+                      guia principal automaticamente.
                     </p>
                     <ul className="space-y-0.5 pl-4 text-xs text-cc-muted list-disc max-h-32 overflow-y-auto">
                       {lotesConsultaAutoDetectados.map((l) => (
@@ -1150,9 +1270,22 @@ export function NovaExecucao() {
                       className="input"
                       value={consultaProducaoId}
                       onChange={(e) => setConsultaProducaoId(e.target.value)}
-                      disabled={Boolean(producaoId) && isLotesLoading}
+                      disabled={Boolean(producaoId) && (isLotesLoading || isLotesMesAnteriorConsultaLoading)}
                     >
                       <option value="">Sem componente de consultas</option>
+                      {/* Sub-lotes da produção mensal do MÊS ANTERIOR (achado 2026-09-04) — é onde a
+                          origem costuma gerar as guias de Consultas do Pediatra, com 1 mês de atraso.
+                          Só chega aqui quando NENHUM sub-lote (nem do mês atual, nem do anterior) tem
+                          "CONSULTA" no nome — mantido como escape manual pro nome atípico. */}
+                      {lotesMesAnteriorTodos.length > 0 && (
+                        <optgroup label={`Sub-lotes de ${producaoMesAnteriorConsulta?.nome ?? 'produção do mês anterior'}`}>
+                          {lotesMesAnteriorTodos.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.nome}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                       {/* Sub-lotes da produção mensal selecionada (achado 2026-08-21) — a origem pode
                           dividir "JULHO - 2026" em sub-lotes de guias (1Q/2Q/PARECER/2,5KG) MAIS um
                           sub-lote de consultas. Só chega aqui quando NENHUM sub-lote tem "CONSULTA"
@@ -1179,7 +1312,10 @@ export function NovaExecucao() {
                         ))}
                     </select>
                     <p className="mt-1.5 text-xs text-cc-muted">
-                      Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias. Se a produção selecionada tiver sub-lotes (ex.: &ldquo;CONSULTAS DE JUNHO&rdquo;), escolher um deles aqui faz o restante dos sub-lotes virar guia principal automaticamente.
+                      A Consulta costuma estar num sub-lote da produção mensal do MÊS ANTERIOR (ex.: competência de
+                      agosto usa o lote de julho). Se este pediatra tem um lote separado de consultas ambulatoriais,
+                      selecione aqui para somar ao valor de guias. Escolher um sub-lote da produção do mês atual faz
+                      o restante dela virar guia principal automaticamente.
                     </p>
                   </div>
                 )
@@ -1339,7 +1475,12 @@ export function NovaExecucao() {
                   // Achado 2026-09-03: `lotesConsultaAutoDetectados` (nome contém "CONSULTA") tem
                   // prioridade sobre a escolha manual — os dois nunca vêm preenchidos juntos na
                   // prática (a UI só mostra o dropdown manual quando NADA foi auto-detectado).
-                  const consultaLote = lotesDaProducaoMensal.find((l) => l.id === consultaProducaoId);
+                  // Achado 2026-09-04: o sub-lote escolhido manualmente pode vir da produção do mês
+                  // ATUAL (entra na exclusão do guia principal, mesmo mecanismo de sempre) ou do mês
+                  // ANTERIOR (não exclui nada da produção atual — é uma produção separada).
+                  const consultaLoteMesAtual = lotesDaProducaoMensal.find((l) => l.id === consultaProducaoId);
+                  const consultaLoteMesAnterior = lotesMesAnteriorTodos.find((l) => l.id === consultaProducaoId);
+                  const consultaLote = consultaLoteMesAtual ?? consultaLoteMesAnterior;
                   const usaConsultaAuto = temSubLotesConsultaAutoDetectados;
                   // Achado 2026-09-03: padrão VH — quando há sub-lote(s) de Cirurgia detectados, o
                   // guia principal é a soma DELES (já exclui Consultas/Imobilizações por
@@ -1349,9 +1490,11 @@ export function NovaExecucao() {
                     ? classificacaoImobilizacoes.cirurgia
                     : usaConsultaAuto
                       ? lotesDaProducaoMensal.filter((l) => !lotesConsultaAutoDetectados.some((c) => c.id === l.id))
-                      : consultaLote
-                        ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLote.id)
-                        : [];
+                      : consultaLoteMesAtual
+                        ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLoteMesAtual.id)
+                        : consultaLoteMesAnterior
+                          ? lotesDaProducaoMensal
+                          : [];
                   const outrosHospitaisProd = producoesDoMedicoSelecionado.find(
                     (p) => p.id === outrosHospitaisProducaoId,
                   );
