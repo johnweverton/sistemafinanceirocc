@@ -278,6 +278,14 @@ export function NovaExecucao() {
   const [subLoteImobilizacoesOverride, setSubLoteImobilizacoesOverride] = useState<
     Record<string, ClasseSubLoteImobilizacoes>
   >({});
+  // Correção manual dos sub-lotes de Consultas do Pediatra detectados automaticamente pelo nome
+  // (achado 2026-09-04, feedback do dono: colaborador colocou as consultas de um mês num sub-lote
+  // de outro mês por engano, e a classificação automática não tinha como saber que aquele sub-lote
+  // específico não deveria contar nesta competência). Chave = id do sub-lote (fin-lotes); presente
+  // e `true` = operador desmarcou explicitamente esse sub-lote da soma automática. Só se aplica ao
+  // modo "Por médico" (mesmo motivo de subLoteImobilizacoesOverride acima — sem correção por
+  // sub-lote no modo em lote).
+  const [consultaAutoExcluidos, setConsultaAutoExcluidos] = useState<Record<string, boolean>>({});
   // Produção MENSAL do médico Angiologista (ex.: "JULHO - 2026") — os sub-lotes de Cateter/
   // Fístula/Angiografia/Carta de Rede vivem DENTRO dela no painel de origem, mas fin-producoes
   // não os expõe: precisa de uma busca separada em fin-lotes (devolutiva do desenvolvedor, GATE
@@ -379,6 +387,15 @@ export function NovaExecucao() {
     [lotesDaProducaoMensal, lotesMesAnteriorTodos],
   );
   const temSubLotesConsultaAutoDetectados = lotesConsultaAutoDetectados.length > 0;
+  // Sub-lotes auto-detectados MENOS os que o operador desmarcou manualmente (ver
+  // consultaAutoExcluidos acima) — é isto, e não a lista bruta, que efetivamente entra no
+  // cálculo/payload. Quando o operador desmarca TODOS, a UI reabre o seletor manual de fallback
+  // (mesmo usado quando nenhum sub-lote bate com "CONSULTA" no nome).
+  const lotesConsultaSelecionados = useMemo(
+    () => lotesConsultaAutoDetectados.filter((l) => !consultaAutoExcluidos[l.id]),
+    [lotesConsultaAutoDetectados, consultaAutoExcluidos],
+  );
+  const temSubLotesConsultaSelecionados = lotesConsultaSelecionados.length > 0;
 
   // Auto-classificação de sub-lotes de Imobilizações por NOME (achado 2026-09-03) — só entra em
   // jogo quando existe pelo menos 1 sub-lote nomeado "CIRURGIA*": esse é o sinal de que a origem
@@ -394,9 +411,9 @@ export function NovaExecucao() {
   const lotesElegiveisImobilizacoes = useMemo(
     () =>
       lotesDaProducaoMensal.filter(
-        (l) => l.id !== consultaProducaoId && !lotesConsultaAutoDetectados.some((c) => c.id === l.id),
+        (l) => l.id !== consultaProducaoId && !lotesConsultaSelecionados.some((c) => c.id === l.id),
       ),
-    [lotesDaProducaoMensal, consultaProducaoId, lotesConsultaAutoDetectados],
+    [lotesDaProducaoMensal, consultaProducaoId, lotesConsultaSelecionados],
   );
   const classificacaoImobilizacoes = useMemo(
     () => classificarLotesImobilizacoes(lotesElegiveisImobilizacoes, subLoteImobilizacoesOverride),
@@ -1240,31 +1257,50 @@ export function NovaExecucao() {
               )}
 
               {medicoId && isPediatraEspecialidade(validMedicos.find((m) => m.id === medicoId)?.especialidade) && (
-                temSubLotesConsultaAutoDetectados ? (
-                  // Achado 2026-09-03: pelo menos 1 sub-lote da produção mensal já tem "CONSULTA"
-                  // no nome — classificação automática, sem exigir escolha manual. Substitui o
-                  // dropdown abaixo (que continua existindo pro caso sem esse padrão de nome).
-                  <div className="space-y-2 rounded border border-cc-border bg-cc-surface p-2.5">
-                    <p className="text-xs font-medium text-cc-ink">
-                      Sub-lote(s) de Consultas detectados automaticamente pelo nome
-                    </p>
-                    <p className="text-xs text-cc-ink-2">
-                      <span className="font-medium">{lotesConsultaAutoDetectados.length}</span> sub-lote(s) somados
-                      como Consultas (buscados primeiro na produção mensal do MÊS ANTERIOR, onde a origem
-                      costuma gerá-los, e também na do mês atual); o restante da produção mensal atual vira
-                      guia principal automaticamente.
-                    </p>
-                    <ul className="space-y-0.5 pl-4 text-xs text-cc-muted list-disc max-h-32 overflow-y-auto">
-                      {lotesConsultaAutoDetectados.map((l) => (
-                        <li key={l.id}>{l.nome}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <div>
-                    <label htmlFor="producao-consultas-select" className="field-label mb-1.5">
-                      Produção de consultas <span className="font-normal normal-case text-cc-muted">(opcional)</span>
-                    </label>
+                <>
+                  {temSubLotesConsultaAutoDetectados && (
+                    // Achado 2026-09-03: pelo menos 1 sub-lote da produção mensal já tem "CONSULTA"
+                    // no nome — classificação automática, sem exigir escolha manual por padrão.
+                    // Achado 2026-09-04: cada sub-lote listado tem um checkbox pra permitir
+                    // desmarcar um que não deveria contar nesta competência (ex.: colaborador
+                    // colocou as consultas de um mês errado nesse sub-lote) — quando TODOS forem
+                    // desmarcados, o seletor manual de fallback abaixo reaparece.
+                    <div className="space-y-2 rounded border border-cc-border bg-cc-surface p-2.5">
+                      <p className="text-xs font-medium text-cc-ink">
+                        Sub-lote(s) de Consultas detectados automaticamente pelo nome
+                      </p>
+                      <p className="text-xs text-cc-ink-2">
+                        <span className="font-medium">{lotesConsultaSelecionados.length}</span> de{' '}
+                        <span className="font-medium">{lotesConsultaAutoDetectados.length}</span> sub-lote(s)
+                        marcados somam como Consultas (buscados primeiro na produção mensal do MÊS ANTERIOR,
+                        onde a origem costuma gerá-los, e também na do mês atual); o restante da produção
+                        mensal atual vira guia principal automaticamente. Desmarque um sub-lote se ele não
+                        deve contar nesta competência.
+                      </p>
+                      <ul className="space-y-1 text-xs text-cc-ink max-h-32 overflow-y-auto">
+                        {lotesConsultaAutoDetectados.map((l) => (
+                          <li key={l.id} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`consulta-auto-${l.id}`}
+                              checked={!consultaAutoExcluidos[l.id]}
+                              onChange={(e) =>
+                                setConsultaAutoExcluidos((prev) => ({ ...prev, [l.id]: !e.target.checked }))
+                              }
+                            />
+                            <label htmlFor={`consulta-auto-${l.id}`} className="truncate">
+                              {l.nome}
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {!temSubLotesConsultaSelecionados && (
+                    <div>
+                      <label htmlFor="producao-consultas-select" className="field-label mb-1.5">
+                        Produção de consultas <span className="font-normal normal-case text-cc-muted">(opcional)</span>
+                      </label>
                     <select
                       id="producao-consultas-select"
                       className="input"
@@ -1312,13 +1348,13 @@ export function NovaExecucao() {
                         ))}
                     </select>
                     <p className="mt-1.5 text-xs text-cc-muted">
-                      A Consulta costuma estar num sub-lote da produção mensal do MÊS ANTERIOR (ex.: competência de
-                      agosto usa o lote de julho). Se este pediatra tem um lote separado de consultas ambulatoriais,
-                      selecione aqui para somar ao valor de guias. Escolher um sub-lote da produção do mês atual faz
-                      o restante dela virar guia principal automaticamente.
+                      {temSubLotesConsultaAutoDetectados
+                        ? 'Todos os sub-lotes detectados automaticamente acima foram desmarcados — escolha um sub-lote ou produção manualmente, ou deixe "Sem componente de consultas" para não somar Consultas nesta competência.'
+                        : 'A Consulta costuma estar num sub-lote da produção mensal do MÊS ANTERIOR (ex.: competência de agosto usa o lote de julho). Se este pediatra tem um lote separado de consultas ambulatoriais, selecione aqui para somar ao valor de guias. Escolher um sub-lote da produção do mês atual faz o restante dela virar guia principal automaticamente.'}
                     </p>
                   </div>
-                )
+                  )}
+                </>
               )}
 
               {medicoId && validMedicos.find((m) => m.id === medicoId)?.fazOutrosHospitais && (
@@ -1472,16 +1508,17 @@ export function NovaExecucao() {
                   // lista flat de produções), o principal deixa de ser o pacote inteiro da
                   // produção mensal e passa a ser a soma dos OUTROS sub-lotes — automático, sem o
                   // operador precisar marcar mais nada (anti-dupla-contagem: ver migration 0052).
-                  // Achado 2026-09-03: `lotesConsultaAutoDetectados` (nome contém "CONSULTA") tem
+                  // Achado 2026-09-03: `lotesConsultaSelecionados` (sub-lotes com "CONSULTA" no
+                  // nome, menos os que o operador desmarcou manualmente — achado 2026-09-04) tem
                   // prioridade sobre a escolha manual — os dois nunca vêm preenchidos juntos na
-                  // prática (a UI só mostra o dropdown manual quando NADA foi auto-detectado).
+                  // prática (a UI só mostra o dropdown manual quando NADA sobrou selecionado).
                   // Achado 2026-09-04: o sub-lote escolhido manualmente pode vir da produção do mês
                   // ATUAL (entra na exclusão do guia principal, mesmo mecanismo de sempre) ou do mês
                   // ANTERIOR (não exclui nada da produção atual — é uma produção separada).
                   const consultaLoteMesAtual = lotesDaProducaoMensal.find((l) => l.id === consultaProducaoId);
                   const consultaLoteMesAnterior = lotesMesAnteriorTodos.find((l) => l.id === consultaProducaoId);
                   const consultaLote = consultaLoteMesAtual ?? consultaLoteMesAnterior;
-                  const usaConsultaAuto = temSubLotesConsultaAutoDetectados;
+                  const usaConsultaAuto = temSubLotesConsultaSelecionados;
                   // Achado 2026-09-03: padrão VH — quando há sub-lote(s) de Cirurgia detectados, o
                   // guia principal é a soma DELES (já exclui Consultas/Imobilizações por
                   // construção de `classificacaoImobilizacoes`). Senão, quando há Consultas (manual
@@ -1489,7 +1526,7 @@ export function NovaExecucao() {
                   const guiasLotesRestantes = temSubLotesCirurgiaImobilizacoes
                     ? classificacaoImobilizacoes.cirurgia
                     : usaConsultaAuto
-                      ? lotesDaProducaoMensal.filter((l) => !lotesConsultaAutoDetectados.some((c) => c.id === l.id))
+                      ? lotesDaProducaoMensal.filter((l) => !lotesConsultaSelecionados.some((c) => c.id === l.id))
                       : consultaLoteMesAtual
                         ? lotesDaProducaoMensal.filter((l) => l.id !== consultaLoteMesAtual.id)
                         : consultaLoteMesAnterior
@@ -1544,8 +1581,8 @@ export function NovaExecucao() {
                             : (producaoSelecionada?.nome ?? null),
                         ...(usaConsultaAuto
                           ? {
-                              producaoConsultasLoteExternaIds: lotesConsultaAutoDetectados.map((l) => l.id),
-                              producaoConsultasLoteNomes: lotesConsultaAutoDetectados.map((l) => l.nome),
+                              producaoConsultasLoteExternaIds: lotesConsultaSelecionados.map((l) => l.id),
+                              producaoConsultasLoteNomes: lotesConsultaSelecionados.map((l) => l.nome),
                             }
                           : consultaLote
                             ? {

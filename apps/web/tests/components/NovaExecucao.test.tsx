@@ -310,6 +310,45 @@ describe('NovaExecucao — modo "Por médico": sub-lotes de consulta de pediatri
     );
   });
 
+  // Achado real 2026-09-04 (mesmo dia do achado do mês anterior): um colaborador colocou as
+  // consultas de um mês no sub-lote de OUTRO mês por engano, e a classificação automática por
+  // nome (sem ambiguidade possível) não tinha como saber disso — o operador precisa poder
+  // desmarcar manualmente o sub-lote errado. Com o único sub-lote detectado desmarcado, a UI
+  // reabre o seletor manual de fallback (mesmo usado quando nada bate com "CONSULTA" no nome).
+  it('permite desmarcar um sub-lote de Consultas auto-detectado e reabre o seletor manual quando todos forem desmarcados', async () => {
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-4' });
+    renderComProviders();
+    await selecionarMedicoEProducao();
+    await screen.findByText('Sub-lote(s) de Consultas detectados automaticamente pelo nome');
+
+    const checkbox = screen.getByLabelText('HUMBERTO CONSULTAS DE JUNHO') as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(false);
+
+    // Com o único sub-lote detectado desmarcado, o dropdown manual de fallback reaparece.
+    expect(await screen.findByLabelText(/Produção de consultas/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Processar médico' }));
+
+    await waitFor(() =>
+      expect(mockDisparar).toHaveBeenCalledWith(
+        '2026-07',
+        [
+          expect.objectContaining({
+            medicoId: 'm-humberto',
+            producaoExternaId: 'p-julho',
+            producaoNome: 'JULHO - 2026',
+          }),
+        ],
+        undefined,
+      ),
+    );
+    const payload = mockDisparar.mock.calls[0]![1]![0];
+    expect(payload.producaoConsultasLoteExternaIds).toBeUndefined();
+    expect(payload.producaoGuiasLoteExternaIds).toBeUndefined();
+  });
+
   it('sem nenhum sub-lote com "CONSULTA" no nome, mantém o dropdown manual e o pacote completo sem regressão', async () => {
     mockLotes.mockImplementation(async (...args: unknown[]) =>
       args[0] === 'p-julho'
