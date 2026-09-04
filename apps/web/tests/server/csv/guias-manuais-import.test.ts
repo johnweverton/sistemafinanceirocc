@@ -176,6 +176,148 @@ describe('resolverGuiasManuais', () => {
   });
 });
 
+// Achado 2026-09-04 (feedback do dono): "o médico pode ter produção normal, imobilizações,
+// consultas e etc... são tabelas diferentes, não tenho como colocar 200 se 100 foi guias normal
+// e 100 foi consultas". Cada coluna de total (total_guias/total_consultas/total_imobilizacoes/
+// total_outros_hospitais) agora é independente e opcional por linha.
+describe('resolverGuiasManuais — colunas por classe (achado 2026-09-04)', () => {
+  const medicoPediatra = medicoFake({
+    id: 'med-pediatra',
+    nome: 'Dr. Pediatra',
+    cpf: '52998224725',
+    especialidade: 'Pediatria',
+  });
+  const medicoImobilizacoes = medicoFake({
+    id: 'med-imob',
+    nome: 'Dr. Imob',
+    cpf: '15350946056',
+    fazImobilizacoes: true,
+  });
+  const medicoOutrosHospitais = medicoFake({
+    id: 'med-outros',
+    nome: 'Dr. Outros',
+    cpf: '12345678909',
+    fazOutrosHospitais: true,
+  });
+  const medicoAngiologista = medicoFake({
+    id: 'med-angio',
+    nome: 'Dr. Angio',
+    cpf: '87041307172',
+    especialidade: 'Angiologia',
+  });
+  const cadastroCompleto = [...cadastro, medicoPediatra, medicoImobilizacoes, medicoOutrosHospitais, medicoAngiologista];
+
+  it('preenche só total_consultas (deixa total_guias em branco) — aceito, guiasManuaisTotal ausente', () => {
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '52998224725', total_guias: '', total_consultas: '40' })],
+      cadastroCompleto,
+      '2026-06',
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.linhas[0]).toMatchObject({ guiasManuaisConsultas: 40 });
+    expect(r.linhas[0]).not.toHaveProperty('guiasManuaisTotal');
+  });
+
+  it('preenche total_guias E total_consultas juntos — os dois viram overrides independentes', () => {
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '52998224725', total_guias: '15', total_consultas: '40' })],
+      cadastroCompleto,
+      '2026-06',
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.linhas[0]).toMatchObject({ guiasManuaisTotal: 15, guiasManuaisConsultas: 40 });
+  });
+
+  it('total_consultas preenchido pra médico que não é Pediatra → erro de linha', () => {
+    const r = resolverGuiasManuais(
+      [linha({ total_consultas: '40' })], // linha() usa o CPF do Dr. Fulano (Urologia)
+      cadastroCompleto,
+      '2026-06',
+    );
+    expect(r.linhas).toEqual([]);
+    expect(r.erros[0]?.erro).toContain('não é Pediatra');
+  });
+
+  it('total_imobilizacoes preenchido pra médico sem fazImobilizacoes → erro de linha', () => {
+    const r = resolverGuiasManuais([linha({ total_imobilizacoes: '12' })], cadastroCompleto, '2026-06');
+    expect(r.linhas).toEqual([]);
+    expect(r.erros[0]?.erro).toContain('não tem Imobilizações marcado');
+  });
+
+  it('total_imobilizacoes válido pra médico com fazImobilizacoes', () => {
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '15350946056', total_guias: '', total_imobilizacoes: '12' })],
+      cadastroCompleto,
+      '2026-06',
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.linhas[0]).toMatchObject({ guiasManuaisImobilizacoes: 12 });
+  });
+
+  it('total_outros_hospitais preenchido pra médico sem fazOutrosHospitais → erro de linha', () => {
+    const r = resolverGuiasManuais([linha({ total_outros_hospitais: '9' })], cadastroCompleto, '2026-06');
+    expect(r.linhas).toEqual([]);
+    expect(r.erros[0]?.erro).toContain('não tem Outros Hospitais marcado');
+  });
+
+  it('total_outros_hospitais válido pra médico com fazOutrosHospitais', () => {
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '12345678909', total_guias: '', total_outros_hospitais: '9' })],
+      cadastroCompleto,
+      '2026-06',
+    );
+    expect(r.erros).toEqual([]);
+    expect(r.linhas[0]).toMatchObject({ guiasManuaisOutrosHospitais: 9 });
+  });
+
+  it('nenhuma das 4 colunas preenchida → erro de linha explícito (a linha não teria efeito)', () => {
+    const r = resolverGuiasManuais([linha({ total_guias: '' })], cadastroCompleto, '2026-06');
+    expect(r.linhas).toEqual([]);
+    expect(r.erros[0]?.erro).toContain('Nenhuma coluna de total preenchida');
+  });
+
+  it('coluna com valor inválido (não inteiro/negativo) → erro nomeando a coluna certa', () => {
+    const casos: [string, Record<string, string>][] = [
+      ['total_consultas', { cpf: '52998224725', total_guias: '', total_consultas: 'abc' }],
+      ['total_imobilizacoes', { cpf: '15350946056', total_guias: '', total_imobilizacoes: '-1' }],
+      ['total_outros_hospitais', { cpf: '12345678909', total_guias: '', total_outros_hospitais: '4.5' }],
+    ];
+    for (const [coluna, overrides] of casos) {
+      const r = resolverGuiasManuais([linha(overrides)], cadastroCompleto, '2026-06');
+      expect(r.linhas, `${coluna} deveria ser rejeitado`).toEqual([]);
+      expect(r.erros[0]?.erro).toContain(coluna);
+    }
+  });
+
+  it('médico Angiologista: QUALQUER coluna preenchida → erro explícito (planilha não suportada pra essa especialidade)', () => {
+    const casos = [
+      { total_guias: '10' },
+      { total_guias: '', total_consultas: '5' }, // hipotético (Angiologista não é pediatra, mas o gate de Angiologista vem primeiro)
+      { total_guias: '', total_imobilizacoes: '5' },
+      { total_guias: '', total_outros_hospitais: '5' },
+    ];
+    for (const overrides of casos) {
+      const r = resolverGuiasManuais(
+        [linha({ cpf: '87041307172', ...overrides })],
+        cadastroCompleto,
+        '2026-06',
+      );
+      expect(r.linhas).toEqual([]);
+      expect(r.erros[0]?.erro).toContain('Angiologista');
+    }
+  });
+
+  it('motivo continua obrigatório quando qualquer uma das 4 colunas vem preenchida', () => {
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '15350946056', total_guias: '', total_imobilizacoes: '12', motivo: '' })],
+      cadastroCompleto,
+      '2026-06',
+    );
+    expect(r.linhas).toEqual([]);
+    expect(r.erros[0]?.erro).toContain('Motivo não informado');
+  });
+});
+
 describe('normalizarCpf', () => {
   it('mantém só os dígitos', () => {
     expect(normalizarCpf('111.444.777-35')).toBe('11144477735');

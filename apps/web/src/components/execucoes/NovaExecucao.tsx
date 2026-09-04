@@ -78,6 +78,18 @@ function classificarSubLoteAngiologista(nome: string): ClasseSubLoteAngiologista
   return 'angiografia';
 }
 
+/** Resumo legível dos overrides manuais de UMA linha da planilha (migration 0058, colunas por
+ *  classe na 0060, achado 2026-09-04) — cada campo é independente e opcional, então o resumo lista
+ *  só o(s) que vieram preenchidos (ex.: "15 guias, 40 consultas"), nunca inventa um total só. */
+function resumoGuiasManuaisLinha(l: GuiasManuaisLinha): string {
+  const partes: string[] = [];
+  if (l.guiasManuaisTotal != null) partes.push(`${l.guiasManuaisTotal} guias`);
+  if (l.guiasManuaisConsultas != null) partes.push(`${l.guiasManuaisConsultas} consultas`);
+  if (l.guiasManuaisImobilizacoes != null) partes.push(`${l.guiasManuaisImobilizacoes} imobilizações`);
+  if (l.guiasManuaisOutrosHospitais != null) partes.push(`${l.guiasManuaisOutrosHospitais} outros hospitais`);
+  return partes.join(', ');
+}
+
 /** Tipo mínimo de sub-lote usado pelos classificadores em lote abaixo — evita depender do tipo
  *  exato devolvido por `execucoesService.lotes` neste arquivo utilitário. */
 type SubLoteMinimo = { id: string; nome: string };
@@ -769,11 +781,17 @@ export function NovaExecucao() {
                 producaoImobilizacoesNome: imobilizacoesProdManual.nome,
               }
             : {}),
-        // Migration 0058: substitui a contagem automática SÓ deste médico. O motor ignora a
-        // contagem automática das guias, mas o resto do pipeline (consultas, lotes secundários)
-        // continua igual.
+        // Migration 0058, colunas por classe na 0060 (achado 2026-09-04): cada campo substitui a
+        // contagem automática SÓ daquela classe pra este médico — os que não vieram na planilha
+        // (undefined) continuam automáticos normalmente (execução mista dentro do próprio médico).
         ...(guiasManuais
-          ? { guiasManuaisTotal: guiasManuais.guiasManuaisTotal, guiasManuaisMotivo: guiasManuais.guiasManuaisMotivo }
+          ? {
+              guiasManuaisTotal: guiasManuais.guiasManuaisTotal,
+              guiasManuaisConsultas: guiasManuais.guiasManuaisConsultas,
+              guiasManuaisImobilizacoes: guiasManuais.guiasManuaisImobilizacoes,
+              guiasManuaisOutrosHospitais: guiasManuais.guiasManuaisOutrosHospitais,
+              guiasManuaisMotivo: guiasManuais.guiasManuaisMotivo,
+            }
           : {}),
       });
     }
@@ -1724,9 +1742,12 @@ export function NovaExecucao() {
               <div>
                 <h3 className="text-sm font-medium text-cc-ink">Guias conferidas manualmente (opcional)</h3>
                 <p className="mt-1 text-xs text-cc-muted">
-                  Substitui a contagem automática de guias APENAS dos médicos que vierem na planilha, nesta
-                  competência. Os demais continuam no cálculo normal. A marca de contagem manual aparece só no
-                  relatório interno — nunca no boleto.
+                  Substitui a contagem automática APENAS dos médicos/classes que vierem na planilha, nesta
+                  competência. Guias normais, consultas do pediatra, imobilizações e outros hospitais têm colunas
+                  separadas — cada tabela de preço é diferente, então preencha só a(s) coluna(s) que conferiu (o
+                  resto continua automático). Os demais médicos continuam no cálculo normal. A marca de contagem
+                  manual aparece só no relatório interno — nunca no boleto. Não vale para médico Angiologista
+                  (produção vem de Cateter/Fístula/Angiografia/Carta de Rede, sem lote principal).
                 </p>
                 <a href="/templates/guias-manuais-modelo.csv" download className="mt-1.5 inline-block text-xs text-cc-accent underline">
                   Baixar modelo da planilha (.csv)
@@ -1766,7 +1787,7 @@ export function NovaExecucao() {
                         <div key={l.medicoId} className="rounded bg-cc-surface-2/60 p-1.5 text-xs text-cc-ink">
                           <div className="flex justify-between gap-2">
                             <span className="truncate font-medium">{l.medicoNome}</span>
-                            <span className="shrink-0 tabular">{l.guiasManuaisTotal} guias</span>
+                            <span className="shrink-0 tabular">{resumoGuiasManuaisLinha(l)}</span>
                           </div>
                           <p className="mt-0.5 text-cc-muted">
                             CPF {l.cpf} · linha {l.linha} · {l.guiasManuaisMotivo}
@@ -1826,7 +1847,7 @@ export function NovaExecucao() {
                       </p>
                       {selecoesInfo.manuaisForaDaSelecao.map((l) => (
                         <p key={l.medicoId} className="text-xs text-cc-ink-2">
-                          {l.medicoNome} ({l.guiasManuaisTotal} guias)
+                          {l.medicoNome} ({resumoGuiasManuaisLinha(l)})
                         </p>
                       ))}
                     </div>
@@ -1913,7 +1934,7 @@ export function NovaExecucao() {
                                   médico não vai ser contado pelo motor. */}
                               {guiasManuais && (
                                 <p className="rounded bg-cc-warning-soft px-1.5 py-1 text-xs text-cc-warning">
-                                  Contagem MANUAL: {guiasManuais.guiasManuaisTotal} guias — {guiasManuais.guiasManuaisMotivo}
+                                  Contagem MANUAL: {resumoGuiasManuaisLinha(guiasManuais)} — {guiasManuais.guiasManuaisMotivo}
                                 </p>
                               )}
                               {/* Achado 2026-09-03: quando a produção mensal tem sub-lote de Consultas

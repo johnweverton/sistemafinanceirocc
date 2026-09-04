@@ -1023,3 +1023,65 @@ describe('NovaExecucao — planilha de guias manuais (migration 0058)', () => {
     expect(screen.getByText(/Dr. Alfa \(42 guias\)/)).toBeInTheDocument();
   });
 });
+
+// Achado 2026-09-04 (feedback do dono): "o médico pode ter produção normal, imobilizações,
+// consultas e etc... são tabelas diferentes, não tenho como colocar 200 se 100 foi guias normal e
+// 100 foi consultas". Cada classe agora tem sua própria coluna/override, independentes entre si.
+describe('NovaExecucao — planilha de guias manuais por classe (achado 2026-09-04)', () => {
+  const arquivo = new File(['cpf,nome,competencia,...'], 'guias.csv', { type: 'text/csv' });
+
+  const previewMultiClasse = {
+    linhas: [
+      {
+        linha: 2,
+        medicoId: 'm1',
+        medicoNome: 'Dr. Alfa',
+        cpf: '11144477735',
+        nomePlanilha: 'Dr. Alfa',
+        competencia: '2026-06',
+        guiasManuaisTotal: 15,
+        guiasManuaisConsultas: 40,
+        guiasManuaisMotivo: 'Guias normais e consultas conferidas a mao',
+      },
+    ],
+    erros: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApoio.mockResolvedValue(apoioFixture);
+    mockListarEmpresas.mockResolvedValue([empresaFixture]);
+    mockMedicosComBoleto.mockResolvedValue({ medicoIds: [] });
+    mockPreviewGuiasManuais.mockResolvedValue(previewMultiClasse);
+    mockDisparar.mockResolvedValue({ execucaoId: 'exec-multi' });
+  });
+
+  it('mostra o resumo combinado (guias + consultas) e envia os DOIS campos independentes no disparo', async () => {
+    renderComProviders();
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-06' } });
+    await screen.findByText(/Prontos para processar/);
+    fireEvent.change(screen.getByLabelText('Planilha de guias conferidas manualmente'), {
+      target: { files: [arquivo] },
+    });
+    await waitFor(() => expect(mockPreviewGuiasManuais).toHaveBeenCalled());
+
+    // Preview: resumo combina as 2 colunas preenchidas, sem inventar um total único.
+    await screen.findByText(/15 guias, 40 consultas/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Aplicar a 1 médico/ }));
+    await screen.findByText(/Contagem MANUAL: 15 guias, 40 consultas — Guias normais e consultas conferidas a mao/);
+
+    fireEvent.click(screen.getByRole('button', { name: /Processar \d+ médicos/ }));
+
+    await waitFor(() => expect(mockDisparar).toHaveBeenCalled());
+    const selecoes = mockDisparar.mock.calls[0]![1] as Record<string, unknown>[];
+    const alfa = selecoes.find((s) => s.medicoId === 'm1')!;
+    expect(alfa).toMatchObject({
+      guiasManuaisTotal: 15,
+      guiasManuaisConsultas: 40,
+      guiasManuaisMotivo: 'Guias normais e consultas conferidas a mao',
+    });
+    expect(alfa.guiasManuaisImobilizacoes).toBeUndefined();
+    expect(alfa.guiasManuaisOutrosHospitais).toBeUndefined();
+  });
+});

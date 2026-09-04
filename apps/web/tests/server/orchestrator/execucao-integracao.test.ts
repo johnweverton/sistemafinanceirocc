@@ -382,6 +382,68 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     expect(automatico.alertas.some((a) => a.includes('CONTAGEM MANUAL'))).toBe(false);
   });
 
+  // Migration 0060 (achado 2026-09-04): "o médico pode ter produção normal, imobilizações,
+  // consultas e etc... são tabelas diferentes, não tenho como colocar 200 se 100 foi guias
+  // normal e 100 foi consultas". Cada classe tem sua PRÓPRIA coluna/override — o teste prova
+  // fim a fim (orquestrador → Engine) que o override de Imobilizações NUNCA vaza pro principal
+  // (nem vice-versa), mesmo vindo os dois na mesma seleção.
+  it('Migration 0060 — override manual POR CLASSE: principal e Imobilizações divergem cada um da própria contagem automática', async () => {
+    const producao = (n: number, prefixo: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        data: '2026-06-10',
+        pacienteNome: `${prefixo}-${i}`,
+        atendimentoExternoId: `AT-${prefixo}-${i}`,
+        codigoProcedimento: '30715040',
+        descricaoProcedimento: 'Visita hospitalar',
+        statusOrigem: 'Devidamente Pago',
+        viaAcesso: false,
+        tipoAto: 'Eletivo',
+        valorCobradoOrigem: 100,
+        valorPagoOrigem: 100,
+      }));
+
+    const state = novoEstado([
+      medicoFake({
+        id: 'm-multi',
+        cpf: '11144477735',
+        nome: 'Dr. Multi Classe',
+        statusHapvida: 'credenciado',
+        fazImobilizacoes: true,
+      }),
+    ]);
+    state.itensPorProducao['p-principal'] = producao(10, 'P'); // automático daria 10
+    state.itensPorProducao['p-imob'] = producao(30, 'I'); // automático daria 30
+
+    const selecoes = [
+      {
+        medicoId: 'm-multi',
+        producaoExternaId: 'p-principal',
+        producaoNome: 'Junho 2026',
+        producaoImobilizacoesExternaId: 'p-imob',
+        producaoImobilizacoesNome: 'Imobilizações Junho 2026',
+        guiasManuaisTotal: 15,
+        guiasManuaisImobilizacoes: 6,
+        guiasManuaisMotivo: 'Guias normais e Imobilizações conferidas a mao',
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    // Principal usa o override (15), NÃO os 10 automáticos.
+    expect(resultado.subtotais.find((s) => s.classe === 'HAPVIDA_CRED')).toMatchObject({ guias: 15 });
+    // Imobilizações usa o SEU PRÓPRIO override (6), NÃO os 30 automáticos nem o 15 do principal.
+    expect(resultado.subtotais.find((s) => s.classe === 'IMOBILIZACOES')).toMatchObject({ guias: 6 });
+    // Uma linha de alerta só, listando os 2 overrides usados.
+    expect(resultado.alertas[0]).toBe(
+      'CONTAGEM MANUAL (planilha): 15 guia(s) da produção principal, 6 guia(s) de Imobilizações ' +
+        'informado(s) manualmente. Motivo: Guias normais e Imobilizações conferidas a mao',
+    );
+    expect(resultado.status).toBe('ok');
+  });
+
   // Achado 2026-08-25 (migration 0059: virou ARRAY): mesmo caso do Humberto (sub-lote de consulta
   // acima), mas para Imobilizações — a produção mensal do médico pode ter sub-lote(s) de
   // imobilizações (ex.: "1º QUINZENA IMOBILIZAÇÕES") dentro dela, em vez de vir como produção de

@@ -140,6 +140,16 @@ export interface SelecaoDeps {
    * que aparece no alerta de auditoria do relatório interno.
    */
   guiasManuaisTotal?: number | null;
+  /**
+   * Mesmo mecanismo de `guiasManuaisTotal` acima, mas independente por classe (migration 0060,
+   * achado 2026-09-04: guias normais, consultas, imobilizações e outros hospitais têm tabelas de
+   * preço diferentes — um total agregado só misturaria valores de classes diferentes). Cada uma
+   * substitui a contagem automática SÓ daquela classe pra este médico nesta competência; as
+   * demais continuam automáticas.
+   */
+  guiasManuaisConsultas?: number | null;
+  guiasManuaisImobilizacoes?: number | null;
+  guiasManuaisOutrosHospitais?: number | null;
   guiasManuaisMotivo?: string | null;
 }
 
@@ -188,6 +198,10 @@ export interface OrchestratorDeps {
       cartaRedeGuias?: number | null;
       /** Contagem manual por planilha (migration 0058) — ver `SelecaoDeps.guiasManuaisTotal`. */
       guiasManuaisTotal?: number | null;
+      /** Mesmo mecanismo acima, por classe (migration 0060) — ver `SelecaoDeps.guiasManuaisConsultas`. */
+      guiasManuaisConsultas?: number | null;
+      guiasManuaisImobilizacoes?: number | null;
+      guiasManuaisOutrosHospitais?: number | null;
       guiasManuaisMotivo?: string | null;
     }[],
     empresaId?: string | null,
@@ -360,6 +374,10 @@ export async function iniciarExecucao(
     cartaRedeGuias?: number | null;
     /** Contagem manual por planilha (migration 0058) — ver `SelecaoDeps.guiasManuaisTotal`. */
     guiasManuaisTotal?: number | null;
+    /** Mesmo mecanismo acima, por classe (migration 0060) — ver `SelecaoDeps.guiasManuaisConsultas`. */
+    guiasManuaisConsultas?: number | null;
+    guiasManuaisImobilizacoes?: number | null;
+    guiasManuaisOutrosHospitais?: number | null;
     guiasManuaisMotivo?: string | null;
   }[],
   usuarioId: string,
@@ -645,6 +663,12 @@ async function processarUmMedico(
     // nada na origem — o número já veio na seleção. Quando presente, o Engine pula a contagem
     // automática DESTE médico; os demais médicos do mesmo lote seguem no fluxo normal.
     const guiasManuaisTotal = selecao.guiasManuaisTotal ?? undefined;
+    // Achado 2026-09-04: mesmo mecanismo acima, um por classe — cada um independente, substitui
+    // a contagem automática SÓ daquela classe pra este médico (ver doc de
+    // `SelecaoDeps.guiasManuaisConsultas`).
+    const guiasManuaisConsultas = selecao.guiasManuaisConsultas ?? undefined;
+    const guiasManuaisImobilizacoes = selecao.guiasManuaisImobilizacoes ?? undefined;
+    const guiasManuaisOutrosHospitais = selecao.guiasManuaisOutrosHospitais ?? undefined;
     const guiasManuaisMotivo = selecao.guiasManuaisMotivo ?? undefined;
 
     // Variação anômala (PRD §8.5): busca guias da execução concluída anterior.
@@ -666,6 +690,9 @@ async function processarUmMedico(
         itensAngiografia,
         guiasCartaRede,
         guiasManuaisTotal,
+        guiasManuaisConsultas,
+        guiasManuaisImobilizacoes,
+        guiasManuaisOutrosHospitais,
         guiasManuaisMotivo,
         competencia,
         saldoAcumulado: saldoExistente,

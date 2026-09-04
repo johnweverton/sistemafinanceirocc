@@ -14,7 +14,10 @@ import {
   COLUNAS_GUIAS_MANUAIS,
 } from '@/server/csv/guias-manuais-import';
 
-/** Cadastro fake com os MESMOS CPFs do template — o cruzamento é sempre por CPF. */
+/** Cadastro fake com os MESMOS CPFs do template — o cruzamento é sempre por CPF. Especialidade/
+ *  flags derivados de QUAL coluna a linha preenche (achado 2026-09-04: total_consultas só vale
+ *  pra Pediatra, total_imobilizacoes/total_outros_hospitais só pro médico com a classe marcada
+ *  no cadastro — senão o exemplo do template seria rejeitado pelo próprio parser). */
 function cadastroDoTemplate(rows: Record<string, string>[]): Medico[] {
   return rows.map(
     (row, i) =>
@@ -22,10 +25,10 @@ function cadastroDoTemplate(rows: Record<string, string>[]): Medico[] {
         id: `med-${i}`,
         nome: row.nome ?? `Médico ${i}`,
         cpf: normalizarCpf(row.cpf),
-        especialidade: 'Urologia',
+        especialidade: row.total_consultas ? 'Pediatria' : 'Urologia',
         statusHapvida: 'credenciado',
-        fazOutrosHospitais: false,
-        fazImobilizacoes: false,
+        fazOutrosHospitais: Boolean(row.total_outros_hospitais),
+        fazImobilizacoes: Boolean(row.total_imobilizacoes),
         modoMudancaData: 'nao',
         modoCobranca: 'faixa_guias',
         percentualProducao: null,

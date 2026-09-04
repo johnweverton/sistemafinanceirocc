@@ -7,12 +7,18 @@ async function main() {
 
   // Mesmas colunas, na mesma ordem, do template CSV (public/templates/guias-manuais-modelo.csv) —
   // os dois precisam ficar sincronizados com o parser (server/csv/guias-manuais-import.ts).
-  // `nome` é só conferência visual: o cruzamento com o cadastro é SEMPRE por CPF.
+  // `nome` é só conferência visual: o cruzamento com o cadastro é SEMPRE por CPF. As 4 colunas de
+  // total (achado 2026-09-04) são cada uma OPCIONAL por linha — preenche só a(s) classe(s) que
+  // conferiu à mão pra aquele médico; guias normais, consultas, imobilizações e outros hospitais
+  // têm tabelas de preço diferentes, por isso não dá pra somar tudo numa coluna só.
   sheet.columns = [
     { header: 'cpf', key: 'cpf', width: 18 },
     { header: 'nome', key: 'nome', width: 30 },
     { header: 'competencia', key: 'competencia', width: 14 },
     { header: 'total_guias', key: 'total_guias', width: 14 },
+    { header: 'total_consultas', key: 'total_consultas', width: 16 },
+    { header: 'total_imobilizacoes', key: 'total_imobilizacoes', width: 18 },
+    { header: 'total_outros_hospitais', key: 'total_outros_hospitais', width: 20 },
     { header: 'motivo', key: 'motivo', width: 60 },
   ];
 
@@ -43,6 +49,31 @@ async function main() {
     competencia: '2026-06',
     total_guias: 7,
     motivo: 'Exceções de procedimento nao cobertas pela regra automatica',
+  });
+
+  sheet.addRow({
+    cpf: '52998224725',
+    nome: 'Dr. Pedro Infante',
+    competencia: '2026-06',
+    total_guias: 15,
+    total_consultas: 40,
+    motivo: 'Guias normais e consultas do mes conferidas a mao - contagem automatica das consultas divergiu',
+  });
+
+  sheet.addRow({
+    cpf: '15350946056',
+    nome: 'Dr. Vitor Imob',
+    competencia: '2026-06',
+    total_imobilizacoes: 12,
+    motivo: 'Lote de Imobilizacoes conferido a mao - sub-lote nao reconhecido pelo nome',
+  });
+
+  sheet.addRow({
+    cpf: '12345678909',
+    nome: 'Dra. Marta Hospitais',
+    competencia: '2026-06',
+    total_outros_hospitais: 9,
+    motivo: 'Lote de Outros Hospitais conferido a mao',
   });
 
   const outPath = path.join(process.cwd(), 'public/templates/guias-manuais-modelo.xlsx');

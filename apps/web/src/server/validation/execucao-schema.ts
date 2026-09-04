@@ -65,11 +65,17 @@ export const dispararExecucaoSchema = z
           producaoCartaRedeNome: z.string().min(1).nullable().optional(),
           cartaRedeGuias: z.number().int().min(0).nullable().optional(),
           // Contagem de guias conferida MANUALMENTE pelo dono, importada de planilha (migration
-          // 0058, aprovado 2026-09-03) — função ALTERNATIVA à contagem automática, aplicada só
-          // aos médicos que vierem na planilha (execução mista é o caso normal). `motivo` é
-          // obrigatório junto (refine abaixo): é o texto que aparece no alerta de auditoria do
-          // relatório interno, e um alerta "Motivo: não informado" não audita nada.
+          // 0058, aprovado 2026-09-03; colunas por classe no achado 2026-09-04) — função
+          // ALTERNATIVA à contagem automática, aplicada só aos médicos/classes que vierem na
+          // planilha (execução mista é o caso normal). Cada campo é independente: guias normais,
+          // consultas, imobilizações e outros hospitais têm tabelas de preço diferentes, um total
+          // agregado só misturaria classes. `motivo` é obrigatório quando QUALQUER um vier
+          // preenchido (refine abaixo): é o texto que aparece no alerta de auditoria do relatório
+          // interno, e um alerta "Motivo: não informado" não audita nada.
           guiasManuaisTotal: z.number().int().min(0).nullable().optional(),
+          guiasManuaisConsultas: z.number().int().min(0).nullable().optional(),
+          guiasManuaisImobilizacoes: z.number().int().min(0).nullable().optional(),
+          guiasManuaisOutrosHospitais: z.number().int().min(0).nullable().optional(),
           guiasManuaisMotivo: z.string().trim().min(1).nullable().optional(),
         }),
       )
@@ -117,7 +123,15 @@ export const dispararExecucaoSchema = z
   // auditoria viraria enfeite. Barra aqui (payload), não como CHECK de banco: é coerência entre
   // dois campos de uma seleção, mesma responsabilidade das demais regras deste schema.
   .refine(
-    (d) => d.selecoes.every((s) => s.guiasManuaisTotal == null || !!s.guiasManuaisMotivo),
+    (d) =>
+      d.selecoes.every(
+        (s) =>
+          (s.guiasManuaisTotal == null &&
+            s.guiasManuaisConsultas == null &&
+            s.guiasManuaisImobilizacoes == null &&
+            s.guiasManuaisOutrosHospitais == null) ||
+          !!s.guiasManuaisMotivo,
+      ),
     {
       message: 'Contagem manual de guias exige o motivo preenchido (coluna "motivo" da planilha)',
       path: ['selecoes'],

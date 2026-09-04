@@ -1,3 +1,6 @@
-cpf,nome,competencia,total_guias,motivo
-11144477735,Dr. Fulano de Tal,2026-06,42,Conferencia manual do dono - contagem automatica divergiu em 3 guias
-98765432100,Dra. Ciclana,2026-06,7,Exceções de procedimento nao cobertas pela regra automatica
+cpf,nome,competencia,total_guias,total_consultas,total_imobilizacoes,total_outros_hospitais,motivo
+11144477735,Dr. Fulano de Tal,2026-06,42,,,,Conferencia manual do dono - contagem automatica divergiu em 3 guias
+98765432100,Dra. Ciclana,2026-06,7,,,,Exceções de procedimento nao cobertas pela regra automatica
+52998224725,Dr. Pedro Infante,2026-06,15,40,,,Guias normais e consultas do mes conferidas a mao - contagem automatica das consultas divergiu
+15350946056,Dr. Vitor Imob,2026-06,,,12,,Lote de Imobilizacoes conferido a mao - sub-lote nao reconhecido pelo nome
+12345678909,Dra. Marta Hospitais,2026-06,,,,9,Lote de Outros Hospitais conferido a mao

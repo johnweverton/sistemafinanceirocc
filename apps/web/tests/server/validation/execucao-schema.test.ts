@@ -298,6 +298,53 @@ describe('dispararExecucaoSchema — contagem manual de guias (migration 0058)',
     expect(r.success).toBe(true);
   });
 
+  // Achado 2026-09-04 (migration 0060): cada classe (guias normais/consultas/imobilizações/
+  // outros hospitais) tem seu próprio campo, independente do `guiasManuaisTotal` do principal.
+  it('só guiasManuaisConsultas preenchido (sem guiasManuaisTotal) exige motivo, mesma regra', () => {
+    const semMotivo = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisConsultas: 40 }],
+    });
+    expect(semMotivo.success).toBe(false);
+
+    const comMotivo = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisConsultas: 40, guiasManuaisMotivo: 'Consultas conferidas a mao' }],
+    });
+    expect(comMotivo.success).toBe(true);
+  });
+
+  it('guiasManuaisImobilizacoes/guiasManuaisOutrosHospitais negativos → rejeita', () => {
+    const imob = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisImobilizacoes: -1, guiasManuaisMotivo: 'x' }],
+    });
+    expect(imob.success).toBe(false);
+
+    const outros = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [{ ...selecao, guiasManuaisOutrosHospitais: -1, guiasManuaisMotivo: 'x' }],
+    });
+    expect(outros.success).toBe(false);
+  });
+
+  it('os 4 campos juntos numa seleção só — exige 1 motivo compartilhado', () => {
+    const r = dispararExecucaoSchema.safeParse({
+      competencia: '2026-06',
+      selecoes: [
+        {
+          ...selecao,
+          guiasManuaisTotal: 15,
+          guiasManuaisConsultas: 40,
+          guiasManuaisImobilizacoes: 6,
+          guiasManuaisOutrosHospitais: 9,
+          guiasManuaisMotivo: 'Tudo conferido a mao neste mes',
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+
   it('execução MISTA: uma seleção com contagem manual e outra sem, no mesmo payload', () => {
     const r = dispararExecucaoSchema.safeParse({
       competencia: '2026-06',

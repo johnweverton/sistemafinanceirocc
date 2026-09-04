@@ -53,6 +53,16 @@ const LIMIAR_MINIMO_GUIAS = 5;
  */
 export const PREFIXO_ALERTA_CONTAGEM_MANUAL = 'CONTAGEM MANUAL (planilha):';
 
+/** Monta o texto único do alerta de auditoria da contagem manual (migration 0058 + achado
+ *  2026-09-04) — reusado pelos dois pontos de retorno que podem ter override manual (o atalho
+ *  "sem produção no lote principal" e o fluxo normal), pra nunca divergir o formato da mensagem. */
+function alertaContagemManual(partes: string[], motivo: string | null | undefined): string {
+  return (
+    `${PREFIXO_ALERTA_CONTAGEM_MANUAL} ${partes.join(', ')} informado(s) manualmente. ` +
+    `Motivo: ${motivo?.trim() || 'não informado'}`
+  );
+}
+
 /** Saldo "vazio" — usado quando `entrada.saldoAcumulado` é null/undefined (médico sem retenção). */
 const SALDO_VAZIO: SaldoAcumulado = {
   guiasPrincipal: 0,
@@ -91,6 +101,9 @@ export function processarMedico(
     itensAngiografia,
     guiasCartaRede,
     guiasManuaisTotal,
+    guiasManuaisConsultas,
+    guiasManuaisImobilizacoes,
+    guiasManuaisOutrosHospitais,
     guiasManuaisMotivo,
     competencia,
     saldoAcumulado,
@@ -103,8 +116,17 @@ export function processarMedico(
    * pula `contarGuiasProducao`/`consolidarProducao` e usa o número informado. Função alternativa,
    * usada pontualmente quando a contagem automática não bateu; quem não vem na planilha continua
    * 100% no fluxo automático na MESMA execução (execução mista é o caso normal).
+   *
+   * Achado 2026-09-04: a mesma ideia agora vale, INDEPENDENTEMENTE, para Consultas/Imobilizações/
+   * Outros Hospitais — um médico pode ter produção normal E imobilizações E consultas na mesma
+   * competência, cada uma com sua própria tabela de preço; um total agregado só (a versão antiga
+   * da planilha) misturaria classes diferentes num número só. Cada override é independente: o
+   * operador pode conferir só o que divergiu (ex.: só Imobilizações) e deixar o resto automático.
    */
   const contagemManual = guiasManuaisTotal != null;
+  const consultasManual = guiasManuaisConsultas != null;
+  const imobilizacoesManual = guiasManuaisImobilizacoes != null;
+  const outrosHospitaisManual = guiasManuaisOutrosHospitais != null;
 
   // Angiologista NÃO tem lote principal (GATE 2026-08-07) — a produção inteira vem de Cateter
   // (1x1) + Fístula (1x1) + Angiografia (3x1 + exceção Intra-operatório) + Carta de Rede (manual,
@@ -129,7 +151,12 @@ export function processarMedico(
     invalidos.length > 0
       ? [`${invalidos.length} item(ns) sem paciente ou data foram descartados da contagem — verificar na origem.`]
       : [];
-  const nConsultas = consultasValidas.length;
+  // Achado 2026-09-04: total de consultas conferido MANUALMENTE (ver doc de `guiasManuaisConsultas`
+  // no contrato) — mesma função alternativa de `guiasManuaisTotal`, mas só pro componente de
+  // consultas. Só pediatra usa de fato (`subtotalConsultas` abaixo já é condicionado a
+  // `isPediatra`); em qualquer outra especialidade o valor calculado aqui simplesmente não é
+  // aproveitado adiante.
+  const nConsultas = consultasManual ? guiasManuaisConsultas! : consultasValidas.length;
   const valorConsultas = nConsultas * valorConsultaPediatria;
   // Consultas NUNCA ficam retidas pelo limiar de guias (ver doc de `SaldoAcumulado`) — sempre que
   // existirem, bilham no mesmo mês, mesmo que as guias hospitalares estejam sendo acumuladas.
@@ -147,15 +174,73 @@ export function processarMedico(
   const temSaldoAnterior =
     s.guiasPrincipal > 0 || s.guiasOutrosHospitais > 0 || s.guiasImobilizacoes > 0 || s.valorBasePercentual > 0;
 
+  // Lotes secundários (Outros Hospitais/Imobilizações) — só no modo faixa_guias (mesmo escopo de
+  // sempre: percentual_producao/preco_proprio nunca cruzaram com essas classes, Story 10.5).
+  // Adiantado pra cima (achado 2026-09-04) porque o atalho abaixo (sem produção no lote
+  // principal) também precisa saber se um override manual dessas classes vale pra este médico.
+  const ehFaixaGuias = medico.modoCobranca !== 'percentual_producao' && medico.modoCobranca !== 'preco_proprio';
+
   // `contagemManual` conta como "tem dado": o número da planilha existe INDEPENDENTE de a
   // produção da origem ter itens válidos (é justamente o caso de uso — a contagem automática não
   // bateu). Sem esta guarda, um médico com total manual e produção vazia cairia em 'sem_dados' e
   // o número conferido à mão seria descartado em silêncio.
   if (validos.length === 0 && !temSaldoAnterior && !contagemManual) {
-    // Story 10.2: pediatra sem guias hospitalares na competência, mas COM consultas
-    // ambulatoriais (lote separado) — cobra só o componente de consultas, em vez de cair em
-    // 'sem_dados' e perder o valor silenciosamente (PRD §2, nunca chuta E nunca perde valor).
+    // Story 10.2 + achado 2026-09-04: pediatra sem guias hospitalares na competência, mas COM
+    // consultas ambulatoriais e/ou Imobilizações/Outros Hospitais conferidos manualmente — cobra
+    // só os componentes presentes, em vez de cair em 'sem_dados' e perder o valor silenciosamente
+    // (PRD §2, nunca chuta E nunca perde valor). NUNCA toca a classe principal aqui: ela
+    // continua genuinamente "sem produção este mês" — cobrar a faixa mínima por 0 guias chutaria
+    // um valor que não existe (por isso este atalho nunca entra no laço de `classesDoMedico`).
+    // Acumulação/limiar mínimo de guias (5) NÃO se aplica aqui, mesmo racional já usado pra
+    // consultas (`SaldoAcumulado`, doc do campo): um número conferido à mão pelo dono, sem
+    // NENHUMA produção de lote principal neste mês, cobra direto — não há bucket de saldo
+    // pendente pra acumular contra (a guarda acima já garante `!temSaldoAnterior`).
+    const subtotaisSemPrincipal: Subtotal[] = [];
+    const overridesSemPrincipal: string[] = [];
+    let valorSemPrincipal = 0;
+    const alertasSemPrincipal = [...alertasDescarte];
     if (subtotalConsultas) {
+      subtotaisSemPrincipal.push(subtotalConsultas);
+      valorSemPrincipal += valorConsultas;
+      if (consultasManual) overridesSemPrincipal.push(`${guiasManuaisConsultas} consulta(s)`);
+    }
+    if (ehFaixaGuias && medico.fazImobilizacoes && imobilizacoesManual) {
+      const tabelaClasse = medico.semExcedentePorGuia
+        ? tabelaSemExcedentePorGuia(tabela.IMOBILIZACOES)
+        : tabela.IMOBILIZACOES;
+      const { valor, faixa } = valorDaFaixa(tabelaClasse, guiasManuaisImobilizacoes!);
+      subtotaisSemPrincipal.push({ classe: 'IMOBILIZACOES', guias: guiasManuaisImobilizacoes!, valor: valor ?? 0, faixa });
+      valorSemPrincipal += valor ?? 0;
+      overridesSemPrincipal.push(`${guiasManuaisImobilizacoes} guia(s) de Imobilizações`);
+      if (valor == null) {
+        alertasSemPrincipal.push(
+          `Classe IMOBILIZACOES com ${guiasManuaisImobilizacoes} guias está FORA DA TABELA: faixa não definida, verificar.`,
+        );
+      }
+    }
+    if (ehFaixaGuias && medico.fazOutrosHospitais && outrosHospitaisManual) {
+      const tabelaClasse = medico.semExcedentePorGuia
+        ? tabelaSemExcedentePorGuia(tabela.OUTROS_HOSPITAIS)
+        : tabela.OUTROS_HOSPITAIS;
+      const { valor, faixa } = valorDaFaixa(tabelaClasse, guiasManuaisOutrosHospitais!);
+      subtotaisSemPrincipal.push({ classe: 'OUTROS_HOSPITAIS', guias: guiasManuaisOutrosHospitais!, valor: valor ?? 0, faixa });
+      valorSemPrincipal += valor ?? 0;
+      overridesSemPrincipal.push(`${guiasManuaisOutrosHospitais} guia(s) de Outros Hospitais`);
+      if (valor == null) {
+        alertasSemPrincipal.push(
+          `Classe OUTROS_HOSPITAIS com ${guiasManuaisOutrosHospitais} guias está FORA DA TABELA: faixa não definida, verificar.`,
+        );
+      }
+    }
+    if (overridesSemPrincipal.length > 0) {
+      alertasSemPrincipal.unshift(alertaContagemManual(overridesSemPrincipal, guiasManuaisMotivo));
+    }
+    if (subtotaisSemPrincipal.length > 0) {
+      // Mesmo GATE do dono de sempre (2026-09-03): a marca de contagem manual é auditoria, não
+      // pendência de conferência — não deve, sozinha, derrubar o status pra 'alerta'.
+      const alertasDeConferenciaSemPrincipal = alertasSemPrincipal.filter(
+        (a) => !a.startsWith(PREFIXO_ALERTA_CONTAGEM_MANUAL),
+      );
       return {
         cpf: medico.cpf ?? '',
         nome: medico.nome,
@@ -163,10 +248,10 @@ export function processarMedico(
         cirurgias: 0,
         guias: 0,
         guiasConsolidado: 0,
-        subtotais: [subtotalConsultas],
-        totalValor: valorConsultas,
-        status: alertasDescarte.length > 0 ? 'alerta' : 'ok',
-        alertas: alertasDescarte,
+        subtotais: subtotaisSemPrincipal,
+        totalValor: valorSemPrincipal,
+        status: alertasDeConferenciaSemPrincipal.length > 0 ? 'alerta' : 'ok',
+        alertas: alertasSemPrincipal,
       };
     }
     return {
@@ -208,20 +293,22 @@ export function processarMedico(
     ...alertasDescarte,
     ...checar(validos, medico.modoMudancaData, guias, historicoGuias, medico.especialidade, modoObservado),
   ];
-  // Auditoria da contagem manual (aprovado 2026-09-03): entra no array de `alertas`, que é
-  // renderizado SÓ no relatório interno — nunca no boleto, nunca visível ao médico/Cora. Vai na
-  // PRIMEIRA posição porque a visão resumida do relatório mostra apenas `alertas[0]`, e "este
-  // número não veio do motor" é a informação que o operador não pode deixar de ver.
-  if (contagemManual) {
-    alertas.unshift(
-      `${PREFIXO_ALERTA_CONTAGEM_MANUAL} ${guiasManuaisTotal} guia(s) informada(s) manualmente. ` +
-        `Motivo: ${guiasManuaisMotivo?.trim() || 'não informado'}`,
-    );
+  // Auditoria da contagem manual (aprovado 2026-09-03, estendida 2026-09-04 pra Consultas/
+  // Imobilizações/Outros Hospitais): entra no array de `alertas`, que é renderizado SÓ no
+  // relatório interno — nunca no boleto, nunca visível ao médico/Cora. Vai na PRIMEIRA posição
+  // porque a visão resumida do relatório mostra apenas `alertas[0]`, e "estes números não vieram
+  // do motor" é a informação que o operador não pode deixar de ver. UMA linha só, listando TODOS
+  // os componentes que vieram manualmente pra este médico (podem ser vários ao mesmo tempo —
+  // ex.: guias normais automáticas + Imobilizações manual, mesmo motivo pros dois).
+  const overridesManuais: string[] = [];
+  if (contagemManual) overridesManuais.push(`${guiasManuaisTotal} guia(s) da produção principal`);
+  if (consultasManual) overridesManuais.push(`${guiasManuaisConsultas} consulta(s)`);
+  if (imobilizacoesManual) overridesManuais.push(`${guiasManuaisImobilizacoes} guia(s) de Imobilizações`);
+  if (outrosHospitaisManual) overridesManuais.push(`${guiasManuaisOutrosHospitais} guia(s) de Outros Hospitais`);
+  if (overridesManuais.length > 0) {
+    alertas.unshift(alertaContagemManual(overridesManuais, guiasManuaisMotivo));
   }
 
-  // Lotes secundários (Outros Hospitais/Imobilizações) — só no modo faixa_guias (mesmo escopo de
-  // sempre: percentual_producao/preco_proprio nunca cruzaram com essas classes, Story 10.5).
-  const ehFaixaGuias = medico.modoCobranca !== 'percentual_producao' && medico.modoCobranca !== 'preco_proprio';
   let guiasOutrosHospitaisEsteMes: number | undefined;
   let guiasImobilizacoesEsteMes: number | undefined;
   // Atendimentos ANTES do teto(n/3) de cada classe secundária (achado 2026-09-04) — só populado
@@ -231,7 +318,13 @@ export function processarMedico(
   let cirurgiasImobilizacoesEsteMes = 0;
   if (ehFaixaGuias) {
     if (medico.fazOutrosHospitais) {
-      if (itensOutrosHospitais !== undefined) {
+      if (outrosHospitaisManual) {
+        // Achado 2026-09-04: mesmo mecanismo de `contagemManual` pro lote principal — total já
+        // conferido à mão pelo dono substitui a contagem automática DESTA classe.
+        // `cirurgiasOutrosHospitaisEsteMes` fica 0: um total agregado digitado não diz quantos
+        // eram cirurgia (mesmo racional de `cirurgias=0` acima).
+        guiasOutrosHospitaisEsteMes = guiasManuaisOutrosHospitais!;
+      } else if (itensOutrosHospitais !== undefined) {
         // Story 10.6: na origem, o lote de Outros Hospitais não abre uma produção por mês como
         // o lote principal — um único lote acumula vários meses. Filtra pela competência da
         // execução antes de contar (nunca chuta: itens de outro mês NÃO entram na contagem, e
@@ -256,7 +349,9 @@ export function processarMedico(
       }
     }
     if (medico.fazImobilizacoes) {
-      if (itensImobilizacoes !== undefined) {
+      if (imobilizacoesManual) {
+        guiasImobilizacoesEsteMes = guiasManuaisImobilizacoes!;
+      } else if (itensImobilizacoes !== undefined) {
         const contagemImobilizacoes = contarGuiasProducao(itensImobilizacoes, medico.especialidade);
         guiasImobilizacoesEsteMes = contagemImobilizacoes.guias;
         cirurgiasImobilizacoesEsteMes = contagemImobilizacoes.cirurgias;

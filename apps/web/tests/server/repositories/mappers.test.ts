@@ -126,6 +126,58 @@ describe('toExecucaoSelecao / toExecucaoSelecaoRow (Story 10.2 — produção de
     expect(row.producao_consultas_externa_id).toBeNull();
     expect(row.producao_consultas_nome).toBeNull();
   });
+
+  // Achado 2026-09-04 (migration 0060): guiasManuaisConsultas/Imobilizacoes/OutrosHospitais são
+  // independentes do guiasManuaisTotal original (0058) — cada um precisa fazer o round-trip
+  // objeto→linha→objeto sem se misturar com os outros.
+  it('mapeia os 4 campos de contagem manual por classe, cada um independente', () => {
+    const row: ExecucaoSelecaoRow = {
+      execucao_id: 'e1',
+      medico_id: 'm1',
+      producao_externa_id: 'p-guias',
+      producao_nome: 'Junho 2026',
+      guias_manuais_total: 15,
+      guias_manuais_consultas: 40,
+      guias_manuais_imobilizacoes: 6,
+      guias_manuais_outros_hospitais: 9,
+      guias_manuais_motivo: 'Tudo conferido a mao',
+    };
+    const s = toExecucaoSelecao(row);
+    expect(s.guiasManuaisTotal).toBe(15);
+    expect(s.guiasManuaisConsultas).toBe(40);
+    expect(s.guiasManuaisImobilizacoes).toBe(6);
+    expect(s.guiasManuaisOutrosHospitais).toBe(9);
+
+    const rowDeVolta = toExecucaoSelecaoRow({
+      execucaoId: 'e1',
+      medicoId: 'm1',
+      producaoExternaId: 'p-guias',
+      producaoNome: 'Junho 2026',
+      guiasManuaisTotal: s.guiasManuaisTotal,
+      guiasManuaisConsultas: s.guiasManuaisConsultas,
+      guiasManuaisImobilizacoes: s.guiasManuaisImobilizacoes,
+      guiasManuaisOutrosHospitais: s.guiasManuaisOutrosHospitais,
+      guiasManuaisMotivo: s.guiasManuaisMotivo,
+    });
+    expect(rowDeVolta.guias_manuais_total).toBe(15);
+    expect(rowDeVolta.guias_manuais_consultas).toBe(40);
+    expect(rowDeVolta.guias_manuais_imobilizacoes).toBe(6);
+    expect(rowDeVolta.guias_manuais_outros_hospitais).toBe(9);
+  });
+
+  it('ausência (undefined) dos 4 campos de contagem manual normaliza para null', () => {
+    const row: ExecucaoSelecaoRow = {
+      execucao_id: 'e1',
+      medico_id: 'm1',
+      producao_externa_id: 'p-guias',
+      producao_nome: 'Junho 2026',
+    };
+    const s = toExecucaoSelecao(row);
+    expect(s.guiasManuaisTotal).toBeNull();
+    expect(s.guiasManuaisConsultas).toBeNull();
+    expect(s.guiasManuaisImobilizacoes).toBeNull();
+    expect(s.guiasManuaisOutrosHospitais).toBeNull();
+  });
 });
 
 describe('toEmpresa / empresaUpdateToRow (Story 10.4a)', () => {

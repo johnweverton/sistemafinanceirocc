@@ -67,6 +67,11 @@ export async function criarExecucao(
      *  preenchida, o motor pula a contagem automática do lote principal DESTE médico. `motivo` é
      *  obrigatório junto (validado no dispararExecucaoSchema): é o texto do alerta de auditoria. */
     guiasManuaisTotal?: number | null;
+    /** Mesmo mecanismo acima, por classe (migration 0060, achado 2026-09-04) — cada uma
+     *  independente, substitui a contagem automática SÓ daquela classe pra este médico. */
+    guiasManuaisConsultas?: number | null;
+    guiasManuaisImobilizacoes?: number | null;
+    guiasManuaisOutrosHospitais?: number | null;
     guiasManuaisMotivo?: string | null;
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
@@ -130,11 +135,27 @@ export async function criarExecucao(
       carta_rede_informado_por: s.cartaRedeGuias != null ? iniciadoPor : null,
       carta_rede_informado_em: s.cartaRedeGuias != null ? new Date().toISOString() : null,
       guias_manuais_total: s.guiasManuaisTotal ?? null,
+      guias_manuais_consultas: s.guiasManuaisConsultas ?? null,
+      guias_manuais_imobilizacoes: s.guiasManuaisImobilizacoes ?? null,
+      guias_manuais_outros_hospitais: s.guiasManuaisOutrosHospitais ?? null,
       guias_manuais_motivo: s.guiasManuaisMotivo ?? null,
-      // Mesma auditoria do carta_rede_informado_por/_em acima (migration 0058): só grava quem/
-      // quando quando a seleção de fato traz um total conferido à mão.
-      guias_manuais_informado_por: s.guiasManuaisTotal != null ? iniciadoPor : null,
-      guias_manuais_informado_em: s.guiasManuaisTotal != null ? new Date().toISOString() : null,
+      // Mesma auditoria do carta_rede_informado_por/_em acima (migration 0058, estendida na
+      // 0060) — grava quem/quando sempre que QUALQUER um dos 4 campos vier preenchido nesta
+      // linha, não só o total do lote principal.
+      guias_manuais_informado_por:
+        s.guiasManuaisTotal != null ||
+        s.guiasManuaisConsultas != null ||
+        s.guiasManuaisImobilizacoes != null ||
+        s.guiasManuaisOutrosHospitais != null
+          ? iniciadoPor
+          : null,
+      guias_manuais_informado_em:
+        s.guiasManuaisTotal != null ||
+        s.guiasManuaisConsultas != null ||
+        s.guiasManuaisImobilizacoes != null ||
+        s.guiasManuaisOutrosHospitais != null
+          ? new Date().toISOString()
+          : null,
     }))
   );
   if (selecoesError) {

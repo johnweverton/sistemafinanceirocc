@@ -728,6 +728,11 @@ export interface ExecucaoSelecaoRow {
   /** Contagem de guias conferida MANUALMENTE e importada de planilha (migration 0058) —
    * substitui a contagem automática do lote principal só deste médico nesta competência. */
   guias_manuais_total?: number | null;
+  /** Mesmo mecanismo acima, por classe (migration 0060, achado 2026-09-04) — cada uma
+   * independente, substitui a contagem automática SÓ daquela classe. */
+  guias_manuais_consultas?: number | null;
+  guias_manuais_imobilizacoes?: number | null;
+  guias_manuais_outros_hospitais?: number | null;
   guias_manuais_motivo?: string | null;
   guias_manuais_informado_por?: string | null;
   guias_manuais_informado_em?: string | null;
@@ -762,6 +767,9 @@ export function toExecucaoSelecaoRow(selecao: {
   cartaRedeInformadoPor?: string | null;
   cartaRedeInformadoEm?: string | null;
   guiasManuaisTotal?: number | null;
+  guiasManuaisConsultas?: number | null;
+  guiasManuaisImobilizacoes?: number | null;
+  guiasManuaisOutrosHospitais?: number | null;
   guiasManuaisMotivo?: string | null;
   guiasManuaisInformadoPor?: string | null;
   guiasManuaisInformadoEm?: string | null;
@@ -795,6 +803,9 @@ export function toExecucaoSelecaoRow(selecao: {
     carta_rede_informado_por: selecao.cartaRedeInformadoPor ?? null,
     carta_rede_informado_em: selecao.cartaRedeInformadoEm ?? null,
     guias_manuais_total: selecao.guiasManuaisTotal ?? null,
+    guias_manuais_consultas: selecao.guiasManuaisConsultas ?? null,
+    guias_manuais_imobilizacoes: selecao.guiasManuaisImobilizacoes ?? null,
+    guias_manuais_outros_hospitais: selecao.guiasManuaisOutrosHospitais ?? null,
     guias_manuais_motivo: selecao.guiasManuaisMotivo ?? null,
     guias_manuais_informado_por: selecao.guiasManuaisInformadoPor ?? null,
     guias_manuais_informado_em: selecao.guiasManuaisInformadoEm ?? null,
@@ -831,6 +842,9 @@ export function toExecucaoSelecao(row: ExecucaoSelecaoRow) {
     cartaRedeInformadoPor: row.carta_rede_informado_por ?? null,
     cartaRedeInformadoEm: row.carta_rede_informado_em ?? null,
     guiasManuaisTotal: row.guias_manuais_total ?? null,
+    guiasManuaisConsultas: row.guias_manuais_consultas ?? null,
+    guiasManuaisImobilizacoes: row.guias_manuais_imobilizacoes ?? null,
+    guiasManuaisOutrosHospitais: row.guias_manuais_outros_hospitais ?? null,
     guiasManuaisMotivo: row.guias_manuais_motivo ?? null,
     guiasManuaisInformadoPor: row.guias_manuais_informado_por ?? null,
     guiasManuaisInformadoEm: row.guias_manuais_informado_em ?? null,

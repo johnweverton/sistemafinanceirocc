@@ -74,6 +74,9 @@ export interface BucketsDeItensResultado {
   itensConsultas?: ItemProducao[];
   guiasCartaRede?: number;
   guiasManuaisTotal?: number;
+  guiasManuaisConsultas?: number;
+  guiasManuaisImobilizacoes?: number;
+  guiasManuaisOutrosHospitais?: number;
   guiasManuaisMotivo?: string;
   historicoGuias: number | null;
   valorConsultaPediatria: number;
@@ -134,6 +137,9 @@ export async function buscarItensDoResultado(
   const angiografia = await buscarItensDeVariosLotes(deps, selecao.producaoAngiografiaExternaIds);
   const guiasCartaRede = selecao.cartaRedeGuias ?? undefined;
   const guiasManuaisTotal = selecao.guiasManuaisTotal ?? undefined;
+  const guiasManuaisConsultas = selecao.guiasManuaisConsultas ?? undefined;
+  const guiasManuaisImobilizacoes = selecao.guiasManuaisImobilizacoes ?? undefined;
+  const guiasManuaisOutrosHospitais = selecao.guiasManuaisOutrosHospitais ?? undefined;
   const guiasManuaisMotivo = selecao.guiasManuaisMotivo ?? undefined;
 
   const historicoGuias = await deps.guiasExecucaoAnterior(medico.id, execucao.competencia);
@@ -153,6 +159,9 @@ export async function buscarItensDoResultado(
     itensConsultas,
     guiasCartaRede,
     guiasManuaisTotal,
+    guiasManuaisConsultas,
+    guiasManuaisImobilizacoes,
+    guiasManuaisOutrosHospitais,
     guiasManuaisMotivo,
     historicoGuias,
     valorConsultaPediatria,
@@ -227,6 +236,9 @@ export async function recalcularResultado(
       itensAngiografia: dados.angiografia,
       guiasCartaRede: dados.guiasCartaRede,
       guiasManuaisTotal: dados.guiasManuaisTotal,
+      guiasManuaisConsultas: dados.guiasManuaisConsultas,
+      guiasManuaisImobilizacoes: dados.guiasManuaisImobilizacoes,
+      guiasManuaisOutrosHospitais: dados.guiasManuaisOutrosHospitais,
       guiasManuaisMotivo: dados.guiasManuaisMotivo,
       competencia: dados.execucao.competencia,
     },

@@ -121,10 +121,30 @@ export interface EntradaProcessamentoMedico {
    */
   guiasManuaisTotal?: number | null;
   /**
-   * Motivo/observação que veio na mesma linha da planilha de `guiasManuaisTotal`. Entra no
-   * ALERTA informativo do relatório interno (nunca no boleto — ver `ResultadoMedico.alertas`).
-   * O Engine monta o texto do alerta para que ele seja testável isoladamente; quem chama só
-   * repassa o que o operador importou.
+   * Mesmo mecanismo de `guiasManuaisTotal` acima, mas para o componente de CONSULTAS
+   * ambulatoriais do pediatra (achado 2026-09-04: planilha com 1 coluna só não dava pra separar
+   * "100 guias normais + 100 consultas" — são tabelas de preço DIFERENTES, somar tudo num total
+   * cobraria errado). `null`/`undefined` = `itensConsultas` continua contando normalmente
+   * (`consultasValidas.length`). Só tem efeito para médico Pediatra (mesmo gate de
+   * `subtotalConsultas` abaixo) — em qualquer outra especialidade o campo é ignorado.
+   */
+  guiasManuaisConsultas?: number | null;
+  /**
+   * Mesmo mecanismo acima, mas para o lote separado de IMOBILIZACOES (Story 10.5). `null`/
+   * `undefined` = `itensImobilizacoes` continua contando normalmente. Só tem efeito quando
+   * `medico.fazImobilizacoes` E o modo de cobrança é por faixa de guias (mesmo escopo de sempre
+   * dessa classe) — nas demais combinações o campo é ignorado.
+   */
+  guiasManuaisImobilizacoes?: number | null;
+  /** Mesmo mecanismo acima, mas para o lote separado de OUTROS_HOSPITAIS (Story 10.5). Mesmos
+   *  gates de `guiasManuaisImobilizacoes` (`medico.fazOutrosHospitais` + faixa de guias). */
+  guiasManuaisOutrosHospitais?: number | null;
+  /**
+   * Motivo/observação que veio na mesma linha da planilha de `guiasManuaisTotal`/
+   * `guiasManuaisConsultas`/`guiasManuaisImobilizacoes`/`guiasManuaisOutrosHospitais` — um motivo
+   * só cobre todos os overrides daquela linha. Entra no ALERTA informativo do relatório interno
+   * (nunca no boleto — ver `ResultadoMedico.alertas`). O Engine monta o texto do alerta para que
+   * ele seja testável isoladamente; quem chama só repassa o que o operador importou.
    */
   guiasManuaisMotivo?: string | null;
   /**

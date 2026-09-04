@@ -72,6 +72,10 @@ export interface FakeState {
     producaoAngiografiaNomes?: string[] | null;
     /** Contagem de guias conferida MANUALMENTE por planilha (migration 0058). */
     guiasManuaisTotal?: number | null;
+    /** Mesmo mecanismo acima, por classe (migration 0060, achado 2026-09-04). */
+    guiasManuaisConsultas?: number | null;
+    guiasManuaisImobilizacoes?: number | null;
+    guiasManuaisOutrosHospitais?: number | null;
     guiasManuaisMotivo?: string | null;
   }[];
   itensPorProducao: Record<string, ItemProducao[]>;

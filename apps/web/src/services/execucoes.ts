@@ -51,13 +51,25 @@ export interface ExecucaoSelecaoPayload {
   producaoCartaRedeExternaId?: string | null;
   producaoCartaRedeNome?: string | null;
   cartaRedeGuias?: number | null;
-  /** Total de guias conferido MANUALMENTE pelo dono, vindo da planilha (migration 0058) — quando
-   *  presente, o motor pula a contagem automática deste médico. `motivo` é obrigatório junto. */
+  /** Total de guias do lote PRINCIPAL conferido MANUALMENTE pelo dono, vindo da planilha
+   *  (migration 0058) — quando presente, o motor pula a contagem automática dessa classe pra
+   *  este médico. `motivo` é obrigatório junto. */
   guiasManuaisTotal?: number | null;
+  /** Mesmo mecanismo de `guiasManuaisTotal`, mas para o componente de Consultas do pediatra
+   *  (achado 2026-09-04) — cada classe tem sua própria coluna na planilha, tabelas de preço
+   *  diferentes não podem ser somadas num total só. */
+  guiasManuaisConsultas?: number | null;
+  /** Mesmo mecanismo acima, para o lote separado de Imobilizações. */
+  guiasManuaisImobilizacoes?: number | null;
+  /** Mesmo mecanismo acima, para o lote separado de Outros Hospitais. */
+  guiasManuaisOutrosHospitais?: number | null;
   guiasManuaisMotivo?: string | null;
 }
 
-/** Uma linha da planilha de guias manuais já casada com um médico do cadastro (por CPF). */
+/** Uma linha da planilha de guias manuais já casada com um médico do cadastro (por CPF). Cada
+ *  campo `guiasManuais*` é independente e opcional (achado 2026-09-04: guias normais, consultas,
+ *  imobilizações e outros hospitais têm tabelas de preço diferentes, cada um com sua própria
+ *  coluna na planilha) — `undefined` = aquela classe continua na contagem automática. */
 export interface GuiasManuaisLinha {
   linha: number;
   medicoId: string;
@@ -65,7 +77,10 @@ export interface GuiasManuaisLinha {
   cpf: string;
   nomePlanilha: string;
   competencia: string;
-  guiasManuaisTotal: number;
+  guiasManuaisTotal?: number;
+  guiasManuaisConsultas?: number;
+  guiasManuaisImobilizacoes?: number;
+  guiasManuaisOutrosHospitais?: number;
   guiasManuaisMotivo: string;
 }
 
