@@ -1,6 +1,6 @@
 import type { ContaEmissora, TipoServico, RelatorioRecebiveis, RelatorioLink, CriarRelatorioLinkInput } from '@cobranca/shared';
-import { apiFetch, ApiClientError } from '@/lib/api-client';
-import type { ApiErrorBody } from '@/lib/api-error';
+import { apiFetch } from '@/lib/api-client';
+import { baixarArquivo } from '@/lib/baixar-arquivo';
 
 export interface FiltroRelatorio {
   competencia?: string;
@@ -15,26 +15,6 @@ function qs(filtros: FiltroRelatorio): string {
   if (filtros.tipoServico) params.set('tipoServico', filtros.tipoServico);
   const s = params.toString();
   return s ? `?${s}` : '';
-}
-
-/** Baixa um arquivo binário de uma rota interna — resposta não é JSON, não usa `apiFetch`. */
-async function baixarArquivo(path: string): Promise<Blob> {
-  const res = await fetch(`/api${path}`);
-  if (!res.ok) {
-    let body: ApiErrorBody | null = null;
-    try {
-      body = (await res.json()) as ApiErrorBody;
-    } catch {
-      /* corpo não-JSON */
-    }
-    throw new ApiClientError(
-      res.status,
-      body?.error?.message ?? `Erro ${res.status}`,
-      body?.error?.code ?? 'ERROR',
-      body?.error?.details,
-    );
-  }
-  return res.blob();
 }
 
 export const relatoriosService = {

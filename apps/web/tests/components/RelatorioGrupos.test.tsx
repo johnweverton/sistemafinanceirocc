@@ -10,12 +10,14 @@ const mockResultados = vi.fn();
 const mockRevisarResultado = vi.fn();
 const mockContribuicoes = vi.fn();
 const mockRecalcularResultado = vi.fn();
+const mockAuditoria3x1 = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     resultados: (...a: unknown[]) => mockResultados(...a),
     revisarResultado: (...a: unknown[]) => mockRevisarResultado(...a),
     contribuicoes: (...a: unknown[]) => mockContribuicoes(...a),
     recalcularResultado: (...a: unknown[]) => mockRecalcularResultado(...a),
+    auditoria3x1: (...a: unknown[]) => mockAuditoria3x1(...a),
   },
   execucaoQueryKeys: {
     resultados: (id: string) => ['execucoes', id, 'resultados'],
@@ -278,6 +280,79 @@ describe('RelatorioGrupos — recálculo de resultado (achado real 2026-08-04, D
     await screen.findByText('JOSE NEIAS ARAUJO RIBEIRO');
 
     expect(screen.queryByRole('button', { name: 'Recalcular' })).not.toBeInTheDocument();
+  });
+});
+
+// Achado 2026-09-04 (Dra. Emilie: contagem manual deu 59, sistema deu 69, segunda conferência
+// manual deu 61) — planilha de auditoria visual da regra 3x1, disponível SOMENTE para médicos de
+// especialidade 3x1 e SEM a trava de boleto emitido do Recalcular (é só leitura).
+describe('RelatorioGrupos — auditoria visual 3x1 (achado 2026-09-04)', () => {
+  const resultadoEmilie = {
+    ...resultadoOk,
+    id: 'r-emilie',
+    medicoId: 'm-emilie',
+    nome: 'DRA EMILIE',
+    guias: 69,
+    subtotais: [{ classe: 'HAPVIDA_CRED', guias: 69, valor: 1200, faixa: 'até 80 guias', atendimentos: 205 }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoEmilie]);
+    mockListarMedicos.mockResolvedValue([{ id: 'm-emilie', especialidade: 'Pediatria', contaEmissora: 'mc' }]);
+  });
+
+  it('mostra o botão para médico de especialidade 3x1 e baixa a planilha ao clicar', async () => {
+    const blob = new Blob(['xlsx'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    mockAuditoria3x1.mockResolvedValue(blob);
+
+    // jsdom não implementa URL.createObjectURL/revokeObjectURL nem navegação real de <a> —
+    // stub mínimo só pra verificar que o fluxo de download foi acionado (mesmo padrão de
+    // ExtratoManager.test.tsx).
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    const botao = screen.getByRole('button', { name: 'Auditoria 3x1' });
+    fireEvent.click(botao);
+
+    await waitFor(() => expect(mockAuditoria3x1).toHaveBeenCalledWith('r-emilie'));
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(blob));
+    expect(clickSpy).toHaveBeenCalled();
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('não mostra o botão para médico de especialidade sem regra 3x1', async () => {
+    mockListarMedicos.mockResolvedValue([{ id: 'm-emilie', especialidade: 'Clínica Médica', contaEmissora: 'mc' }]);
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    expect(screen.queryByRole('button', { name: 'Auditoria 3x1' })).not.toBeInTheDocument();
+  });
+
+  it('continua disponível mesmo com boleto já emitido (ao contrário de Recalcular, que some)', async () => {
+    mockResultados.mockResolvedValue([
+      { ...resultadoEmilie, disparos: [{ id: 'd1', canal: 'whatsapp', status: 'enviado' }] },
+    ]);
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    expect(screen.getByRole('button', { name: 'Auditoria 3x1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recalcular' })).not.toBeInTheDocument();
+  });
+
+  it('não mostra o botão para resultado agregado de empresa (sem medicoId)', async () => {
+    mockResultados.mockResolvedValue([{ ...resultadoEmilie, medicoId: null, empresaId: 'empresa-1' }]);
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    expect(screen.queryByRole('button', { name: 'Auditoria 3x1' })).not.toBeInTheDocument();
   });
 });
 

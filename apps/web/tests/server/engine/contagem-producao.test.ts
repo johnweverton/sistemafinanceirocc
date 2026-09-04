@@ -3,6 +3,7 @@ import type { ItemProducao } from '@cobranca/shared';
 import {
   itensValidos,
   contarGuiasProducao,
+  detalharContagemGuias,
   detectarModoProducao,
   consolidarProducao,
   contarConsultasProducao,
@@ -912,6 +913,170 @@ describe('Engine: Contagem de Produção', () => {
       // atualizado deliberadamente — não é um comportamento especificado pelo usuário.
       const resultado = contarGuiasProducao(itens, 'Ginecologia e Urologia');
       expect(resultado.guias).toBe(1); // teto(3/3)=1 — foi pro pool, a regra do urologista "venceu" e não reconhece por descrição
+    });
+  });
+
+  describe('detalharContagemGuias — equivalência estrutural (auditoria 3x1, achado 2026-09-04)', () => {
+    // Dra. Emilie: contagem manual deu 59, sistema deu 69, segunda conferência manual deu 61 —
+    // divergência real sem forma de ver ONDE o agrupamento discordava item a item. A planilha de
+    // auditoria exportável (auditoria-3x1-excel.ts) é construída sobre `detalharContagemGuias`
+    // em vez de reimplementar o agrupamento — estes testes garantem que ela NUNCA pode divergir
+    // do valor cobrado por `contarGuiasProducao`.
+    function guiasDoDetalhe(itens: ItemProducao[], especialidade?: string | null): number {
+      const { itensDetalhados } = detalharContagemGuias(itens, especialidade);
+      const guiasPorGrupo = new Map<string, number>();
+      for (const d of itensDetalhados) {
+        if (!guiasPorGrupo.has(d.grupoId)) guiasPorGrupo.set(d.grupoId, d.guiasDoGrupo);
+      }
+      let total = 0;
+      for (const g of guiasPorGrupo.values()) total += g;
+      return total;
+    }
+
+    const FIXTURES: Array<{ nome: string; itens: ItemProducao[]; especialidade?: string | null }> = [
+      {
+        nome: 'pediatra: via de acesso 1x + normais 1x, múltiplos grupos',
+        itens: [
+          { ...baseItem(), viaAcesso: true, pacienteNome: 'Cirurgia P1' },
+          { ...baseItem(), viaAcesso: true, pacienteNome: 'Cirurgia P1' },
+          { ...baseItem(), pacienteNome: 'Consulta P2' },
+          { ...baseItem(), pacienteNome: 'Consulta P2' },
+        ],
+        especialidade: 'Pediatra',
+      },
+      {
+        nome: 'urologista: exceção + via de acesso + normais, múltiplas datas',
+        itens: [
+          { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true, codigoProcedimento: '4.09.02.05-6' },
+          { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+          { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+          { ...baseItem(), pacienteNome: 'Paciente Via', viaAcesso: true },
+          { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: '3.11.02.03-4' },
+          { ...baseItem(), pacienteNome: 'Paciente Normal', codigoProcedimento: '3.11.02.03-4' },
+          { ...baseItem(), pacienteNome: 'Paciente Normal' },
+          { ...baseItem(), pacienteNome: 'Paciente Normal' },
+        ],
+        especialidade: 'Urologista',
+      },
+      {
+        nome: 'ginecologista: exceção por descrição + normais',
+        itens: [
+          { ...baseItem(), descricaoProcedimento: 'IMPLANTE DE DISPOSITIVO INTRA-UTERINO (DIU)' },
+          { ...baseItem(), descricaoProcedimento: 'CONTROLE DE DIURESE' },
+          { ...baseItem() },
+          { ...baseItem() },
+        ],
+        especialidade: 'Ginecologista',
+      },
+      {
+        nome: 'ortopedista: sem exceção, teto(n/3) puro',
+        itens: [{ ...baseItem() }, { ...baseItem() }, { ...baseItem() }, { ...baseItem() }],
+        especialidade: 'Ortopedista',
+      },
+      {
+        nome: 'angiologista (angiografia): exceção Intra-operatório repetida (nunca colapsa)',
+        itens: [
+          { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+          { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+          { ...baseItem(), codigoProcedimento: '4.09.02.05-6' },
+        ],
+        especialidade: 'Angiologista',
+      },
+      {
+        nome: 'não-3x1: via de acesso agrupa por chaveAtendimento (1 guia por grupo, não por item)',
+        itens: [
+          { ...baseItem(), viaAcesso: true, atendimentoExternoId: 'at-1' },
+          { ...baseItem(), viaAcesso: true, atendimentoExternoId: 'at-1' },
+          { ...baseItem(), viaAcesso: true, atendimentoExternoId: 'at-2' },
+        ],
+        especialidade: 'Cirurgia Geral',
+      },
+      {
+        nome: 'não-3x1: itens normais, 1 guia por item, sem especialidade nenhuma',
+        itens: [{ ...baseItem(), pacienteNome: 'P1' }, { ...baseItem(), pacienteNome: 'P2' }],
+        especialidade: undefined,
+      },
+      {
+        nome: 'itens inválidos misturados (sem paciente/data) — não entram no detalhe nem na contagem',
+        itens: [
+          { ...baseItem() },
+          { ...baseItem(), data: '' },
+          { ...baseItem(), pacienteNome: '' },
+        ],
+        especialidade: 'Pediatria',
+      },
+      { nome: 'lote vazio', itens: [], especialidade: 'Pediatria' },
+    ];
+
+    it.each(FIXTURES.map((f) => [f.nome, f.itens, f.especialidade] as const))(
+      '%s: soma de guiasDoGrupo por grupoId único === contarGuiasProducao(...).guias',
+      (_nome, itens, especialidade) => {
+        expect(guiasDoDetalhe(itens, especialidade)).toBe(contarGuiasProducao(itens, especialidade).guias);
+      },
+    );
+
+    it('todo item de entrada aparece em exatamente um lugar: itensDetalhados OU itensInvalidos, nunca os dois nem nenhum', () => {
+      for (const { itens, especialidade } of FIXTURES) {
+        const { itensDetalhados, itensInvalidos } = detalharContagemGuias(itens, especialidade);
+        expect(itensDetalhados.length + itensInvalidos.length).toBe(itens.length);
+        const indicesDetalhados = new Set(itensDetalhados.map((d) => d.indiceOriginal));
+        expect(indicesDetalhados.size).toBe(itensDetalhados.length); // nenhum índice duplicado
+      }
+    });
+
+    it('itens do mesmo grupo (mesmo grupoId) sempre têm o mesmo grupoSequencia e guiasDoGrupo', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'Bebê', atendimentoExternoId: 'senha-1' },
+        { ...baseItem(), pacienteNome: 'Bebê', atendimentoExternoId: 'senha-1' },
+        { ...baseItem(), pacienteNome: 'Bebê', atendimentoExternoId: 'senha-1' },
+      ];
+      const { itensDetalhados } = detalharContagemGuias(itens, 'Pediatria');
+      expect(itensDetalhados).toHaveLength(3);
+      const [primeiro, ...resto] = itensDetalhados;
+      for (const d of resto) {
+        expect(d.grupoId).toBe(primeiro!.grupoId);
+        expect(d.grupoSequencia).toBe(primeiro!.grupoSequencia);
+        expect(d.guiasDoGrupo).toBe(primeiro!.guiasDoGrupo);
+      }
+      expect(primeiro!.guiasDoGrupo).toBe(1); // teto(3/3) = 1
+    });
+
+    it('exceção nunca compartilha grupoId entre itens, mesmo com paciente/data/código idênticos', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), codigoProcedimento: '3.11.02.03-4' },
+        { ...baseItem(), codigoProcedimento: '3.11.02.03-4' },
+        { ...baseItem(), codigoProcedimento: '3.11.02.03-4' },
+      ];
+      const { itensDetalhados } = detalharContagemGuias(itens, 'Urologista');
+      expect(itensDetalhados).toHaveLength(3);
+      const grupoIds = itensDetalhados.map((d) => d.grupoId);
+      expect(new Set(grupoIds).size).toBe(3); // todos distintos
+      for (const d of itensDetalhados) {
+        expect(d.ramo).toBe('excecao');
+        expect(d.guiasDoGrupo).toBe(1);
+      }
+    });
+
+    it('grupoSequencia é determinístico e segue a ordem de PRIMEIRA OCORRÊNCIA do grupo (pacientes intercalados)', () => {
+      const itens: ItemProducao[] = [
+        { ...baseItem(), pacienteNome: 'P1' },
+        { ...baseItem(), pacienteNome: 'P2' },
+        { ...baseItem(), pacienteNome: 'P1' }, // 2ª ocorrência do grupo P1 — mesma sequência da 1ª
+        { ...baseItem(), pacienteNome: 'P3' },
+        { ...baseItem(), pacienteNome: 'P2' }, // 2ª ocorrência do grupo P2
+      ];
+      const { itensDetalhados } = detalharContagemGuias(itens, undefined); // não-3x1: 1 item = 1 guia, sem grupo real, mas grupoId ainda é por índice — usa fixture 3x1 abaixo pra testar sequência de grupo de verdade
+      expect(itensDetalhados).toHaveLength(5);
+
+      const itensViaAcesso: ItemProducao[] = itens.map((i) => ({ ...i, viaAcesso: true, atendimentoExternoId: null }));
+      const { itensDetalhados: comGrupo } = detalharContagemGuias(itensViaAcesso, 'Cirurgia Geral'); // não-3x1, viaAcesso agrupa por chaveAtendimento (paciente|data aqui)
+      const porPaciente = new Map(comGrupo.map((d) => [d.item.pacienteNome, d.grupoSequencia]));
+      expect(porPaciente.get('P1')).toBe(1);
+      expect(porPaciente.get('P2')).toBe(2);
+      expect(porPaciente.get('P3')).toBe(3);
+      // Roda de novo (mesma entrada) — determinístico.
+      const { itensDetalhados: comGrupoDeNovo } = detalharContagemGuias(itensViaAcesso, 'Cirurgia Geral');
+      expect(comGrupoDeNovo.map((d) => d.grupoSequencia)).toEqual(comGrupo.map((d) => d.grupoSequencia));
     });
   });
 });

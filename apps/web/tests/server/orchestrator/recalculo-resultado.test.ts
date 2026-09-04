@@ -4,7 +4,11 @@
 // orchestrator-unit.test.ts), sem tocar Supabase.
 import { describe, it, expect, vi } from 'vitest';
 import type { Execucao, ExecucaoResultado, Medico, ItemProducao, ResultadoMedico, Boleto } from '@cobranca/shared';
-import { recalcularResultado, type RecalculoDeps } from '../../../src/server/orchestrator/recalculo-resultado';
+import {
+  recalcularResultado,
+  buscarItensDoResultado,
+  type RecalculoDeps,
+} from '../../../src/server/orchestrator/recalculo-resultado';
 import type { SelecaoDeps } from '../../../src/server/orchestrator/execucao-orchestrator';
 
 function medicoFake(over: Partial<Medico> & { id: string; nome: string }): Medico {
@@ -87,6 +91,7 @@ function baseDeps(over: Partial<RecalculoDeps> = {}): RecalculoDeps {
     atualizarResultado: vi.fn(async (id: string, r: ResultadoMedico) =>
       resultadoFake({ id, execucaoId: 'exec-1', ...r, medicoId: 'med-1' }),
     ),
+    buscarSaldoAcumulado: vi.fn(async () => null),
     ...over,
   };
 }
@@ -249,5 +254,125 @@ describe('recalcularResultado', () => {
 
     expect(resultado.guias).toBe(15);
     expect(resultado.alertas.some((a) => a.includes('CONTAGEM MANUAL'))).toBe(false);
+  });
+});
+
+// Achado 2026-09-04 (auditoria 3x1): `buscarItensDoResultado` foi extraída de
+// `recalcularResultado` pra ser reaproveitada pela rota de auditoria — busca os mesmos buckets,
+// mas NUNCA roda `processarMedico`/`atualizarResultado` (a auditoria não pode, por engano,
+// recalcular/gravar o resultado).
+describe('buscarItensDoResultado', () => {
+  it('médico normal (produção flat): devolve o lote principal em `lotePrincipal`, sem tocar em `processarMedico`/`atualizarResultado`', async () => {
+    const itens = Array.from({ length: 5 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({ buscarItens: vi.fn(async () => itens) });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.medico.id).toBe('med-1');
+    expect(dados.execucao.id).toBe('exec-1');
+    expect(dados.lotePrincipal).toEqual(itens);
+    expect(dados.outrosHospitais).toBeUndefined();
+    expect(dados.saldoAcumulado).toBeNull();
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('pediatra com sub-lotes de guia/consulta (producaoExternaId null): busca pelos sub-lotes, não pela produção flat', async () => {
+    const itemDeLote = (paciente: string): ItemProducao => ({
+      data: '2026-07-05',
+      pacienteNome: paciente,
+      atendimentoExternoId: null,
+      codigoProcedimento: '30715040',
+      descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    });
+    const itensPorLote: Record<string, ItemProducao[]> = {
+      'lote-1q': Array.from({ length: 3 }, (_, i) => itemDeLote(`1Q-${i}`)),
+      'lote-consultas': Array.from({ length: 10 }, (_, i) => itemDeLote(`Consulta ${i}`)),
+    };
+    const deps = baseDeps({
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoGuiasLoteExternaIds: ['lote-1q'],
+          producaoConsultasLoteExternaIds: ['lote-consultas'],
+        }),
+      ]),
+      buscarItensPorLote: vi.fn(async (loteId: string) => itensPorLote[loteId] ?? []),
+    });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.lotePrincipal).toHaveLength(3);
+    expect(dados.itensConsultas).toHaveLength(10);
+    expect(deps.buscarItens).not.toHaveBeenCalled();
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('Angiologista (sem lote principal): devolve os 4 lotes próprios (Cateter/Fístula/Angiografia) e Carta de Rede', async () => {
+    const item = (paciente: string): ItemProducao => ({
+      data: '2026-07-05',
+      pacienteNome: paciente,
+      atendimentoExternoId: null,
+      codigoProcedimento: '10101012',
+      descricaoProcedimento: 'Procedimento',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    });
+    const itensPorLote: Record<string, ItemProducao[]> = {
+      'lote-cateter': [item('P1'), item('P2')],
+      'lote-fistula': [item('P3')],
+      'lote-angio': [item('P4'), item('P5'), item('P6')],
+    };
+    const deps = baseDeps({
+      buscarMedico: vi.fn(async () => medicoFake({ id: 'med-1', nome: 'Dr. Angio', especialidade: 'Angiologista' })),
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoCateterExternaIds: ['lote-cateter'],
+          producaoFistulaExternaIds: ['lote-fistula'],
+          producaoAngiografiaExternaIds: ['lote-angio'],
+          cartaRedeGuias: 4,
+        }),
+      ]),
+      buscarItensPorLote: vi.fn(async (loteId: string) => itensPorLote[loteId] ?? []),
+    });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.cateter).toHaveLength(2);
+    expect(dados.fistula).toHaveLength(1);
+    expect(dados.angiografia).toHaveLength(3);
+    expect(dados.guiasCartaRede).toBe(4);
+    expect(dados.lotePrincipal).toEqual([]); // Angiologista não tem lote principal
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('busca `saldoAcumulado` do médico (usado pelo resumo da auditoria 3x1, nunca por `recalcularResultado`)', async () => {
+    const deps = baseDeps({
+      buscarSaldoAcumulado: vi.fn(async () => ({
+        guiasPrincipal: 5,
+        guiasOutrosHospitais: 0,
+        guiasImobilizacoes: 0,
+        valorBasePercentual: 0,
+        competenciaOrigem: '2026-06',
+      })),
+    });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.saldoAcumulado).toMatchObject({ guiasPrincipal: 5, competenciaOrigem: '2026-06' });
   });
 });

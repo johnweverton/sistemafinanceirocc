@@ -9,6 +9,7 @@ import type {
 } from '@cobranca/shared';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import type { ApiErrorBody } from '@/lib/api-error';
+import { baixarArquivo } from '@/lib/baixar-arquivo';
 
 export interface ExecucaoSelecaoPayload {
   medicoId: string;
@@ -165,6 +166,11 @@ export const execucoesService = {
       `/execucoes/resultados/${resultadoId}/recalcular`,
       { method: 'POST' },
     ),
+  /** Auditoria visual da regra 3x1 (achado 2026-09-04) — planilha .xlsx com cada procedimento
+   *  bruto marcado/colorido por qual "guia" (grupo de até 3) ele foi somado, pra conferência
+   *  manual contra o valor cobrado. Sem a trava de boleto emitido do recálculo (só lê, nunca
+   *  grava). */
+  auditoria3x1: (resultadoId: string) => baixarArquivo(`/execucoes/resultados/${resultadoId}/auditoria-3x1`),
   resumoPorMedico: () => apiFetch<ExecucaoResumoMedico[]>('/execucoes/por-medico'),
   /** Médicos com boleto ativo (emitido/pago) já na competência informada, em qualquer execução
    *  — usado pra não deixar reemitir boleto duplicado do mesmo médico no mesmo mês. Sem cache

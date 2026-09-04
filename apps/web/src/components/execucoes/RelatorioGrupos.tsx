@@ -9,9 +9,23 @@ import { medicosService, queryKeys as medicoQueryKeys } from '@/services/medicos
 import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { LoteEmissaoDialog } from './LoteEmissaoDialog';
 import { ApiClientError } from '@/lib/api-client';
+import { baixarBlob } from '@/lib/baixar-arquivo';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { brl, normalizarBusca } from '@/lib/formato';
+
+/** Especialidades que usam a regra 3x1 (teto(n/3) por atendimento) — réplica local do mesmo
+ *  critério de `usaRegra3x1` (server/engine/contagem-producao.ts), mesmo padrão já usado em
+ *  NovaExecucao.tsx (isPediatraEspecialidade/isAngiologistaEspecialidade) pra não importar
+ *  código do engine pro client. Usada só pra decidir se mostra o botão "Auditoria 3x1" — nunca
+ *  afeta cálculo algum aqui. */
+function usaRegra3x1Cliente(especialidade: string | null | undefined): boolean {
+  if (!especialidade) return false;
+  const e = especialidade.toLowerCase();
+  return (
+    e.includes('pediatr') || e.includes('urolog') || e.includes('ginecolog') || e.includes('ortoped') || e.includes('angiolog')
+  );
+}
 
 function classeLabel(classe: string): string {
   switch (classe) {
@@ -119,6 +133,12 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     () => new Map((medicos ?? []).map((m) => [m.id, m.contaEmissora])),
     [medicos],
   );
+  // Gate do botão "Auditoria 3x1" (achado 2026-09-04) — zero fetch novo, reaproveita a MESMA
+  // lista de médicos já carregada acima pra `contaPorMedico`.
+  const especialidadePorMedico = useMemo(
+    () => new Map((medicos ?? []).map((m) => [m.id, m.especialidade])),
+    [medicos],
+  );
 
   // Revisão manual de 'alerta' → 'ok' (gap de arquitetura identificado 2026-07-08: um resultado
   // em alerta nunca tinha caminho de saída). Ao confirmar, o item some do grupo "alerta" e reaparece
@@ -207,6 +227,21 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     },
   });
 
+  // Auditoria visual da regra 3x1 (achado 2026-09-04, Dra. Emilie: contagem manual deu 59,
+  // sistema deu 69, segunda conferência manual deu 61 — divergência real sem forma de ver ONDE).
+  // Baixa uma planilha .xlsx com cada procedimento marcado/colorido por qual "guia" (grupo de
+  // até 3) ele foi somado. SEM a trava de boleto emitido do recálculo (só lê, nunca grava) — o
+  // caso real é auditar um resultado possivelmente já emitido.
+  const auditoria3x1 = useMutation({
+    mutationFn: async (resultado: ExecucaoResultado) => {
+      const blob = await execucoesService.auditoria3x1(resultado.id);
+      baixarBlob(blob, `auditoria-3x1-${normalizarBusca(resultado.nome)}.xlsx`);
+    },
+    onError: (e) => {
+      toast(e instanceof ApiClientError ? e.message : 'Erro ao gerar a auditoria 3x1', 'error');
+    },
+  });
+
   if (isLoading) return <p className="text-sm text-cc-muted">Carregando relatório…</p>;
   if (error) return <p className="alert-error">Falha ao carregar o relatório.</p>;
 
@@ -259,6 +294,9 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         onReenviar={(id) => reenviar.mutate(id)}
         onRecalcular={(id) => recalcular.mutate(id)}
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
+        onAuditoria3x1={(r) => auditoria3x1.mutate(r)}
+        auditoria3x1PendingId={auditoria3x1.isPending ? auditoria3x1.variables?.id : null}
+        usaRegra3x1={(medicoId) => usaRegra3x1Cliente(especialidadePorMedico.get(medicoId))}
         acaoEmLote={
           ok.length > 0 ? (
             <button onClick={() => setLoteAberto(true)} className="btn-secondary btn btn-sm">
@@ -277,6 +315,9 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         revisarPendingId={revisar.isPending ? revisar.variables?.resultadoId : null}
         onRecalcular={(id) => recalcular.mutate(id)}
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
+        onAuditoria3x1={(r) => auditoria3x1.mutate(r)}
+        auditoria3x1PendingId={auditoria3x1.isPending ? auditoria3x1.variables?.id : null}
+        usaRegra3x1={(medicoId) => usaRegra3x1Cliente(especialidadePorMedico.get(medicoId))}
       />
       <Grupo titulo="Sem dados no sistema" count={semDados.length} cor="gray" resultados={semDados} resumido />
       <Grupo
@@ -390,6 +431,9 @@ function Grupo({
   onReenviar,
   onRecalcular,
   recalcularPendingId,
+  onAuditoria3x1,
+  auditoria3x1PendingId,
+  usaRegra3x1,
   acaoEmLote,
 }: {
   titulo: string;
@@ -409,6 +453,14 @@ function Grupo({
    *  resultados de médico (não empresa/cliente) sem boleto emitido ainda. */
   onRecalcular?: (resultadoId: string) => void;
   recalcularPendingId?: string | null;
+  /** Auditoria visual da regra 3x1 (achado 2026-09-04) — planilha .xlsx por procedimento, cor
+   *  por grupo. Ao contrário de `onRecalcular`, disponível mesmo com boleto já emitido (só lê,
+   *  nunca grava). */
+  onAuditoria3x1?: (resultado: ExecucaoResultado) => void;
+  auditoria3x1PendingId?: string | null;
+  /** Decide, por médico, se este resultado usa a regra 3x1 (gate do botão acima) — função em vez
+   *  de mapa pra não acoplar `Grupo` ao formato de `especialidadePorMedico`. */
+  usaRegra3x1?: (medicoId: string) => boolean;
   /** Ação de lote no cabeçalho do grupo (ex.: "Emitir todos os pendentes") — o grupo não sabe o
    *  que é, só reserva o espaço; mantém a emissão individual intacta ao lado como fallback. */
   acaoEmLote?: React.ReactNode;
@@ -516,21 +568,39 @@ function Grupo({
                   </p>
                 ))}
               {resumido && r.alertas[0] && <p className="mt-1 text-xs text-cc-muted">{r.alertas[0]}</p>}
-              {onRecalcular &&
-                r.medicoId &&
-                !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0)) && (
-                  <div className="mt-3 flex items-center justify-end border-t border-cc-hairline pt-3">
-                    <button
-                      type="button"
-                      className="btn-ghost btn btn-sm"
-                      disabled={recalcularPendingId != null}
-                      title="Reprocessa este resultado com os itens de produção atuais da origem"
-                      onClick={() => onRecalcular(r.id)}
-                    >
-                      {recalcularPendingId === r.id ? 'Recalculando…' : 'Recalcular'}
-                    </button>
+              {(() => {
+                const mostraAuditoria3x1 = Boolean(onAuditoria3x1 && r.medicoId && usaRegra3x1?.(r.medicoId));
+                const mostraRecalcular = Boolean(
+                  onRecalcular && r.medicoId && !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0)),
+                );
+                if (!mostraAuditoria3x1 && !mostraRecalcular) return null;
+                return (
+                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-cc-hairline pt-3">
+                    {mostraAuditoria3x1 && (
+                      <button
+                        type="button"
+                        className="btn-ghost btn btn-sm"
+                        disabled={auditoria3x1PendingId != null}
+                        title="Baixa uma planilha mostrando cada procedimento e em qual guia (grupo de até 3) ele foi contado, para conferência manual"
+                        onClick={() => onAuditoria3x1!(r)}
+                      >
+                        {auditoria3x1PendingId === r.id ? 'Gerando…' : 'Auditoria 3x1'}
+                      </button>
+                    )}
+                    {mostraRecalcular && (
+                      <button
+                        type="button"
+                        className="btn-ghost btn btn-sm"
+                        disabled={recalcularPendingId != null}
+                        title="Reprocessa este resultado com os itens de produção atuais da origem"
+                        onClick={() => onRecalcular!(r.id)}
+                      >
+                        {recalcularPendingId === r.id ? 'Recalculando…' : 'Recalcular'}
+                      </button>
+                    )}
                   </div>
-                )}
+                );
+              })()}
               {onRevisar && (
                 <AcaoRevisar
                   pending={revisarPendingId === r.id}
