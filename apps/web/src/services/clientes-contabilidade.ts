@@ -2,6 +2,7 @@ import type {
   ClienteContabilidade,
   ClienteContabilidadeHistorico,
   ClienteContabilidadeFaturamento,
+  PropostasIssResposta,
   ExecucaoHistoricoMedicoItem,
   DadosCobranca,
   CondicoesCobranca,
@@ -61,6 +62,8 @@ export interface DispararLotePayload {
 export interface LancamentoFaturamentoLotePayload {
   clienteContabilidadeId: string;
   faturamento: number;
+  /** Proposta do ISS aceita sem alteração (Story 13.3) — o servidor confere antes de marcar a origem. */
+  issCapturaId?: string | null;
 }
 
 export interface ResultadoLancamentoFaturamentoLote {
@@ -138,6 +141,11 @@ export const clientesContabilidadeService = {
     apiFetch<{ clienteContabilidadeIds: string[] }>(
       `/clientes-contabilidade/faturamentos/lancados?competencia=${encodeURIComponent(competencia)}`,
     ),
+  // Story 13.3: propostas do agente ISS + o que já foi lançado (com valor) na competência.
+  propostasIss: (competencia: string) =>
+    apiFetch<PropostasIssResposta>(
+      `/clientes-contabilidade/faturamentos/propostas-iss?competencia=${encodeURIComponent(competencia)}`,
+    ),
 };
 
 export const clienteContabilidadeQueryKeys = {
@@ -151,4 +159,6 @@ export const clienteContabilidadeQueryKeys = {
   /** Idem — quem já tem faturamento lançado na competência (Story 12.5). */
   faturamentosLancados: (competencia: string) =>
     ['clientes-contabilidade', 'faturamentos-lancados', competencia] as const,
+  /** Propostas do agente ISS na competência (Story 13.3). */
+  propostasIss: (competencia: string) => ['clientes-contabilidade', 'propostas-iss', competencia] as const,
 };

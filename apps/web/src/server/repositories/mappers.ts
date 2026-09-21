@@ -7,6 +7,9 @@ import type {
   ClienteContabilidade,
   ClienteContabilidadeHistorico,
   ClienteContabilidadeFaturamento,
+  CapturaIss,
+  StatusCapturaIss,
+  AlertaCapturaIss,
   DadosCobranca,
   CondicoesCobranca,
   RegraPreco,
@@ -619,6 +622,9 @@ export interface ClienteContabilidadeFaturamentoRow {
   faturamento: number;
   informado_por: string;
   informado_em: string;
+  /** Migration 0054 — default 'manual'; `undefined` só em linhas lidas antes da migration. */
+  origem?: 'manual' | 'iss_fortaleza';
+  iss_captura_id?: string | null;
 }
 
 export function toClienteContabilidadeFaturamento(
@@ -631,6 +637,49 @@ export function toClienteContabilidadeFaturamento(
     faturamento: Number(row.faturamento), // numeric pode vir como string do PostgREST
     informadoPor: row.informado_por,
     informadoEm: row.informado_em,
+    origem: row.origem ?? 'manual',
+    issCapturaId: row.iss_captura_id ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Agente ISS — capturas de faturamento (Story 13.1, Épico 13)
+// ---------------------------------------------------------------------------
+export interface IssCapturaRow {
+  id: string;
+  execucao_id: string;
+  cliente_contabilidade_id: string;
+  competencia: string;
+  status: StatusCapturaIss;
+  valor_servicos_prestados: number | string | null;
+  quantidade_notas: number | null;
+  situacao_iss: string | null;
+  competencia_fechada: boolean | null;
+  inscricao_municipal: string | null;
+  razao_social_iss: string | null;
+  alertas: AlertaCapturaIss[] | null;
+  mensagem_erro: string | null;
+  capturado_em: string;
+}
+
+export function toCapturaIss(row: IssCapturaRow): CapturaIss {
+  return {
+    id: row.id,
+    execucaoId: row.execucao_id,
+    clienteContabilidadeId: row.cliente_contabilidade_id,
+    competencia: row.competencia,
+    status: row.status,
+    // numeric pode vir como string do PostgREST
+    valorServicosPrestados:
+      row.valor_servicos_prestados === null ? null : Number(row.valor_servicos_prestados),
+    quantidadeNotas: row.quantidade_notas,
+    situacaoIss: row.situacao_iss,
+    competenciaFechada: row.competencia_fechada,
+    inscricaoMunicipal: row.inscricao_municipal,
+    razaoSocialIss: row.razao_social_iss,
+    alertas: row.alertas ?? [],
+    mensagemErro: row.mensagem_erro,
+    capturadoEm: row.capturado_em,
   };
 }
 

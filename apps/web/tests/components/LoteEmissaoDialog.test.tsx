@@ -74,15 +74,19 @@ const mockComBoleto = vi.fn();
 // `faturamentosLancados` (story 12.5) alimenta o painel de composição do lote — aqui responde
 // vazio: este arquivo testa a casca do modal e o fluxo de emissão, não o resumo.
 const mockFaturamentosLancados = vi.fn();
+// `propostasIss` (story 13.3): propostas do agente do ISS no passo 1 — aqui o agente nunca rodou.
+const mockPropostasIss = vi.fn();
 vi.mock('../../src/services/clientes-contabilidade', () => ({
   clientesContabilidadeService: {
     dispararLote: (...a: unknown[]) => mockDispararLote(...a),
     lancarFaturamentoLote: vi.fn(),
     comBoleto: (...a: unknown[]) => mockComBoleto(...a),
     faturamentosLancados: (...a: unknown[]) => mockFaturamentosLancados(...a),
+    propostasIss: (...a: unknown[]) => mockPropostasIss(...a),
   },
   clienteContabilidadeQueryKeys: {
     clientes: () => ['clientes-contabilidade'],
+    propostasIss: (competencia: string) => ['clientes-contabilidade', 'propostas-iss', competencia],
     comBoleto: (competencia: string) => ['clientes-contabilidade', 'com-boleto', competencia],
     faturamentosLancados: (competencia: string) => [
       'clientes-contabilidade',
@@ -158,6 +162,7 @@ beforeEach(() => {
   sessionStorage.clear();
   mockComBoleto.mockResolvedValue({ clienteContabilidadeIds: [] });
   mockFaturamentosLancados.mockResolvedValue({ clienteContabilidadeIds: [] });
+  mockPropostasIss.mockResolvedValue({ competencia: '2026-06', propostas: [], ultimaExecucao: null, lancados: [] });
   mockRetomarExecucao.mockResolvedValue({ ok: true });
   // Story 12.5: o resumo do lote (e o botão "Emitir boletos em lote") só aparece com a execução
   // concluída — antes disso o que está na tela é a barra de progresso.

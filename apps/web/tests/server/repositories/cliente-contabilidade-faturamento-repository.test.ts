@@ -92,6 +92,13 @@ vi.mock('../../../src/lib/supabase/admin', () => ({
   }),
 }));
 
+// Story 13.3: a origem `iss_fortaleza` só é gravada depois de o repositório CONFERIR a captura
+// citada pelo cliente HTTP — aqui a busca das capturas é o dublê controlado por cada teste.
+const mockBuscarCapturas = vi.fn();
+vi.mock('../../../src/server/repositories/iss-captura-repository', () => ({
+  buscarCapturasIssPorIds: (...a: unknown[]) => mockBuscarCapturas(...a),
+}));
+
 import {
   lancarFaturamento,
   lancarFaturamentoLote,
@@ -101,6 +108,8 @@ import {
 
 beforeEach(() => {
   estado = novoEstado();
+  mockBuscarCapturas.mockReset();
+  mockBuscarCapturas.mockResolvedValue([]);
 });
 
 describe('lancarFaturamento', () => {
@@ -205,5 +214,86 @@ describe('buscarFaturamento', () => {
   it('devolve null quando não há lançamento pra competência', async () => {
     const f = await buscarFaturamento('cc-1', '2026-08');
     expect(f).toBeNull();
+  });
+});
+
+// Story 13.3 (decisão G3): a captura do ISS é PROPOSTA; o lançamento é do operador. `origem` só
+// vira `iss_fortaleza` quando o servidor confirma que o valor aceito é o da captura.
+describe('lancarFaturamentoLote — origem do lançamento (Story 13.3)', () => {
+  const captura = (over: Record<string, unknown> = {}) => ({
+    id: 'cap-1',
+    clienteContabilidadeId: 'cc-1',
+    competencia: '2026-08',
+    status: 'capturado',
+    valorServicosPrestados: 34375.07,
+    ...over,
+  });
+
+  it('sem issCapturaId → origem manual e nem consulta as capturas', async () => {
+    await lancarFaturamentoLote('2026-08', [{ clienteContabilidadeId: 'cc-1', faturamento: 100 }], 'u1');
+    expect(estado.faturamentos.get('cc-1:2026-08')).toMatchObject({ origem: 'manual', iss_captura_id: null });
+    expect(mockBuscarCapturas).toHaveBeenCalledWith([]);
+  });
+
+  it('captura confere (cliente, mês, status e valor) → origem iss_fortaleza + iss_captura_id', async () => {
+    mockBuscarCapturas.mockResolvedValue([captura()]);
+    await lancarFaturamentoLote(
+      '2026-08',
+      [{ clienteContabilidadeId: 'cc-1', faturamento: 34375.07, issCapturaId: 'cap-1' }],
+      'u1',
+    );
+    expect(estado.faturamentos.get('cc-1:2026-08')).toMatchObject({
+      origem: 'iss_fortaleza',
+      iss_captura_id: 'cap-1',
+      faturamento: 34375.07,
+    });
+  });
+
+  it.each([
+    ['valor diferente do da captura', { faturamento: 34375.08 }, {}],
+    ['captura de outro cliente', {}, { clienteContabilidadeId: 'cc-2' }],
+    ['captura de outra competência', {}, { competencia: '2026-07' }],
+    ['captura que não é `capturado`', {}, { status: 'erro', valorServicosPrestados: null }],
+  ])('%s → o lançamento acontece, mas como manual', async (_nome, lancOver, capOver) => {
+    mockBuscarCapturas.mockResolvedValue([captura(capOver)]);
+    await lancarFaturamentoLote(
+      '2026-08',
+      [{ clienteContabilidadeId: 'cc-1', faturamento: 34375.07, issCapturaId: 'cap-1', ...lancOver }],
+      'u1',
+    );
+    expect(estado.faturamentos.get('cc-1:2026-08')).toMatchObject({ origem: 'manual', iss_captura_id: null });
+  });
+
+  it('captura inexistente (id forjado) → manual, sem derrubar o lançamento', async () => {
+    mockBuscarCapturas.mockResolvedValue([]);
+    const r = await lancarFaturamentoLote(
+      '2026-08',
+      [{ clienteContabilidadeId: 'cc-1', faturamento: 100, issCapturaId: 'inexistente' }],
+      'u1',
+    );
+    expect(r.lancados).toBe(1);
+    expect(estado.faturamentos.get('cc-1:2026-08')).toMatchObject({ origem: 'manual' });
+  });
+
+  it('falha ao buscar as capturas não perde o lançamento — sai como manual', async () => {
+    mockBuscarCapturas.mockRejectedValue(new Error('banco fora'));
+    const r = await lancarFaturamentoLote(
+      '2026-08',
+      [{ clienteContabilidadeId: 'cc-1', faturamento: 34375.07, issCapturaId: 'cap-1' }],
+      'u1',
+    );
+    expect(r).toEqual({ lancados: 1, falhas: [] });
+    expect(estado.faturamentos.get('cc-1:2026-08')).toMatchObject({ origem: 'manual', iss_captura_id: null });
+  });
+
+  it('relançar manualmente sobre um lançamento do ISS zera a proveniência', async () => {
+    mockBuscarCapturas.mockResolvedValue([captura()]);
+    await lancarFaturamentoLote(
+      '2026-08',
+      [{ clienteContabilidadeId: 'cc-1', faturamento: 34375.07, issCapturaId: 'cap-1' }],
+      'u1',
+    );
+    await lancarFaturamentoLote('2026-08', [{ clienteContabilidadeId: 'cc-1', faturamento: 30000 }], 'u1');
+    expect(estado.faturamentos.get('cc-1:2026-08')).toMatchObject({ origem: 'manual', iss_captura_id: null });
   });
 });

@@ -100,6 +100,8 @@ export const lancarFaturamentoLoteSchema = z
         z.object({
           clienteContabilidadeId: z.string().uuid(),
           faturamento: z.number().min(0, 'Faturamento não pode ser negativo'),
+          // Story 13.3: captura do ISS aceita pelo operador (o servidor confere valor/cliente/mês).
+          issCapturaId: z.string().uuid().nullish(),
         }),
       )
       .min(1, 'Informe ao menos um lançamento')

@@ -27,6 +27,13 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
 import { LoteEmissaoDialog } from '@/components/execucoes/LoteEmissaoDialog';
+import { ResumoCapturaIss, SeloPropostaIss } from '@/components/clientes-contabilidade/PropostaIss';
+import {
+  capturaAceita,
+  estadoPropostaIss,
+  valorInicialDoCampo,
+  type EstadoPropostaIss,
+} from '@/lib/proposta-iss';
 import { ProgressoExecucao } from '@/components/execucoes/ProgressoExecucao';
 import { cicloAdicionalVencendoNaCompetencia } from '@/lib/adicional-semestral';
 import { brl } from '@/lib/formato';
@@ -153,6 +160,29 @@ export function LoteContabilidadeDialog({
     [faturamentosLancadosQ.data],
   );
 
+  // Story 13.3 (Épico 13): propostas lidas pelo agente no ISS Fortaleza. O agente ACELERA o
+  // lançamento, não o substitui — por isso esta consulta nunca bloqueia nada: se falhar, o passo 1
+  // funciona exatamente como antes (campos vazios). `staleTime: 0`, mesmo motivo das guardas acima:
+  // o agente pode ter acabado de rodar e o passo 1 acabou de escrever em faturamentos.
+  const propostasQ = useQuery({
+    queryKey: clienteContabilidadeQueryKeys.propostasIss(competencia),
+    queryFn: () => clientesContabilidadeService.propostasIss(competencia),
+    enabled: /^\d{4}-\d{2}$/.test(competencia),
+    staleTime: 0,
+  });
+  const estadoIssPorCliente = useMemo(() => {
+    const capturas = new Map((propostasQ.data?.propostas ?? []).map((p) => [p.clienteContabilidadeId, p]));
+    const lancados = new Map(
+      (propostasQ.data?.lancados ?? []).map((l) => [l.clienteContabilidadeId, l.faturamento]),
+    );
+    return (clienteId: string): EstadoPropostaIss =>
+      estadoPropostaIss(capturas.get(clienteId), lancados.get(clienteId));
+  }, [propostasQ.data]);
+  /** O que o campo mostra: o que o operador digitou (inclusive vazio) ou, se não mexeu, a proposta. */
+  function valorDoCampo(clienteId: string): string {
+    return faturamentos[clienteId] ?? valorInicialDoCampo(estadoIssPorCliente(clienteId));
+  }
+
   // Bloqueio duro, sem opt-in nem exceção por cliente (decisão do dono): quem está em
   // `jaEmitidos` simplesmente não entra no payload do cálculo. Cancelar o boleto anterior é o
   // caminho legítimo — boleto `cancelado` não conta como ativo na consulta do servidor.
@@ -213,17 +243,24 @@ export function LoteContabilidadeDialog({
 
   // Lançamento em massa exige pelo menos um valor: mandar lista vazia só produziria um 422 do
   // schema (`min(1)`) — e, com a regra do AC 1, um 422 nunca faria o passo avançar.
+  // Story 13.3: o valor vem do campo (digitado OU proposta do ISS não alterada). Quando é
+  // exatamente o da proposta, o lançamento cita a captura — o servidor confere e grava a origem.
   const lancamentosValidos = useMemo(
     () =>
       alvosFaturamento
-        .map((c) => ({ clienteContabilidadeId: c.id, faturamento: Number(faturamentos[c.id]) }))
-        .filter(
-          (l) =>
-            faturamentos[l.clienteContabilidadeId]?.trim() &&
-            !Number.isNaN(l.faturamento) &&
-            l.faturamento >= 0,
-        ),
-    [alvosFaturamento, faturamentos],
+        .map((c) => {
+          const bruto = faturamentos[c.id] ?? valorInicialDoCampo(estadoIssPorCliente(c.id));
+          const faturamento = Number(bruto);
+          return {
+            clienteContabilidadeId: c.id,
+            bruto,
+            faturamento,
+            issCapturaId: capturaAceita(estadoIssPorCliente(c.id), faturamento),
+          };
+        })
+        .filter((l) => l.bruto.trim() && !Number.isNaN(l.faturamento) && l.faturamento >= 0)
+        .map(({ bruto: _bruto, ...lancamento }) => lancamento),
+    [alvosFaturamento, faturamentos, estadoIssPorCliente],
   );
   // Não dá pra "remover do payload antes do cálculo" sem saber quem remover: enquanto a checagem
   // não responde, calcular fica bloqueado. (Tratamento de erro vs. vazio nos pontos de carga é
@@ -243,6 +280,8 @@ export function LoteContabilidadeDialog({
       void qc.invalidateQueries({
         queryKey: clienteContabilidadeQueryKeys.faturamentosLancados(competencia),
       });
+      // Story 13.3: o "lançado" da comparação com o ISS (R4) também mudou.
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.propostasIss(competencia) });
       if (resultado.lancados === 0) {
         toast(
           resultado.falhas.length > 0
@@ -522,19 +561,41 @@ export function LoteContabilidadeDialog({
                 ? `${alvosFaturamento.length} cliente${alvosFaturamento.length !== 1 ? 's' : ''} que falharam — confira o valor e lance de novo o faturamento de ${competencia} (quem já foi lançado não é reenviado).`
                 : `${alvosFaturamento.length} cliente${alvosFaturamento.length !== 1 ? 's' : ''} no modo “faixa de faturamento” — lance o faturamento de ${competencia} pra cada um (opcional: quem ficar em branco entra no lote como alerta, sem travar os demais).`}
             </p>
+            {/* Story 13.3: faixa-resumo do agente do ISS. Falha da consulta é só um aviso — o passo 1
+                continua utilizável à mão. */}
+            {propostasQ.isError ? (
+              <p className="text-xs text-cc-muted">
+                Não foi possível carregar as propostas do ISS — digite os valores.
+              </p>
+            ) : (
+              propostasQ.isSuccess && (
+                <ResumoCapturaIss
+                  ultimaExecucao={propostasQ.data.ultimaExecucao}
+                  manuais={alvosFaturamento
+                    .filter((c) => {
+                      const t = estadoIssPorCliente(c.id).tipo;
+                      return t === 'indisponivel' || t === 'sem_captura';
+                    })
+                    .map((c) => c.nome)}
+                />
+              )
+            )}
             <div className="max-h-52 space-y-2 overflow-y-auto">
               {alvosFaturamento.map((c) => (
-                <div key={c.id} className="flex items-center gap-3">
-                  <span className="flex-1 truncate text-sm text-cc-ink">{c.nome}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={faturamentos[c.id] ?? ''}
-                    onChange={(e) => setFaturamentos((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                    placeholder="0.00"
-                    className="input w-32 tabular"
-                  />
+                <div key={c.id}>
+                  <div className="flex items-center gap-3">
+                    <span className="flex-1 truncate text-sm text-cc-ink">{c.nome}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={valorDoCampo(c.id)}
+                      onChange={(e) => setFaturamentos((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                      placeholder="0.00"
+                      className="input w-32 tabular"
+                    />
+                  </div>
+                  {propostasQ.isSuccess && <SeloPropostaIss estado={estadoIssPorCliente(c.id)} />}
                 </div>
               ))}
             </div>

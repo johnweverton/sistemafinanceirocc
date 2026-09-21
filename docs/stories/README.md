@@ -532,3 +532,27 @@ exige `admin` e **não** estava entre as 4 rotas do gate de 12.8. Com `financeir
 confirmar, um lote que o circuit breaker pausar só pode ser retomado por `admin`. A rota **não é
 alterada** por nenhuma story; 12.8 (AC 8) apenas obriga a UI a avisar antes do clique. Pergunta a
 responder antes da Fase 2: *quem pode retomar um lote pausado pelo circuit breaker?*
+
+---
+
+# Épico 13 — Agente de captura de faturamento no ISS Fortaleza
+
+**Fonte de verdade:** `docs/architecture/feature-agente-faturamento-iss.md`
+**Objetivo:** tirar do operador a busca manual, empresa por empresa, do faturamento no portal ISS
+Fortaleza (base do boleto `faixa_faturamento`). Um agente local lê o valor, e o sistema o
+apresenta como proposta para conferência no diálogo de lote.
+
+## Decisões fechadas (dono, 2026-09-21)
+1. Fonte = escrituração do ISS Fortaleza (SEFIN confirmou que continua com as notas após a migração ao Emissor Nacional).
+2. O agente dá ciência em comunicados automaticamente e guarda o PDF.
+3. Valor entra como **proposta**; operador confirma; nunca sobrescreve lançamento manual.
+4. Roda como **CLI local** no escritório.
+
+## Stories
+
+| # | Story | Depende de | Foco |
+|---|-------|-----------|------|
+| 13.0 | Reconhecimento do portal (spike) | — | Absorvido na 13.2 (gravação real 2026-09-21) |
+| 13.1 | Fundação: persistência + API com token | — | migration 0054, `/api/integracoes/iss/*`, R5 |
+| 13.2 | Agente CLI (Playwright) | 13.0, 13.1 | `apps/agente-iss` |
+| 13.3 | Propostas no diálogo de lote | 13.1 | pré-preenchimento, divergência, `origem` |

@@ -81,7 +81,7 @@ describe('processarProximoLote — lote de clientes contábeis, fim a fim', () =
     const state = novoEstado([], [], clientes);
     state.faturamentos.set('cc-3:2026-07', {
       id: 'f1', clienteContabilidadeId: 'cc-3', competencia: '2026-07', faturamento: 10000,
-      informadoPor: 'u', informadoEm: '2026-07-01T00:00:00Z',
+      informadoPor: 'u', informadoEm: '2026-07-01T00:00:00Z', origem: 'manual', issCapturaId: null,
     });
     const deps = fakeDeps(state, 5, processarProximoLote);
 

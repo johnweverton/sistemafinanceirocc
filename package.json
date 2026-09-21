@@ -12,7 +12,8 @@
     "build": "npm run build --workspace apps/web",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "iss:faturamento": "npm run start --workspace apps/agente-iss --"
   },
   "engines": {
     "node": ">=20",
