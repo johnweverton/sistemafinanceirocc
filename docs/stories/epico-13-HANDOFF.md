@@ -29,7 +29,7 @@ por empresa. O agente lê o valor no portal e o entrega como **proposta** no di�
 | Story | Status | O que é |
 |---|---|---|
 | 13.0 | Feita (absorvida na 13.2) | Gravação real do portal em 2026-09-21 → seletores + fixtures |
-| 13.1 | InReview | Servidor: migration `0054_agente_iss.sql`, rotas `GET /api/integracoes/iss/alvos` e `POST /api/integracoes/iss/execucoes` (bearer token, SHA-256 em `AGENTE_ISS_TOKEN_SHA256`), R5, `listarPropostasIssVigentes` |
+| 13.1 | InReview | Servidor: migration `0061_agente_iss.sql`, rotas `GET /api/integracoes/iss/alvos` e `POST /api/integracoes/iss/execucoes` (bearer token, SHA-256 em `AGENTE_ISS_TOKEN_SHA256`), R5, `listarPropostasIssVigentes` |
 | 13.2 | InReview (**falta validação ao vivo**) | CLI `apps/agente-iss` → `npm run iss:faturamento` |
 | 13.3 | Não iniciada | UI: pré-preencher propostas no `LoteContabilidadeDialog` (selos, divergência R4, `origem` no lançamento) — ver arquitetura §6 |
 
@@ -46,7 +46,7 @@ Testes na saída desta sessão: suíte completa verde (web 138 arquivos, agente 
    pesquisa por CNPJ não filtrou e o fallback de paginação foi usado. Se algo falhar, os snapshots
    ficam em `%USERPROFILE%\agente-iss\execucoes\<carimbo>\snapshots\`: leia o HTML e ajuste
    `src/portal/seletores.ts`.
-2. **Dono**: aplicar `supabase/migrations/0054_agente_iss.sql` no Supabase (conta externa, ref
+2. **Dono**: aplicar `supabase/migrations/0061_agente_iss.sql` no Supabase (conta externa, ref
    `nxxhhempgmevzxbrjvbo`); gerar o token (comando em `docs/stories/13.1…md` › Dev Notes); pôr
    `AGENTE_ISS_TOKEN_SHA256` na Vercel e `AGENTE_ISS_TOKEN` + `SISTEMA_URL` no `.env` do agente.
 3. **13.3** (UI), que pode começar em paralelo ao passo 1.

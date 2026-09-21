@@ -1,4 +1,4 @@
--- Migration 0054 — agente de captura de faturamento no ISS Fortaleza (Story 13.1, Épico 13).
+-- Migration 0061 — agente de captura de faturamento no ISS Fortaleza (Story 13.1, Épico 13).
 -- Arquitetura: docs/architecture/feature-agente-faturamento-iss.md.
 --
 -- O agente (CLI local, Story 13.2) lê o "Somatório de Serviços Prestados" da escrituração de cada

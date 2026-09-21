@@ -118,7 +118,7 @@ comunicado público para o Supabase).
   localizada pelo **texto** "Somatório" dentro da tabela cujo cabeçalho é "Serviços Prestados"
   (não pela posição, porque a tabela "Serviços Tomados" logo abaixo tem a mesma estrutura).
 
-## 4. Modelo de dados — migration `0054_agente_iss.sql`
+## 4. Modelo de dados — migration `0061_agente_iss.sql`
 
 ```sql
 create table iss_execucoes_agente (
