@@ -1,0 +1,23 @@
+{
+  "name": "@cobranca/agente-iss",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agente local que lê o faturamento no ISS Fortaleza e envia como proposta ao Sistema Financeiro (Épico 13)",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && node dist/cli.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cobranca/shared": "*",
+    "playwright": "1.48.0"
+  },
+  "devDependencies": {
+    "esbuild": "*",
+    "jsdom": "*",
+    "typescript": "5.5.4",
+    "vitest": "2.1.2"
+  }
+}
