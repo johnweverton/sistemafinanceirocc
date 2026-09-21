@@ -121,16 +121,47 @@ agrupando por paciente), subtotais por classe e o valor total.
 1. **Todos os itens contam**, independente do status na origem (Devidamente Pago, **Glosado**,
    **Recurso**, Aguardando Fechamento) — porque a cobrança é pela **conferência da guia**, não
    pelo pagamento da operadora.
-2. **Via de acesso:** itens marcados com `via_acesso = "Sim"` do mesmo atendimento formam
-   **uma única guia** (vários procedimentos da mesma cirurgia).
-3. **Pediatra:** os demais itens agrupam por atendimento+data e cada grupo de até 3
-   procedimentos vale 1 guia (`teto(n/3)`).
-4. **Outras especialidades:** 1 item = 1 guia.
-5. Linhas sem paciente ou sem data são descartadas e reportadas.
+2. Linhas **sem paciente ou sem data** são descartadas e **reportadas como alerta** no resultado
+   do médico (nunca somem em silêncio).
+3. A regra de contagem **depende da especialidade cadastrada no médico**. Existem dois mundos:
 
-> **Importante:** enquanto a origem não enviar o identificador do atendimento (já pedido ao
-> programador), o agrupamento usa paciente+data — o que **subconta** guias no caso raro de um
-> mesmo paciente ter duas cirurgias no mesmo dia. Ver §6 (pendências).
+**a) Especialidades com "regra 3x1" — pediatra, urologista, ginecologista, ortopedista e
+angiologista.** Os procedimentos são agrupados por **atendimento + data** e **cada grupo de até
+3 procedimentos vale 1 guia** (`teto(n/3)`): 1, 2 ou 3 procedimentos do mesmo atendimento = 1
+guia; 4 a 6 = 2 guias; e assim por diante.
+
+- Itens marcados como **via de acesso** (`via_acesso = "Sim"`) seguem a **mesma regra 3x1**, num
+  balde próprio — **não** são sempre "uma única guia". (Isso mudou por um achado real: a origem
+  costuma dar uma senha diferente para cada procedimento da mesma cirurgia, o que fragmentava o
+  atendimento e ignorava o 3x1.)
+- **Exceções por especialidade:** alguns procedimentos **saem do bolo do 3x1** e valem **1 guia
+  cheia cada um**, porque são procedimentos completos por si só — nem diluem, nem são diluídos
+  pelos demais:
+  - **Urologista:** uma lista fechada de **códigos** (cateterismo ureteral, dissecção de veia
+    para cateter central, intra-operatório, vasectomia unilateral, cateterismo de artéria radial
+    e radioscopia para acompanhamento cirúrgico).
+  - **Ginecologista:** identificado pela **descrição** do procedimento — qualquer variação de
+    **DIU** (inserção, retirada, hormonal, não hormonal) e de **histeroscopia**. Usa descrição
+    em vez de código porque a origem tem vários códigos diferentes para a mesma coisa.
+    *Histerectomia não é exceção* — entra no bolo normal.
+  - **Angiologista:** o código de **intra-operatório**, dentro do lote de Angiografia.
+  - **Pediatra e ortopedista não têm exceção nenhuma** — todo procedimento entra no bolo.
+
+**b) Todas as outras especialidades.** Sem agrupamento: **1 item = 1 guia**. Os itens de via de
+acesso do mesmo atendimento, aí sim, contam como **uma única guia**.
+
+> **Especialidade em branco no cadastro conta como "outras especialidades"** — ou seja, perde o
+> 3x1 e as exceções. Por isso o sistema emite alerta quando processa produção de um médico sem
+> especialidade cadastrada.
+
+> **Importante:** enquanto a origem não enviar um identificador de atendimento confiável, o
+> agrupamento cai para paciente+data — o que **subconta** guias no caso raro de um mesmo paciente
+> ter duas cirurgias separadas no mesmo dia. Ver §6 (pendências).
+
+> **Angiologista é um caso à parte:** não tem lote principal. A produção vem de 4 fontes
+> separadas — Cateter (1 item = 1 guia), Fístula (1 item = 1 guia), Angiografia (regra 3x1 com a
+> exceção acima) e Carta de Rede (quantidade **informada manualmente** pelo operador, porque não
+> existe regra fixa). As 4 se somam numa faixa única da tabela de preço do médico.
 
 ### Preço
 

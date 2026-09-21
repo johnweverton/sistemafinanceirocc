@@ -4,7 +4,12 @@
 // orchestrator-unit.test.ts), sem tocar Supabase.
 import { describe, it, expect, vi } from 'vitest';
 import type { Execucao, ExecucaoResultado, Medico, ItemProducao, ResultadoMedico, Boleto } from '@cobranca/shared';
-import { recalcularResultado, type RecalculoDeps } from '../../../src/server/orchestrator/recalculo-resultado';
+import {
+  recalcularResultado,
+  usarConsolidadoNoResultado,
+  buscarItensDoResultado,
+  type RecalculoDeps,
+} from '../../../src/server/orchestrator/recalculo-resultado';
 import type { SelecaoDeps } from '../../../src/server/orchestrator/execucao-orchestrator';
 
 function medicoFake(over: Partial<Medico> & { id: string; nome: string }): Medico {
@@ -87,6 +92,8 @@ function baseDeps(over: Partial<RecalculoDeps> = {}): RecalculoDeps {
     atualizarResultado: vi.fn(async (id: string, r: ResultadoMedico) =>
       resultadoFake({ id, execucaoId: 'exec-1', ...r, medicoId: 'med-1' }),
     ),
+    buscarSaldoAcumulado: vi.fn(async () => null),
+    definirGuiasManuaisTotalDaSelecao: vi.fn(async () => {}),
     ...over,
   };
 }
@@ -159,5 +166,309 @@ describe('recalcularResultado', () => {
     await expect(recalcularResultado('res-1', 'user-financeiro', deps)).rejects.toMatchObject({
       code: 'SELECAO_NAO_ENCONTRADA',
     });
+  });
+
+  // Achado 2026-09-02 (auditoria da contagem 3x1): o recálculo lia só `producaoExternaId`/
+  // `producaoConsultasExternaId` e ignorava os sub-lotes que o orquestrador principal já tratava
+  // desde 2026-08-21 — um pediatra com sub-lote de consulta (producaoExternaId NULL) recalculava
+  // com zero itens e zerava o resultado. Espelho do caso "Humberto" de execucao-integracao.test.ts.
+  it('pediatra com sub-lotes de guia/consulta (producaoExternaId null) recalcula pelos sub-lotes, não zera', async () => {
+    const itemDeLote = (paciente: string): ItemProducao => ({
+      data: '2026-07-05',
+      pacienteNome: paciente,
+      atendimentoExternoId: null,
+      codigoProcedimento: '30715040',
+      descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    });
+    const itensPorLote: Record<string, ItemProducao[]> = {
+      'lote-1q': Array.from({ length: 3 }, (_, i) => itemDeLote(`1Q-${i}`)),
+      'lote-2q': Array.from({ length: 2 }, (_, i) => itemDeLote(`2Q-${i}`)),
+      'lote-consultas': Array.from({ length: 10 }, (_, i) => itemDeLote(`Consulta ${i}`)),
+    };
+
+    const deps = baseDeps({
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoGuiasLoteExternaIds: ['lote-1q', 'lote-2q'],
+          producaoConsultasLoteExternaIds: ['lote-consultas'],
+        }),
+      ]),
+      buscarItensPorLote: vi.fn(async (loteId: string) => itensPorLote[loteId] ?? []),
+    });
+
+    const resultado = await recalcularResultado('res-1', 'user-financeiro', deps);
+
+    // 3 (1Q) + 2 (2Q) = 5 guias — antes do fix dava 0 (nenhum lote era buscado).
+    expect(resultado.guias).toBe(5);
+    expect(resultado.status).not.toBe('sem_dados');
+    // 10 consultas × R$3,00 (lerValorConsultaPediatria fake) = R$30,00.
+    expect(resultado.subtotais?.find((s) => s.classe === 'CONSULTA_PEDIATRIA')).toMatchObject({
+      guias: 10,
+      valor: 30,
+    });
+    // Nunca cai na produção flat quando os sub-lotes vieram preenchidos (anti-dupla-contagem).
+    expect(deps.buscarItens).not.toHaveBeenCalled();
+  });
+
+  // Migration 0058 (contagem manual por planilha) — MESMA classe de bug do achado A1 acima: um
+  // campo que o orquestrador principal passa e o recálculo esquece. Aqui a falha seria ainda pior
+  // que zerar: o recálculo voltaria silenciosamente para a contagem AUTOMÁTICA que o dono já sabe
+  // estar errada para este médico, mudando o valor cobrado sem ninguém pedir.
+  it('preserva a contagem manual gravada na seleção (não volta para a contagem automática)', async () => {
+    const itens = Array.from({ length: 15 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({
+      buscarItens: vi.fn(async () => itens),
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          guiasManuaisTotal: 42,
+          guiasManuaisMotivo: 'Conferencia manual do dono',
+        }),
+      ]),
+    });
+
+    const resultado = await recalcularResultado('res-1', 'user-financeiro', deps);
+
+    // 15 itens dariam 15 guias na contagem automática — o número conferido à mão prevalece.
+    expect(resultado.guias).toBe(42);
+    expect(resultado.alertas[0]).toContain('CONTAGEM MANUAL (planilha): 42 guia(s)');
+    expect(resultado.alertas[0]).toContain('Conferencia manual do dono');
+    // Recalcular não pode "rebaixar" o resultado: a marca de contagem manual é auditoria, e o
+    // status segue 'ok' (GATE do dono 2026-09-03) — senão o recálculo bloquearia a emissão.
+    expect(resultado.status).toBe('ok');
+  });
+
+  it('seleção sem contagem manual continua recalculando pela produção (regressão)', async () => {
+    const itens = Array.from({ length: 15 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({ buscarItens: vi.fn(async () => itens) });
+
+    const resultado = await recalcularResultado('res-1', 'user-financeiro', deps);
+
+    expect(resultado.guias).toBe(15);
+    expect(resultado.alertas.some((a) => a.includes('CONTAGEM MANUAL'))).toBe(false);
+  });
+});
+
+// Achado 2026-09-04 (feedback do dono, screenshot do relatório: "92 guias cobradas · consolidado
+// (ignora a data no agrupamento) 65 — diverge por atendimento em mais de 1 dia"): atalho pra
+// aceitar o valor CONSOLIDADO como o novo total do lote principal, sem precisar de planilha.
+describe('usarConsolidadoNoResultado', () => {
+  it('grava o consolidado como contagem manual na seleção e reprocessa com esse total', async () => {
+    // 15 itens dariam 15 guias na contagem automática — mas o resultado gravado (fixture) já diz
+    // guias=38/guiasConsolidado=17 (a divergência que o operador está aceitando).
+    const itens = Array.from({ length: 15 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({ buscarItens: vi.fn(async () => itens) });
+
+    const resultado = await usarConsolidadoNoResultado('res-1', 'Aceito o consolidado, atendimento espalhado em 2 dias', 'user-financeiro', deps);
+
+    expect(deps.definirGuiasManuaisTotalDaSelecao).toHaveBeenCalledWith(
+      'exec-1',
+      'med-1',
+      17, // guiasConsolidado da fixture do resultado
+      'Aceito o consolidado, atendimento espalhado em 2 dias',
+      'user-financeiro',
+    );
+    // O reprocessamento usa o CONSOLIDADO (17), não os 15 itens automáticos nem os 38 antigos.
+    expect(resultado.guias).toBe(17);
+    expect(resultado.alertas[0]).toContain('CONTAGEM MANUAL (planilha): 17 guia(s) da produção principal');
+    expect(resultado.alertas[0]).toContain('Aceito o consolidado, atendimento espalhado em 2 dias');
+    expect(deps.atualizarResultado).toHaveBeenCalledWith(
+      'res-1',
+      expect.objectContaining({ guias: 17 }),
+      'user-financeiro',
+    );
+  });
+
+  it('sem divergência entre guias e consolidado → rejeita explicitamente (nada a substituir)', async () => {
+    const deps = baseDeps({
+      buscarResultado: vi.fn(async () => resultadoFake({ id: 'res-1', execucaoId: 'exec-1', guias: 20, guiasConsolidado: 20 })),
+    });
+
+    await expect(usarConsolidadoNoResultado('res-1', 'motivo qualquer', 'user-financeiro', deps)).rejects.toMatchObject({
+      code: 'SEM_DIVERGENCIA_CONSOLIDADO',
+    });
+    expect(deps.definirGuiasManuaisTotalDaSelecao).not.toHaveBeenCalled();
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia se já existir boleto ativo para o resultado', async () => {
+    const deps = baseDeps({ buscarBoletoEmitido: vi.fn(async () => ({ id: 'bol-1' }) as unknown as Boleto) });
+
+    await expect(usarConsolidadoNoResultado('res-1', 'motivo', 'user-financeiro', deps)).rejects.toMatchObject({
+      code: 'BOLETO_JA_EMITIDO',
+    });
+    expect(deps.definirGuiasManuaisTotalDaSelecao).not.toHaveBeenCalled();
+  });
+
+  it('rejeita resultado de empresa/cliente contábil (sem medicoId)', async () => {
+    const deps = baseDeps({
+      buscarResultado: vi.fn(async () => resultadoFake({ id: 'res-1', execucaoId: 'exec-1', medicoId: null })),
+    });
+
+    await expect(usarConsolidadoNoResultado('res-1', 'motivo', 'user-financeiro', deps)).rejects.toMatchObject({
+      code: 'RECALCULO_NAO_SUPORTADO',
+    });
+  });
+
+  it('resultado inexistente → 404', async () => {
+    const deps = baseDeps({ buscarResultado: vi.fn(async () => null) });
+    await expect(usarConsolidadoNoResultado('res-x', 'motivo', 'user-financeiro', deps)).rejects.toMatchObject({
+      code: 'RESULTADO_NAO_ENCONTRADO',
+    });
+  });
+
+  it('preserva overrides manuais de OUTRAS classes (Imobilizações) já gravados na seleção — só o principal muda', async () => {
+    const itens = Array.from({ length: 15 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({
+      buscarItens: vi.fn(async () => itens),
+      buscarMedico: vi.fn(async () =>
+        medicoFake({ id: 'med-1', nome: 'JOSE NEIAS ARAUJO RIBEIRO', fazImobilizacoes: true }),
+      ),
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          guiasManuaisImobilizacoes: 9,
+          guiasManuaisMotivo: 'motivo antigo da imobilizacoes',
+        }),
+      ]),
+    });
+
+    const resultado = await usarConsolidadoNoResultado('res-1', 'Aceito o consolidado', 'user-financeiro', deps);
+
+    // Principal vem do consolidado (17) — Imobilizações continua com o override JÁ gravado (9),
+    // intocado por esta chamada (definirGuiasManuaisTotalDaSelecao só mexe no total/motivo).
+    expect(resultado.subtotais?.find((s) => s.classe === 'HAPVIDA_CRED')?.guias).toBe(17);
+    expect(resultado.subtotais?.find((s) => s.classe === 'IMOBILIZACOES')?.guias).toBe(9);
+  });
+});
+
+// Achado 2026-09-04 (auditoria 3x1): `buscarItensDoResultado` foi extraída de
+// `recalcularResultado` pra ser reaproveitada pela rota de auditoria — busca os mesmos buckets,
+// mas NUNCA roda `processarMedico`/`atualizarResultado` (a auditoria não pode, por engano,
+// recalcular/gravar o resultado).
+describe('buscarItensDoResultado', () => {
+  it('médico normal (produção flat): devolve o lote principal em `lotePrincipal`, sem tocar em `processarMedico`/`atualizarResultado`', async () => {
+    const itens = Array.from({ length: 5 }, (_, i) => itemViaAcesso(`Paciente ${i}`, `s${i}`));
+    const deps = baseDeps({ buscarItens: vi.fn(async () => itens) });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.medico.id).toBe('med-1');
+    expect(dados.execucao.id).toBe('exec-1');
+    expect(dados.lotePrincipal).toEqual(itens);
+    expect(dados.outrosHospitais).toBeUndefined();
+    expect(dados.saldoAcumulado).toBeNull();
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('pediatra com sub-lotes de guia/consulta (producaoExternaId null): busca pelos sub-lotes, não pela produção flat', async () => {
+    const itemDeLote = (paciente: string): ItemProducao => ({
+      data: '2026-07-05',
+      pacienteNome: paciente,
+      atendimentoExternoId: null,
+      codigoProcedimento: '30715040',
+      descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    });
+    const itensPorLote: Record<string, ItemProducao[]> = {
+      'lote-1q': Array.from({ length: 3 }, (_, i) => itemDeLote(`1Q-${i}`)),
+      'lote-consultas': Array.from({ length: 10 }, (_, i) => itemDeLote(`Consulta ${i}`)),
+    };
+    const deps = baseDeps({
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoGuiasLoteExternaIds: ['lote-1q'],
+          producaoConsultasLoteExternaIds: ['lote-consultas'],
+        }),
+      ]),
+      buscarItensPorLote: vi.fn(async (loteId: string) => itensPorLote[loteId] ?? []),
+    });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.lotePrincipal).toHaveLength(3);
+    expect(dados.itensConsultas).toHaveLength(10);
+    expect(deps.buscarItens).not.toHaveBeenCalled();
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('Angiologista (sem lote principal): devolve os 4 lotes próprios (Cateter/Fístula/Angiografia) e Carta de Rede', async () => {
+    const item = (paciente: string): ItemProducao => ({
+      data: '2026-07-05',
+      pacienteNome: paciente,
+      atendimentoExternoId: null,
+      codigoProcedimento: '10101012',
+      descricaoProcedimento: 'Procedimento',
+      statusOrigem: 'Devidamente Pago',
+      viaAcesso: false,
+      tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100,
+      valorPagoOrigem: 100,
+    });
+    const itensPorLote: Record<string, ItemProducao[]> = {
+      'lote-cateter': [item('P1'), item('P2')],
+      'lote-fistula': [item('P3')],
+      'lote-angio': [item('P4'), item('P5'), item('P6')],
+    };
+    const deps = baseDeps({
+      buscarMedico: vi.fn(async () => medicoFake({ id: 'med-1', nome: 'Dr. Angio', especialidade: 'Angiologista' })),
+      listarSelecoes: vi.fn(async () => [
+        selecaoFake({
+          execucaoId: 'exec-1',
+          medicoId: 'med-1',
+          producaoExternaId: null,
+          producaoNome: null,
+          producaoCateterExternaIds: ['lote-cateter'],
+          producaoFistulaExternaIds: ['lote-fistula'],
+          producaoAngiografiaExternaIds: ['lote-angio'],
+          cartaRedeGuias: 4,
+        }),
+      ]),
+      buscarItensPorLote: vi.fn(async (loteId: string) => itensPorLote[loteId] ?? []),
+    });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.cateter).toHaveLength(2);
+    expect(dados.fistula).toHaveLength(1);
+    expect(dados.angiografia).toHaveLength(3);
+    expect(dados.guiasCartaRede).toBe(4);
+    expect(dados.lotePrincipal).toEqual([]); // Angiologista não tem lote principal
+    expect(deps.atualizarResultado).not.toHaveBeenCalled();
+  });
+
+  it('busca `saldoAcumulado` do médico (usado pelo resumo da auditoria 3x1, nunca por `recalcularResultado`)', async () => {
+    const deps = baseDeps({
+      buscarSaldoAcumulado: vi.fn(async () => ({
+        guiasPrincipal: 5,
+        guiasOutrosHospitais: 0,
+        guiasImobilizacoes: 0,
+        valorBasePercentual: 0,
+        competenciaOrigem: '2026-06',
+      })),
+    });
+
+    const dados = await buscarItensDoResultado('res-1', deps);
+
+    expect(dados.saldoAcumulado).toMatchObject({ guiasPrincipal: 5, competenciaOrigem: '2026-06' });
   });
 });

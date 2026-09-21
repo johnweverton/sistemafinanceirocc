@@ -32,7 +32,9 @@ function medicoPercentual(
     fazOutrosHospitais: false,
     fazImobilizacoes: false,
     modoMudancaData: 'nao',
-    especialidade: null,
+    // Especialidade não-3x1 (1 item = 1 guia). Era `null`, mas desde a auditoria 2026-09-02
+    // cadastro sem especialidade gera alerta próprio — ruído nestes casos, que são sobre preço.
+    especialidade: 'Cirurgia Geral',
     modoCobranca: 'percentual_producao',
     percentualProducao: percentual,
     regraPreco: null,

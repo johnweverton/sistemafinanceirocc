@@ -30,6 +30,7 @@
 // chegar aqui.
 import {
   cobrancaMinimaEmissao,
+  documentoValido,
   type DadosCobranca,
   type CondicoesCobranca,
   type ContaEmissora,
@@ -46,9 +47,7 @@ import { calcularVencimento } from '@/server/gateway/vencimento';
 import { saudacaoPagador, montarLegendaWhatsapp, type PagadorNomenclatura } from '@/server/gateway/mensagem-boleto';
 import { reservarBoleto, finalizarBoleto, buscarBoletoEmitido } from '@/server/repositories/boleto-repository';
 import { registrarDisparo } from '@/server/repositories/boleto-disparo-repository';
-import { buscarMedico } from '@/server/repositories/medico-repository';
-import { buscarEmpresa } from '@/server/repositories/empresa-repository';
-import { buscarClienteContabilidade } from '@/server/repositories/cliente-contabilidade-repository';
+import { resolverPagadorDoResultado } from '@/server/emissao/resolver-pagador';
 import { lerConfig, resolverCondicoes } from '@/server/repositories/config-cobranca-repository';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
@@ -57,9 +56,12 @@ import type { ExecucaoResultadoRow } from '@/server/repositories/mappers';
 // produção 2026-07-09). Falhar aqui com mensagem clara em vez de 502 do gateway.
 export const VALOR_MINIMO_GATEWAY = 5;
 
-/** Lista os campos MÍNIMOS de cobrança ainda vazios (para mensagem do 422). Endereço e
- *  e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. Mesmo tipo pra médico
- *  e empresa (Story 10.4c) — `DadosCobranca` é compartilhado entre os dois domínios. */
+/** Lista os campos MÍNIMOS de cobrança ainda vazios OU inválidos (para mensagem do 422). Endereço
+ *  e e-mail não são obrigatórios pra emitir (Épico 6) — a Cora não exige. Mesmo tipo pra médico
+ *  e empresa (Story 10.4c) — `DadosCobranca` é compartilhado entre os dois domínios.
+ *  `pagadorDocumento` também entra na lista quando PREENCHIDO mas com dígito verificador inválido
+ *  (achado 2026-09-02, caso Yana Clara PF) — sem isso, `cobrancaMinimaEmissao` reprova a emissão
+ *  mas esta função devolve `faltantes: []`, deixando o toast sem dizer qual campo é o problema. */
 function camposFaltantesCobranca(cobranca: DadosCobranca | null): string[] {
   if (!cobranca) return ['dados de cobrança'];
   const req: Record<string, unknown> = {
@@ -67,9 +69,17 @@ function camposFaltantesCobranca(cobranca: DadosCobranca | null): string[] {
     pagadorDocumento: cobranca.pagadorDocumento,
     pagadorNome: cobranca.pagadorNome,
   };
-  return Object.entries(req)
+  const faltantes = Object.entries(req)
     .filter(([, v]) => !v || String(v).trim() === '')
     .map(([k]) => k);
+  if (
+    !faltantes.includes('pagadorDocumento') &&
+    cobranca.pagadorDocumento &&
+    !documentoValido(cobranca.pagadorTipo, cobranca.pagadorDocumento.replace(/\D/g, ''))
+  ) {
+    faltantes.push('pagadorDocumento');
+  }
+  return faltantes;
 }
 
 /** Endereço só é enviado à Cora se TODOS os subcampos estiverem preenchidos — a API trata
@@ -134,44 +144,15 @@ export async function validarResultadoParaEmissao(resultado: ResultadoParaEmissa
   // Carregar o PAGADOR do resultado — médico, empresa (Story 10.4c) OU cliente contábil
   // (Story 11.3), nunca mais de um (CHECK chk_execucao_resultados_exclusao_mutua, migration
   // 0032). O pagador do boleto vem do bloco de cobrança dele (não do CPF/nome do resultado,
-  // que é só a chave de cruzamento/exibição).
-  // "médico"/"empresa"/"cliente contábil" — mensagens de erro E o texto enviado ao pagador
-  // (montarLegendaWhatsapp/enviarBoleto decidem "cobrança médica" vs "honorários contábeis").
-  let pagadorNomenclatura: PagadorNomenclatura;
-  let cobrancaPagador: DadosCobranca | null;
-  let condicoesPagador: CondicoesCobranca | null;
-  let contaEmissora: ContaEmissora;
-
-  if (resultado.empresa_id) {
-    const empresa = await buscarEmpresa(resultado.empresa_id);
-    if (!empresa) {
-      throw new ApiError(404, 'Empresa do resultado não encontrada', 'EMPRESA_NAO_ENCONTRADA');
-    }
-    pagadorNomenclatura = 'empresa';
-    cobrancaPagador = empresa.cobranca;
-    condicoesPagador = empresa.condicoes;
-    contaEmissora = empresa.contaEmissora;
-  } else if (resultado.cliente_contabilidade_id) {
-    const cliente = await buscarClienteContabilidade(resultado.cliente_contabilidade_id);
-    if (!cliente) {
-      throw new ApiError(404, 'Cliente contábil do resultado não encontrado', 'CLIENTE_CONTABILIDADE_NAO_ENCONTRADO');
-    }
-    pagadorNomenclatura = 'cliente contábil';
-    cobrancaPagador = cliente.cobranca;
-    condicoesPagador = cliente.condicoes;
-    contaEmissora = cliente.contaEmissora;
-  } else if (resultado.medico_id) {
-    const medico = await buscarMedico(resultado.medico_id);
-    if (!medico) {
-      throw new ApiError(404, 'Médico do resultado não encontrado', 'MEDICO_NAO_ENCONTRADO');
-    }
-    pagadorNomenclatura = 'médico';
-    cobrancaPagador = medico.cobranca ?? null;
-    condicoesPagador = medico.condicoes ?? null;
-    contaEmissora = medico.contaEmissora;
-  } else {
-    throw new ApiError(422, 'Resultado sem médico, empresa nem cliente contábil vinculado. Não é possível cobrar', 'SEM_MEDICO');
-  }
+  // que é só a chave de cruzamento/exibição). Resolução extraída para resolver-pagador.ts
+  // (Épico 13) — reusada também pelo cron de lembrete de vencimento, que não deve herdar as
+  // validações de status/valor feitas acima, só a resolução de quem é o pagador.
+  const {
+    pagadorNomenclatura,
+    cobranca: cobrancaPagador,
+    condicoesPagador,
+    contaEmissora,
+  } = await resolverPagadorDoResultado(resultado);
 
   // Guard: falhar cedo (aqui, não no Cora) se faltar o mínimo pra emitir (documento+nome).
   if (!cobrancaMinimaEmissao({ cobranca: cobrancaPagador })) {
@@ -306,7 +287,7 @@ export async function emitirBoletoParaResultado(
     status: emissao.status,
     idExterno: emissao.idExterno || null,
     payloadResposta: emissao.payloadResposta,
-    vencimento: calcularVencimento(condicoes.diasVencimento),
+    vencimento: calcularVencimento(condicoes),
   });
 
   if (boleto.status !== 'emitido') {

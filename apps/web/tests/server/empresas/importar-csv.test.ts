@@ -32,7 +32,7 @@ describe('importação CSV — empresas', () => {
 
   it('linha com cobrança PJ válida é aceita', () => {
     const input = parseUma({
-      nome: 'MEDISA LTDA', pagador_tipo: 'PJ', pagador_documento: '12345678000199',
+      nome: 'MEDISA LTDA', pagador_tipo: 'PJ', pagador_documento: '11222333000181',
       pagador_nome: 'MEDISA LTDA', email: 'contato@medisa.com.br', whatsapp: '85999998888',
       cep: '60110000', logradouro: 'Av Beira Mar', numero: '2000', bairro: 'Meireles',
       cidade: 'Fortaleza', uf: 'CE',

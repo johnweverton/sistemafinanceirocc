@@ -8,6 +8,7 @@ import type { ContaEmissora, TipoServico } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS, TIPO_SERVICO_LABEL, TIPOS_SERVICO_VALIDOS } from '@cobranca/shared';
 import { relatoriosService, relatoriosQueryKeys, type FiltroRelatorio } from '@/services/relatorios';
 import { ApiClientError } from '@/lib/api-client';
+import { baixarBlob } from '@/lib/baixar-arquivo';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
@@ -32,15 +33,6 @@ const STATUS_LABEL: Record<string, string> = {
 function competenciaCorrente(): string {
   const agora = new Date();
   return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function baixarBlob(blob: Blob, nomeArquivo: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nomeArquivo;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export function RelatoriosManager() {

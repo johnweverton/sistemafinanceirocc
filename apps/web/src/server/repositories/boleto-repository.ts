@@ -108,6 +108,41 @@ export async function buscarBoletoPorIdExterno(idExterno: string): Promise<Bolet
   return data ? toBoleto(data as BoletoRow) : null;
 }
 
+export interface BoletoParaLembrete {
+  boletoId: string;
+  execucaoResultadoId: string;
+  vencimento: string; // AAAA-MM-DD
+  payloadResposta: unknown; // para extrair o pdfUrl (payment_options.bank_slip.url)
+}
+
+/**
+ * Boletos que vencem em `dataReferencia` (AAAA-MM-DD) e ainda estão em aberto — candidatos ao
+ * lembrete preventivo D-1 (Épico 13, Fase 1). `status='emitido'` (não 'pago'/'cancelado'/'falha'/
+ * 'processando') + `pago_em is null` é redundante em teoria (um boleto 'emitido' nunca tem
+ * pago_em preenchido — a baixa muda o status para 'pago'), mas mantido como defesa explícita
+ * contra pegar um boleto que a baixa já processou entre a leitura e o disparo (corrida rara).
+ * `dataReferencia` é injetada pelo chamador (não calculada aqui) para isolar o cálculo de fuso
+ * horário ("amanhã" em America/Sao_Paulo) na rota do cron, longe do repositório.
+ */
+export async function listarBoletosVencendoEm(dataReferencia: string): Promise<BoletoParaLembrete[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('boletos')
+    .select('id, execucao_resultado_id, vencimento, payload_resposta')
+    .eq('status', 'emitido')
+    .eq('vencimento', dataReferencia)
+    .is('pago_em', null);
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar boletos vencendo para lembrete', 'DB_ERROR', { error: error.message });
+  }
+  return (data ?? []).map((r) => ({
+    boletoId: r.id as string,
+    execucaoResultadoId: r.execucao_resultado_id as string,
+    vencimento: r.vencimento as string,
+    payloadResposta: r.payload_resposta,
+  }));
+}
+
 export interface RegistrarEventoParams {
   boletoId?: string | null;
   idExterno: string | null;

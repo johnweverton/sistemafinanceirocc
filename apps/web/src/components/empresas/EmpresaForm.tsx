@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import type { Empresa, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora, RegraPreco, RegraPrecoForma } from '@cobranca/shared';
-import { CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
+import { CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL, documentoValido } from '@cobranca/shared';
 import type { NovaEmpresaPayload } from '@/services/empresas';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
 
@@ -96,7 +96,11 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
         ? regraPreco.base != null && regraPreco.limiar != null && regraPreco.taxa != null
         : regraPreco.valorFixo != null);
   const contaOk = form.contaEmissora !== '';
-  const podeSalvar = motivoOk && regraPrecoOk && contaOk && form.nome.trim().length > 0;
+  const maxDoc = cobranca.pagadorTipo === 'PF' ? 11 : 14;
+  // Só acusa "inválido" com o documento no tamanho certo (achado 2026-09-02, caso Yana Clara PF).
+  const documentoInvalido =
+    cobranca.pagadorDocumento.length === maxDoc && !documentoValido(cobranca.pagadorTipo, cobranca.pagadorDocumento);
+  const podeSalvar = motivoOk && regraPrecoOk && contaOk && form.nome.trim().length > 0 && !documentoInvalido;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -119,8 +123,6 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
   function setCond(campo: keyof CondicoesCobranca, valor: string) {
     setCondicoes((c) => ({ ...c, [campo]: valor === '' ? null : Number(valor) }));
   }
-
-  const maxDoc = cobranca.pagadorTipo === 'PF' ? 11 : 14;
 
   async function onCepChange(valor: string) {
     const limpo = valor.replace(/\D/g, '').slice(0, 8);
@@ -305,7 +307,13 @@ export function EmpresaForm({ inicial, exigeMotivo = false, onSubmit, salvando =
                 className="input font-mono tracking-widest"
                 placeholder={cobranca.pagadorTipo === 'PF' ? '00000000000' : '00000000000000'}
                 maxLength={maxDoc}
+                aria-invalid={documentoInvalido}
               />
+              {documentoInvalido && (
+                <p className="mt-1 text-xs text-cc-danger" role="alert">
+                  {cobranca.pagadorTipo === 'PF' ? 'CPF' : 'CNPJ'} inválido (dígito verificador não confere) — confira o número.
+                </p>
+              )}
             </Field>
 
             <Field label="Razão social">

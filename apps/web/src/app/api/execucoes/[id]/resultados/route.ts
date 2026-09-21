@@ -18,6 +18,7 @@ export const GET = withErrorHandler<{ id: string }>(async (_req, { params }) => 
         status: d.status,
         mensagemErro: d.mensagem_erro,
         enviadoEm: d.enviado_em,
+        tipo: d.tipo,
       }));
     } else {
       r.disparos = [];

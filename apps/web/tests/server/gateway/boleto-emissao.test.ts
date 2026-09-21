@@ -61,7 +61,7 @@ vi.mock('@/server/repositories/config-cobranca-repository', () => ({
 /** Bloco de cobrança completo (passa cobrancaCompleta). */
 const cobrancaCompletaFixture = {
   pagadorTipo: 'PF' as const,
-  pagadorDocumento: '12345678901',
+  pagadorDocumento: '11144477735',
   pagadorNome: 'Dr. Teste',
   email: 'dr.teste@exemplo.com',
   cep: '60000000',
@@ -77,7 +77,7 @@ const cobrancaCompletaFixture = {
 function medicoFixture(cobranca: unknown = cobrancaCompletaFixture) {
   return {
     id: '00000000-0000-0000-0000-000000000010',
-    cpf: '12345678901',
+    cpf: '11144477735',
     nome: 'Dr. Teste',
     contaEmissora: 'mc' as const,
     cobranca,
@@ -112,7 +112,7 @@ function simularResultadoBanco(overrides: Partial<{
     id: '00000000-0000-0000-0000-000000000001',
     execucao_id: '00000000-0000-0000-0000-000000000099',
     medico_id: '00000000-0000-0000-0000-000000000010',
-    cpf: '12345678901',
+    cpf: '11144477735',
     nome: 'Dr. Teste',
     procedimentos: 10,
     cirurgias: 2,
@@ -254,7 +254,7 @@ describe('Lógica de emissão de boleto', () => {
         valor: 1500,
         pagador: expect.objectContaining({
           nome: 'Dr. Teste',
-          documento: '12345678901',
+          documento: '11144477735',
           tipo: 'CPF',
           email: 'dr.teste@exemplo.com',
           endereco: expect.objectContaining({ cep: '60000000', uf: 'CE' }),
@@ -283,7 +283,7 @@ describe('Lógica de emissão de boleto', () => {
     simularResultadoBanco();
     mockBuscarMedico.mockResolvedValue(medicoFixture({
       pagadorTipo: 'PF' as const,
-      pagadorDocumento: '12345678901',
+      pagadorDocumento: '11144477735',
       pagadorNome: 'Dr. Teste',
       email: '',
       cep: '',
@@ -306,7 +306,7 @@ describe('Lógica de emissão de boleto', () => {
       expect.objectContaining({
         pagador: expect.objectContaining({
           nome: 'Dr. Teste',
-          documento: '12345678901',
+          documento: '11144477735',
           tipo: 'CPF',
           email: undefined,
           endereco: undefined,

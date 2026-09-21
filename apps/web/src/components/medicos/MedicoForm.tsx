@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Medico, DadosCobranca, PagadorTipo, CondicoesCobranca, ContaEmissora, RegraPreco, RegraPrecoForma } from '@cobranca/shared';
-import { tipoDoMedico, combinacaoClasseValida, CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL } from '@cobranca/shared';
+import { tipoDoMedico, combinacaoClasseValida, CONTAS_EMISSORAS_VALIDAS, CONTA_EMISSORA_LABEL, documentoValido } from '@cobranca/shared';
 import type { NovoMedicoPayload } from '@/services/medicos';
 import { empresasService, empresaQueryKeys } from '@/services/empresas';
 import { buscarEnderecoPorCep } from '@/lib/viacep';
@@ -146,8 +146,14 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
           : form.regraPreco.valorFixo != null));
   // Empresa emissora é obrigatória: boleto pela empresa errada = contestação.
   const contaOk = form.contaEmissora !== '';
+  const maxDoc = cobranca.pagadorTipo === 'PF' ? 11 : 14;
+  // Só acusa "inválido" com o documento no tamanho certo — dígito verificador não faz sentido
+  // checar no meio da digitação (achado 2026-09-02, caso Yana Clara PF).
+  const documentoInvalido =
+    cobranca.pagadorDocumento.length === maxDoc && !documentoValido(cobranca.pagadorTipo, cobranca.pagadorDocumento);
   const podeSalvar =
-    combinacaoValida && motivoOk && cpfOk && percentualOk && regraPrecoOk && contaOk && form.nome.trim().length > 0;
+    combinacaoValida && motivoOk && cpfOk && percentualOk && regraPrecoOk && contaOk &&
+    form.nome.trim().length > 0 && !documentoInvalido;
 
   function set<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -170,8 +176,6 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   function setCond(campo: keyof CondicoesCobranca, valor: string) {
     setCondicoes((c) => ({ ...c, [campo]: valor === '' ? null : Number(valor) }));
   }
-
-  const maxDoc = cobranca.pagadorTipo === 'PF' ? 11 : 14;
 
   async function onCepChange(valor: string) {
     const limpo = valor.replace(/\D/g, '').slice(0, 8);
@@ -197,7 +201,10 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
   // especialidades que agrupam por atendimento (teto(n/3)): a ambiguidade senha-vs-paciente que
   // esse campo resolve é do mecanismo de agrupamento 3x1 em si, não exclusiva de pediatra
   // (achado 2026-08-06: ginecologista/urologista/ortopedista usam o MESMO agrupamento).
-  const usaRegra3x1 = /pediatr|urolog|ginecolog|ortoped/.test(form.especialidade?.toLowerCase() ?? '');
+  // `angiolog` entrou na auditoria 2026-09-02: o Engine já incluía angiologista em `usaRegra3x1`
+  // desde o GATE 2026-08-07 (lote de Angiografia), mas este regex ficou pra trás e escondia o
+  // campo "Mudança de data" desses médicos — o cadastro caía sempre em 'nao' no submit abaixo.
+  const usaRegra3x1 = /pediatr|urolog|ginecolog|ortoped|angiolog/.test(form.especialidade?.toLowerCase() ?? '');
 
   function handleSubmit() {
     const payload: NovoMedicoPayload = {
@@ -547,7 +554,15 @@ export function MedicoForm({ inicial, exigeMotivo = false, onSubmit, salvando = 
                 className="input font-mono tracking-widest"
                 placeholder={cobranca.pagadorTipo === 'PF' ? '00000000000' : '00000000000000'}
                 maxLength={maxDoc}
+                aria-invalid={documentoInvalido}
               />
+              {/* Só acusa erro com o número completo (achado 2026-09-02, caso Yana Clara PF) —
+                  não flashear "inválido" enquanto o usuário ainda está digitando. */}
+              {documentoInvalido && (
+                <p className="mt-1 text-xs text-cc-danger" role="alert">
+                  {cobranca.pagadorTipo === 'PF' ? 'CPF' : 'CNPJ'} inválido (dígito verificador não confere) — confira o número.
+                </p>
+              )}
             </Field>
 
             <Field label="Nome / Razão social">

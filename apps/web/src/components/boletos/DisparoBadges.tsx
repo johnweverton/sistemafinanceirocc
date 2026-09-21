@@ -40,12 +40,21 @@ const CANAL_LABEL: Record<DisparoBoleto['canal'], string> = {
   email: 'E-mail',
 };
 
+/** Rótulo do tipo de disparo (Épico 13) — só aparece no tooltip; emissão não é anunciada
+ *  explicitamente (é o caso mais comum, o texto sem prefixo já é ela), lembrete/cobrança são. */
+const TIPO_LABEL: Partial<Record<DisparoBoleto['tipo'], string>> = {
+  lembrete_vencimento: 'Lembrete',
+  cobranca_vencido: 'Cobrança',
+};
+
 /** Badge circular de um canal, com tooltip no hover/foco. */
 function DisparoBadge({ disparo }: { disparo: DisparoBoleto }) {
   const ok = disparo.status === 'sucesso';
+  const prefixoTipo = TIPO_LABEL[disparo.tipo];
+  const rotuloCanal = prefixoTipo ? `${CANAL_LABEL[disparo.canal]} · ${prefixoTipo}` : CANAL_LABEL[disparo.canal];
   const texto = ok
-    ? `${CANAL_LABEL[disparo.canal]} · enviado em ${dataHoraCompleta(disparo.enviadoEm)}`
-    : `${CANAL_LABEL[disparo.canal]} · falha em ${dataHoraCompleta(disparo.enviadoEm)}${disparo.mensagemErro ? `. ${disparo.mensagemErro}` : ''}`;
+    ? `${rotuloCanal} · enviado em ${dataHoraCompleta(disparo.enviadoEm)}`
+    : `${rotuloCanal} · falha em ${dataHoraCompleta(disparo.enviadoEm)}${disparo.mensagemErro ? `. ${disparo.mensagemErro}` : ''}`;
 
   return (
     <span className="group relative inline-flex" tabIndex={0} aria-label={texto}>
@@ -54,7 +63,7 @@ function DisparoBadge({ disparo }: { disparo: DisparoBoleto }) {
           ok
             ? 'bg-cc-success-soft text-cc-success ring-cc-success/25'
             : 'bg-cc-danger-soft text-cc-danger ring-cc-danger/25'
-        }`}
+        } ${prefixoTipo ? 'opacity-80' : ''}`}
       >
         {disparo.canal === 'whatsapp' ? <WhatsAppIcon /> : <EmailIcon />}
       </span>
@@ -70,20 +79,22 @@ function DisparoBadge({ disparo }: { disparo: DisparoBoleto }) {
 }
 
 /**
- * Linha de badges de disparo de um boleto — uma por canal, sempre o disparo mais recente.
- * Sem disparos → não renderiza nada (boleto ainda sem tentativa de envio).
+ * Linha de badges de disparo de um boleto — uma por (canal, tipo), sempre o disparo mais recente
+ * de cada combinação. A chave inclui `tipo` (Épico 13) para que um lembrete de vencimento não
+ * sobrescreva visualmente a badge de emissão do mesmo canal — cada tipo de disparo tem sua
+ * própria badge. Sem disparos → não renderiza nada (boleto ainda sem tentativa de envio).
  */
 export function DisparoBadges({ disparos }: { disparos?: DisparoBoleto[] }) {
   if (!disparos || disparos.length === 0) return null;
 
-  // Último disparo de cada canal (a lista vem ordenada do mais antigo ao mais novo).
-  const porCanal = new Map<DisparoBoleto['canal'], DisparoBoleto>();
-  for (const d of disparos) porCanal.set(d.canal, d);
+  // Último disparo de cada (canal, tipo) — a lista vem ordenada do mais antigo ao mais novo.
+  const porCanalETipo = new Map<string, DisparoBoleto>();
+  for (const d of disparos) porCanalETipo.set(`${d.canal}:${d.tipo}`, d);
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      {[...porCanal.values()].map((d) => (
-        <DisparoBadge key={d.canal} disparo={d} />
+      {[...porCanalETipo.entries()].map(([chave, d]) => (
+        <DisparoBadge key={chave} disparo={d} />
       ))}
     </span>
   );

@@ -1,6 +1,8 @@
 // Execução de uma competência e o resultado agregado por médico.
 // Derivado da arquitetura (Data Models) e do PRD §7.
 
+import type { DisparoBoleto } from './boleto';
+
 export type StatusExecucao = 'processando' | 'concluido' | 'erro';
 /**
  * 'acumulado' (achado real 2026-08-13, regra da coordenadora financeira): médico com menos de 5
@@ -30,6 +32,18 @@ export interface Subtotal {
   guias: number;
   valor: number;
   faixa: string;
+  /**
+   * Achado real 2026-09-04 (conferência da competência AGOSTO): quando esta classe usa a regra
+   * "3x1" (Pediatra/Urologista/Ginecologista/Ortopedista/Angiologista — ver `usaRegra3x1`), o
+   * número de ATENDIMENTOS distintos que entraram no agrupamento, ANTES do teto(n/3). Permite o
+   * relatório mostrar "12 atendimentos → 8 guias" em vez de só "8 guias" — sem isso, quem confere
+   * manualmente não sabia dizer se a contagem manual devia bater com o bruto ou com o já agrupado,
+   * confusão real reportada pelo dono (guias/cirurgias/consolidado do lote PRINCIPAL apareciam
+   * juntos mas Outros Hospitais/Imobilizações não tinham NENHUM diagnóstico equivalente).
+   * `undefined`/ausente quando a classe não usa 3x1 (1 atendimento = 1 guia, nada a explicar) OU
+   * quando não é uma classe derivada de `contarGuiasProducao` (ex.: PERCENTUAL_PRODUCAO).
+   */
+  atendimentos?: number;
 }
 
 export interface Execucao {
@@ -104,12 +118,7 @@ export interface ExecucaoResultado {
   recalculadoPor?: string | null;
   recalculadoEm?: string | null;
   /** Status do envio do boleto via WhatsApp/Email (auditoria) */
-  disparos?: {
-    canal: 'whatsapp' | 'email';
-    status: 'sucesso' | 'falha';
-    mensagemErro: string | null;
-    enviadoEm: string;
-  }[];
+  disparos?: DisparoBoleto[];
   /**
    * Resultado AGREGADO de uma empresa (Story 10.4b) — soma da produção de vários médicos.
    * Mutuamente exclusivo com `medicoId` (nunca os dois setados), mas ambos podem ser null

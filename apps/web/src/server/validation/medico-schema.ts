@@ -1,6 +1,6 @@
 // Schemas Zod de validação de input das rotas de médico (architecture: Input Validation).
 import { z } from 'zod';
-import { CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import { CONTAS_EMISSORAS_VALIDAS, documentoValido } from '@cobranca/shared';
 
 export const statusHapvidaSchema = z.enum(['credenciado', 'nao_credenciado', 'nenhum']);
 export const modoMudancaDataSchema = z.enum(['sim', 'nao']);
@@ -13,6 +13,9 @@ export const regraPrecoFormaSchema = z.enum(['por_guia', 'base_excedente', 'fixo
 // Conta emissora (Story 7.1, QA-711-2) — espelha a CHECK da migration 0021.
 export const contaEmissoraSchema = z.enum(CONTAS_EMISSORAS_VALIDAS);
 export const pagadorTipoSchema = z.enum(['PF', 'PJ']);
+// 'dia_fixo' (Story 11.1-A, Epic 11) — alternativa a diasVencimento para clientes de
+// contabilidade com vencimento em dia fixo do mês (ex.: dia 10, dia 12).
+export const modoVencimentoSchema = z.enum(['dias_corridos', 'dia_fixo']);
 
 /**
  * Espelho da CHECK do banco (0018): modo percentual exige percentual > 0.
@@ -85,7 +88,11 @@ const UFS = [
 export const ufSchema = z.enum(UFS);
 
 /**
- * Bloco de cobrança do pagador. Documento validado por tipo (CPF=11, CNPJ=14 dígitos).
+ * Bloco de cobrança do pagador. Documento validado por tipo (CPF=11, CNPJ=14 dígitos) E por
+ * dígito verificador (achado 2026-09-02, caso Yana Clara PF): a Cora valida o documento de
+ * verdade e recusa a emissão sem dizer qual campo está errado — checar o dígito aqui, na hora de
+ * salvar o cadastro (manual ou CSV, mesmo schema para os dois), evita gastar uma tentativa real
+ * no gateway com um documento digitado errado.
  * Mínimo pra emitir (Épico 6): pagadorTipo + pagadorDocumento + pagadorNome. E-mail,
  * WhatsApp, endereço e complemento são opcionais (vazio/ausente é válido) — mas se
  * preenchidos, seguem validados no formato (e-mail válido, CEP 8 dígitos, UF real).
@@ -108,16 +115,37 @@ export const dadosCobrancaSchema = z
   .refine(
     (c) => (c.pagadorTipo === 'PF' ? c.pagadorDocumento.length === 11 : c.pagadorDocumento.length === 14),
     { message: 'Documento incompatível com o tipo (PF=11 dígitos, PJ=14 dígitos)', path: ['pagadorDocumento'] },
+  )
+  .refine(
+    (c) =>
+      (c.pagadorTipo === 'PF' ? c.pagadorDocumento.length !== 11 : c.pagadorDocumento.length !== 14) ||
+      documentoValido(c.pagadorTipo, c.pagadorDocumento),
+    {
+      message: 'CPF/CNPJ inválido (dígito verificador não confere) — confira o número digitado',
+      path: ['pagadorDocumento'],
+    },
   );
 
-/** Overrides comerciais opcionais por médico (percentuais 0–100, dias 0–365). */
-export const condicoesCobrancaSchema = z.object({
-  diasVencimento: z.number().int().min(0).max(365).nullable().default(null),
-  multaPercent: z.number().min(0).max(100).nullable().default(null),
-  jurosMesPercent: z.number().min(0).max(100).nullable().default(null),
-  descontoPercent: z.number().min(0).max(100).nullable().default(null),
-  descontoDias: z.number().int().min(0).max(365).nullable().default(null),
-});
+/**
+ * Overrides comerciais opcionais por médico/empresa/cliente contábil (percentuais 0–100,
+ * dias 0–365). `modoVencimento` (Story 11.1-A) escolhe entre `diasVencimento` (padrão, dias
+ * corridos) e `diaFixoVencimento` (dia fixo do mês, 1–31) — mutuamente exclusivos na prática,
+ * mas ambos ficam no schema para o formulário poder trocar de modo sem perder o valor digitado.
+ */
+export const condicoesCobrancaSchema = z
+  .object({
+    diasVencimento: z.number().int().min(0).max(365).nullable().default(null),
+    multaPercent: z.number().min(0).max(100).nullable().default(null),
+    jurosMesPercent: z.number().min(0).max(100).nullable().default(null),
+    descontoPercent: z.number().min(0).max(100).nullable().default(null),
+    descontoDias: z.number().int().min(0).max(365).nullable().default(null),
+    modoVencimento: modoVencimentoSchema.nullable().optional().default('dias_corridos'),
+    diaFixoVencimento: z.number().int().min(1).max(31).nullable().optional().default(null),
+  })
+  .refine((c) => c.modoVencimento !== 'dia_fixo' || c.diaFixoVencimento != null, {
+    message: 'Vencimento em dia fixo exige o dia do mês (1–31)',
+    path: ['diaFixoVencimento'],
+  });
 
 /** Defaults globais do escritório (config_cobranca). diasVencimento é obrigatório. */
 export const configCobrancaSchema = z.object({

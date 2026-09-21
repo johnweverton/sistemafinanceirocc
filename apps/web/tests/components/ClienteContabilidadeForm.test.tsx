@@ -90,6 +90,34 @@ describe('ClienteContabilidadeForm', () => {
     expect(payload.adicionalCompetenciaBase).toBe('2026-01');
   });
 
+  it('vencimento em dia fixo (Story 11.1-A): exige o dia antes de habilitar salvar', () => {
+    const onSubmit = vi.fn();
+    render(<ClienteContabilidadeForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Nome do cliente/i }), {
+      target: { value: 'Padaria Bom Pão Ltda' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: /Empresa emissora/i }), {
+      target: { value: 'mc' },
+    });
+    expect(screen.getByRole('button', { name: /Salvar cliente/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByText(/Condições do boleto/i));
+    fireEvent.change(screen.getByRole('combobox', { name: /Modo de vencimento/i }), {
+      target: { value: 'dia_fixo' },
+    });
+    expect(screen.getByRole('button', { name: /Salvar cliente/i })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Dia fixo do mês/i }), {
+      target: { value: '10' },
+    });
+    expect(screen.getByRole('button', { name: /Salvar cliente/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Salvar cliente/i }));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload.condicoes).toMatchObject({ modoVencimento: 'dia_fixo', diaFixoVencimento: 10 });
+  });
+
   it('renderiza pré-preenchido a partir de um cliente existente', () => {
     render(
       <ClienteContabilidadeForm

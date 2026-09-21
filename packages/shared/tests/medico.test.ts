@@ -36,7 +36,7 @@ describe('combinacaoClasseValida (PRD §8.2)', () => {
 describe('cobrancaMinimaEmissao (Épico 6 — mínimo pra emitir: documento + nome)', () => {
   const minimaPF: DadosCobranca = {
     pagadorTipo: 'PF',
-    pagadorDocumento: '12345678901', // 11 dígitos
+    pagadorDocumento: '11144477735', // 11 dígitos, dígito verificador válido
     pagadorNome: 'Dr. Fulano',
     email: '',
     cep: '',
@@ -47,7 +47,7 @@ describe('cobrancaMinimaEmissao (Épico 6 — mínimo pra emitir: documento + no
     cidade: '',
     uf: '',
   };
-  const minimaPJ: DadosCobranca = { ...minimaPF, pagadorTipo: 'PJ', pagadorDocumento: '12345678000199' }; // 14
+  const minimaPJ: DadosCobranca = { ...minimaPF, pagadorTipo: 'PJ', pagadorDocumento: '11222333000181' }; // 14, dígito verificador válido
 
   it('bloco ausente (null) → não pode emitir', () => {
     expect(cobrancaMinimaEmissao({ cobranca: null })).toBe(false);
@@ -71,7 +71,7 @@ describe('cobrancaMinimaEmissao (Épico 6 — mínimo pra emitir: documento + no
 describe('cobrancaCompleta (Épico 6; feedback do dono 2026-08-19 — mínimo + e-mail OU whatsapp)', () => {
   const basePF: DadosCobranca = {
     pagadorTipo: 'PF',
-    pagadorDocumento: '12345678901', // 11 dígitos
+    pagadorDocumento: '11144477735', // 11 dígitos, dígito verificador válido
     pagadorNome: 'Dr. Fulano',
     email: 'fulano@exemplo.com',
     whatsapp: '5511999999999',
@@ -83,7 +83,7 @@ describe('cobrancaCompleta (Épico 6; feedback do dono 2026-08-19 — mínimo + 
     cidade: 'Fortaleza',
     uf: 'CE',
   };
-  const basePJ: DadosCobranca = { ...basePF, pagadorTipo: 'PJ', pagadorDocumento: '12345678000199' }; // 14
+  const basePJ: DadosCobranca = { ...basePF, pagadorTipo: 'PJ', pagadorDocumento: '11222333000181' }; // 14, dígito verificador válido
 
   it('bloco ausente (null) → incompleto', () => {
     expect(cobrancaCompleta({ cobranca: null })).toBe(false);
@@ -117,7 +117,7 @@ describe('cobrancaCompleta (Épico 6; feedback do dono 2026-08-19 — mínimo + 
 describe('cadastroCompleto (feedback do dono, 2026-08-19 — gate do status "Ativo" em MedicosManager)', () => {
   const cobrancaOk: DadosCobranca = {
     pagadorTipo: 'PF',
-    pagadorDocumento: '12345678901',
+    pagadorDocumento: '11144477735',
     pagadorNome: 'Dr. Fulano',
     email: '',
     whatsapp: '5511999999999',

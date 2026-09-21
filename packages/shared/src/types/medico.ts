@@ -1,6 +1,7 @@
 // Domínio: Médico — fonte única de verdade dos parâmetros de faturamento.
 // Derivado da arquitetura (Data Models) e do PRD §5.1 / §7.
 import type { ContaEmissora } from './conta-emissora';
+import { documentoValido } from '../validacao-documento';
 
 export type StatusHapvida = 'credenciado' | 'nao_credenciado' | 'nenhum';
 export type ModoMudancaData = 'sim' | 'nao';
@@ -80,6 +81,14 @@ export interface DadosCobranca {
 }
 
 /**
+ * Modo de cálculo do vencimento do boleto:
+ *   - 'dias_corridos' (padrão/legado): `diasVencimento` dias corridos a partir da emissão.
+ *   - 'dia_fixo': sempre o mesmo dia do mês (ex.: dia 10, dia 12) — alguns clientes de
+ *     contabilidade exigem essa data fixa em vez de um prazo relativo (Epic 11).
+ */
+export type ModoVencimento = 'dias_corridos' | 'dia_fixo';
+
+/**
  * Condições comerciais opcionais por médico (overrides). Cada campo nulo herda o default
  * global de `config_cobranca` na resolução da emissão.
  */
@@ -89,6 +98,14 @@ export interface CondicoesCobranca {
   jurosMesPercent: number | null;
   descontoPercent: number | null;
   descontoDias: number | null;
+  /**
+   * Alternativa a `diasVencimento` (Epic 11 — vencimento fixo por cliente de contabilidade).
+   * Default 'dias_corridos' quando ausente — opcional para não exigir o campo de todo literal
+   * `CondicoesCobranca` já existente (médico Épico 5, empresa Épico 10).
+   */
+  modoVencimento?: ModoVencimento | null;
+  /** Dia do mês (1-31) usado quando `modoVencimento === 'dia_fixo'`. Ver `calcularVencimento`. */
+  diaFixoVencimento?: number | null;
 }
 
 export interface Medico {
@@ -153,9 +170,14 @@ export function cobrancaMinimaEmissao(m: Pick<Medico, 'cobranca'>): boolean {
   if (!c) return false;
   const obrigatorios = [c.pagadorTipo, c.pagadorDocumento, c.pagadorNome];
   if (obrigatorios.some((v) => !v || String(v).trim() === '')) return false;
-  const tamDoc = c.pagadorDocumento.replace(/\D/g, '').length;
-  if (c.pagadorTipo === 'PF' && tamDoc !== 11) return false;
-  if (c.pagadorTipo === 'PJ' && tamDoc !== 14) return false;
+  const doc = c.pagadorDocumento.replace(/\D/g, '');
+  if (c.pagadorTipo === 'PF' && doc.length !== 11) return false;
+  if (c.pagadorTipo === 'PJ' && doc.length !== 14) return false;
+  // Achado 2026-09-02 (caso Yana Clara PF): a Cora valida o dígito verificador de verdade — sem
+  // esta checagem, um documento com dígito digitado errado só falha na emissão real, gastando
+  // uma tentativa no gateway e devolvendo "gateway recusou" em vez de um motivo claro. Cobre
+  // também cadastros salvos ANTES desta validação existir.
+  if (!documentoValido(c.pagadorTipo, doc)) return false;
   return true;
 }
 

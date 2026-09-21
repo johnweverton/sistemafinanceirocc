@@ -70,6 +70,13 @@ export interface FakeState {
     producaoFistulaNomes?: string[] | null;
     producaoAngiografiaExternaIds?: string[] | null;
     producaoAngiografiaNomes?: string[] | null;
+    /** Contagem de guias conferida MANUALMENTE por planilha (migration 0058). */
+    guiasManuaisTotal?: number | null;
+    /** Mesmo mecanismo acima, por classe (migration 0060, achado 2026-09-04). */
+    guiasManuaisConsultas?: number | null;
+    guiasManuaisImobilizacoes?: number | null;
+    guiasManuaisOutrosHospitais?: number | null;
+    guiasManuaisMotivo?: string | null;
   }[];
   itensPorProducao: Record<string, ItemProducao[]>;
   /** Itens por LOTE (Cateter/Fístula/Angiografia do Angiologista) — namespace separado de
@@ -151,7 +158,10 @@ export function clienteContabilidadeFake(
 
 export function medicoFake(over: Partial<Medico> & { id: string; cpf: string; nome: string }): Medico {
   return {
-    especialidade: null,
+    // Especialidade não-3x1 (1 item = 1 guia). Era `null`, mas desde a auditoria 2026-09-02
+    // cadastro sem especialidade gera alerta próprio — cada teste que quiser esse caso passa
+    // `especialidade: null` explicitamente.
+    especialidade: 'Cirurgia Geral',
     statusHapvida: 'credenciado',
     fazOutrosHospitais: false,
     fazImobilizacoes: false,

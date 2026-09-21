@@ -57,6 +57,8 @@ const dadosPadrao: DadosEmissaoBoleto = {
     multaPercent: null,
     jurosMesPercent: null,
     descontoPercent: null,
+    modoVencimento: 'dias_corridos',
+    diaFixoVencimento: null,
     descontoDias: null,
   },
 };
@@ -414,7 +416,10 @@ describe('CoraGateway', () => {
       {
         ...dadosPadrao,
         pagador: { ...dadosPadrao.pagador, tipo: 'CNPJ', documento: '12345678000199' },
-        condicoes: { diasVencimento: 15, multaPercent: 2, jurosMesPercent: 1, descontoPercent: 5, descontoDias: 3 },
+        condicoes: {
+          diasVencimento: 15, multaPercent: 2, jurosMesPercent: 1, descontoPercent: 5, descontoDias: 3,
+          modoVencimento: 'dias_corridos', diaFixoVencimento: null,
+        },
       },
       'idem-key-teste',
     );

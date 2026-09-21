@@ -61,7 +61,7 @@ async function main() {
 
   // Example data
   sheet.addRow({
-    cpf: '12345678900',
+    cpf: '11144477735',
     nome: 'Dr. Fulano de Tal',
     especialidade: 'Cardiologia',
     status_hapvida: 'credenciado',
@@ -70,7 +70,7 @@ async function main() {
     modo_mudanca_data: 'nao',
     colaborador_responsavel: 'Maria',
     pagador_tipo: 'PF',
-    pagador_documento: '12345678900',
+    pagador_documento: '11144477735',
     pagador_nome: 'Dr. Fulano de Tal',
     email: 'fulano@exemplo.com',
     whatsapp: '85999998888',
@@ -95,7 +95,7 @@ async function main() {
     modo_mudanca_data: 'nao',
     colaborador_responsavel: 'Joao',
     pagador_tipo: 'PJ',
-    pagador_documento: '12345678000199',
+    pagador_documento: '11222333000181',
     pagador_nome: 'Clinica Ciclana LTDA',
     email: 'contato@ciclana.com',
     whatsapp: '',

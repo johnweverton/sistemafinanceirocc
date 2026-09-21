@@ -30,5 +30,11 @@ export const lotesEmissaoService = {
     apiFetch<{ lote: LoteEmissao }>(`/boletos/lotes/${loteId}/retomar`, { method: 'POST' }),
   /** Acompanhamento (polling) — status e itens atuais. */
   status: (loteId: string) =>
-    apiFetch<{ lote: LoteEmissao; itens: LoteEmissaoItem[] }>(`/boletos/lotes/${loteId}`),
+    apiFetch<{ lote: LoteEmissao; itens: LoteEmissaoItemComNome[] }>(`/boletos/lotes/${loteId}`),
+  /** Reprocessa UM item com falha (não o lote inteiro) — a falha pode ter sido pontual (dado
+   *  de cadastro corrigido, instabilidade momentânea do gateway). */
+  reprocessarItem: (loteId: string, itemId: string) =>
+    apiFetch<{ item: LoteEmissaoItem }>(`/boletos/lotes/${loteId}/itens/${itemId}/reprocessar`, {
+      method: 'POST',
+    }),
 };

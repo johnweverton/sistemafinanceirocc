@@ -9,18 +9,23 @@ const mockComp = vi.fn();
 const mockMed = vi.fn();
 const mockAging = vi.fn();
 const mockTipoServico = vi.fn();
+// Lembretes de vencimento (Épico 13) — resolve com 0 por padrão pra não deixar a query pendente
+// nos testes que não passam por esse card.
+const mockLembretesVencimento = vi.fn().mockResolvedValue({ enviadosNoMes: 0 });
 vi.mock('../../src/services/dashboard', () => ({
   dashboardService: {
     competencias: (...a: unknown[]) => mockComp(...a),
     medicos: (...a: unknown[]) => mockMed(...a),
     aging: (...a: unknown[]) => mockAging(...a),
     tipoServico: (...a: unknown[]) => mockTipoServico(...a),
+    lembretesVencimento: (...a: unknown[]) => mockLembretesVencimento(...a),
   },
   dashboardQueryKeys: {
     competencias: (conta?: string, tipo?: string) => ['dashboard', 'competencias', conta ?? null, tipo ?? null],
     medicos: (c?: string, conta?: string, tipo?: string) => ['dashboard', 'medicos', c ?? null, conta ?? null, tipo ?? null],
     aging: (c?: string, conta?: string, tipo?: string) => ['dashboard', 'aging', c ?? null, conta ?? null, tipo ?? null],
     tipoServico: (c?: string) => ['dashboard', 'tipoServico', c ?? null],
+    lembretesVencimento: () => ['dashboard', 'lembretesVencimento'],
   },
 }));
 
@@ -58,6 +63,7 @@ describe('DashboardManager', () => {
     vi.clearAllMocks();
     mockRecebiveis.mockResolvedValue([]); // default: sem inadimplência, sobrescrito por teste quando relevante
     mockTipoServico.mockResolvedValue([]); // default: sem breakdown, sobrescrito por teste quando relevante
+    mockLembretesVencimento.mockResolvedValue({ enviadosNoMes: 0 }); // default: card de lembretes fora do escopo destes testes
   });
 
   it('renderiza KPIs (via rollup), aging e tabela por médico', async () => {

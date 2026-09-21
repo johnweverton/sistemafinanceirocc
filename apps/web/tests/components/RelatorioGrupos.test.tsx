@@ -1,7 +1,7 @@
 // Teste da emissão de boleto a partir do relatório de execução (gap identificado 2026-07-07:
 // a rota /api/boletos/emitir existia mas não havia nenhuma ação na UI para chamá-la).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../src/components/ui/Toast';
 import { ApiClientError } from '../../src/lib/api-client';
@@ -10,12 +10,16 @@ const mockResultados = vi.fn();
 const mockRevisarResultado = vi.fn();
 const mockContribuicoes = vi.fn();
 const mockRecalcularResultado = vi.fn();
+const mockAuditoria3x1 = vi.fn();
+const mockUsarConsolidado = vi.fn();
 vi.mock('../../src/services/execucoes', () => ({
   execucoesService: {
     resultados: (...a: unknown[]) => mockResultados(...a),
     revisarResultado: (...a: unknown[]) => mockRevisarResultado(...a),
     contribuicoes: (...a: unknown[]) => mockContribuicoes(...a),
     recalcularResultado: (...a: unknown[]) => mockRecalcularResultado(...a),
+    auditoria3x1: (...a: unknown[]) => mockAuditoria3x1(...a),
+    usarConsolidado: (...a: unknown[]) => mockUsarConsolidado(...a),
   },
   execucaoQueryKeys: {
     resultados: (id: string) => ['execucoes', id, 'resultados'],
@@ -281,6 +285,84 @@ describe('RelatorioGrupos — recálculo de resultado (achado real 2026-08-04, D
   });
 });
 
+// Achado 2026-09-04 (Dra. Emilie: contagem manual deu 59, sistema deu 69, segunda conferência
+// manual deu 61) — planilha de auditoria visual da regra 3x1, disponível SOMENTE para médicos de
+// especialidade 3x1 e SEM a trava de boleto emitido do Recalcular (é só leitura).
+describe('RelatorioGrupos — auditoria visual 3x1 (achado 2026-09-04)', () => {
+  const resultadoEmilie = {
+    ...resultadoOk,
+    id: 'r-emilie',
+    medicoId: 'm-emilie',
+    nome: 'DRA EMILIE',
+    guias: 69,
+    subtotais: [{ classe: 'HAPVIDA_CRED', guias: 69, valor: 1200, faixa: 'até 80 guias', atendimentos: 205 }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoEmilie]);
+    mockListarMedicos.mockResolvedValue([{ id: 'm-emilie', especialidade: 'Pediatria', contaEmissora: 'mc' }]);
+  });
+
+  it('mostra o botão MESMO no grupo "Prontos para emissão" (status ok, não só em "Requerem revisão") e baixa a planilha ao clicar', async () => {
+    const blob = new Blob(['xlsx'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    mockAuditoria3x1.mockResolvedValue(blob);
+
+    // jsdom não implementa URL.createObjectURL/revokeObjectURL nem navegação real de <a> —
+    // stub mínimo só pra verificar que o fluxo de download foi acionado (mesmo padrão de
+    // ExtratoManager.test.tsx).
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    // resultadoEmilie tem status 'ok' (herdado de resultadoOk) — confirma que a linha está no
+    // grupo "Prontos para emissão", não em "Requerem revisão".
+    const prontos = screen.getByText('Prontos para emissão').closest('section')!;
+    expect(within(prontos).getByText('DRA EMILIE')).toBeInTheDocument();
+
+    const botao = within(prontos).getByRole('button', { name: 'Auditoria 3x1' });
+    fireEvent.click(botao);
+
+    await waitFor(() => expect(mockAuditoria3x1).toHaveBeenCalledWith('r-emilie'));
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(blob));
+    expect(clickSpy).toHaveBeenCalled();
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('não mostra o botão para médico de especialidade sem regra 3x1', async () => {
+    mockListarMedicos.mockResolvedValue([{ id: 'm-emilie', especialidade: 'Clínica Médica', contaEmissora: 'mc' }]);
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    expect(screen.queryByRole('button', { name: 'Auditoria 3x1' })).not.toBeInTheDocument();
+  });
+
+  it('continua disponível mesmo com boleto já emitido (ao contrário de Recalcular, que some)', async () => {
+    mockResultados.mockResolvedValue([
+      { ...resultadoEmilie, disparos: [{ id: 'd1', canal: 'whatsapp', status: 'enviado' }] },
+    ]);
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    expect(screen.getByRole('button', { name: 'Auditoria 3x1' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Recalcular' })).not.toBeInTheDocument();
+  });
+
+  it('não mostra o botão para resultado agregado de empresa (sem medicoId)', async () => {
+    mockResultados.mockResolvedValue([{ ...resultadoEmilie, medicoId: null, empresaId: 'empresa-1' }]);
+    renderComProviders();
+    await screen.findByText('DRA EMILIE');
+
+    expect(screen.queryByRole('button', { name: 'Auditoria 3x1' })).not.toBeInTheDocument();
+  });
+});
+
 describe('RelatorioGrupos — contribuições por médico de resultado agregado (Story 10.4c)', () => {
   const resultadoEmpresa = {
     ...resultadoOk,
@@ -364,8 +446,83 @@ describe('RelatorioGrupos — total de guias somando todos os lotes (achado real
     renderComProviders();
     await screen.findByText('FELIPE DE BRITO ROCHA');
 
-    expect(screen.getByText(/63 guias \(todos os lotes\)/)).toBeInTheDocument();
-    expect(screen.getByText(/139 cirurgias · consolidado 52 \(lote principal\)/)).toBeInTheDocument();
+    expect(screen.getByText(/63 guias cobradas/)).toBeInTheDocument();
+    expect(screen.getByText(/\(todos os lotes — ver detalhe abaixo\)/)).toBeInTheDocument();
+  });
+});
+
+// Achado real 2026-09-04 (conferência da competência AGOSTO): "guias · cirurgias · consolidado"
+// lado a lado não dizia qual número era o COBRADO, e sumia pra quem confere manualmente qual
+// coluna comparar — pior ainda pra Outros Hospitais/Imobilizações, que não tinham NENHUM
+// diagnóstico de agrupamento 3x1 (só o lote principal tinha `cirurgias`/`guiasConsolidado`).
+describe('RelatorioGrupos — diagnóstico de agrupamento 3x1 por classe (achado 2026-09-04)', () => {
+  const resultadoOrtopedista = {
+    ...resultadoOk,
+    id: 'r-ortopedista',
+    nome: 'DRA CAMILLA',
+    guias: 8,
+    guiasConsolidado: 6,
+    subtotais: [
+      { classe: 'HAPVIDA_NAO_CRED', guias: 8, valor: 400, faixa: 'até 30 guias', atendimentos: 20 },
+      { classe: 'IMOBILIZACOES', guias: 5, valor: 150, faixa: 'até 30 guias', atendimentos: 12 },
+    ],
+    totalValor: 550,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResultados.mockResolvedValue([resultadoOrtopedista]);
+    mockListarMedicos.mockResolvedValue([]);
+  });
+
+  it('mostra "atendimentos → guias" na tabela quando a classe usa a regra 3x1, incluindo Imobilizações', async () => {
+    renderComProviders();
+    await screen.findByText('DRA CAMILLA');
+
+    expect(screen.getByText('20 atend. → 8 guias (3x1)')).toBeInTheDocument();
+    expect(screen.getByText('12 atend. → 5 guias (3x1)')).toBeInTheDocument();
+  });
+
+  it('mostra o consolidado divergente como diagnóstico quando difere do valor cobrado do lote principal', async () => {
+    renderComProviders();
+    await screen.findByText('DRA CAMILLA');
+
+    expect(screen.getByText(/consolidado \(ignora a data no agrupamento\) 6/)).toBeInTheDocument();
+  });
+
+  // Achado 2026-09-04 (pergunta do dono: "poderia ter a opção de apertar em consolidado e aí o
+  // número mudar para o consolidado e calcular de acordo"): atalho pra aceitar o consolidado sem
+  // precisar de planilha.
+  it('"Usar consolidado" pede motivo, chama o serviço com o valor consolidado e recalcula ao confirmar', async () => {
+    mockUsarConsolidado.mockResolvedValue({
+      resultado: { ...resultadoOrtopedista, guias: 6, guiasConsolidado: 6, totalValor: 465.07 },
+    });
+    renderComProviders();
+    await screen.findByText('DRA CAMILLA');
+
+    fireEvent.click(screen.getByRole('button', { name: /Usar consolidado \(6 guias\) no lugar de 8/ }));
+
+    const motivo = await screen.findByLabelText('Motivo de usar o consolidado');
+    // Vem pré-preenchido (editável) — nunca dispara sem o operador confirmar.
+    expect((motivo as HTMLTextAreaElement).value).toContain('consolidado');
+    expect(mockUsarConsolidado).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Usar 6$/ }));
+
+    await waitFor(() =>
+      expect(mockUsarConsolidado).toHaveBeenCalledWith(
+        'r-ortopedista',
+        expect.stringContaining('consolidado'),
+      ),
+    );
+  });
+
+  it('"Usar consolidado" some quando não há divergência (guias === guiasConsolidado)', async () => {
+    mockResultados.mockResolvedValue([{ ...resultadoOk, guias: 10, guiasConsolidado: 10 }]);
+    renderComProviders();
+    await screen.findByText('Dr. Teste');
+
+    expect(screen.queryByText(/Usar consolidado/)).not.toBeInTheDocument();
   });
 
   it('resultado de lote único (sem Outros Hospitais/Imobilizações) não mostra o qualificador "(todos os lotes)"', async () => {

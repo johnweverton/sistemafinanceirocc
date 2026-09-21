@@ -62,7 +62,7 @@ vi.mock('@/server/repositories/config-cobranca-repository', () => ({
 
 const cobrancaEmpresaFixture = {
   pagadorTipo: 'PJ' as const,
-  pagadorDocumento: '12345678000199',
+  pagadorDocumento: '11222333000181',
   pagadorNome: 'MEDISA LTDA',
   email: 'financeiro@medisa.com.br',
   cep: '60000000',
@@ -193,7 +193,7 @@ describe('Rota de emissão — branch médico vs empresa (Story 10.4c)', () => {
         valor: 2955.01,
         pagador: expect.objectContaining({
           nome: 'MEDISA LTDA',
-          documento: '12345678000199',
+          documento: '11222333000181',
           tipo: 'CNPJ',
         }),
       }),
@@ -207,18 +207,18 @@ describe('Rota de emissão — branch médico vs empresa (Story 10.4c)', () => {
     simularResultadoBanco({
       empresa_id: null,
       medico_id: '00000000-0000-0000-0000-000000000010',
-      cpf: '12345678901',
+      cpf: '11144477735',
       nome: 'Dr. Teste',
       total_valor: 1500,
     });
     mockBuscarMedico.mockResolvedValue({
       id: '00000000-0000-0000-0000-000000000010',
-      cpf: '12345678901',
+      cpf: '11144477735',
       nome: 'Dr. Teste',
       contaEmissora: 'cavalcante_viana' as const,
       cobranca: {
         pagadorTipo: 'PF',
-        pagadorDocumento: '12345678901',
+        pagadorDocumento: '11144477735',
         pagadorNome: 'Dr. Teste',
         email: 'dr.teste@exemplo.com',
         cep: '60000000',

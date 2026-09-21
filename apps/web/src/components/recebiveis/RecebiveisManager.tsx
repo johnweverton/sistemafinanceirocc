@@ -1,8 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ContaEmissora, FiltroRecebiveis, Recebivel, StatusRecebivel } from '@cobranca/shared';
-import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS } from '@cobranca/shared';
+import type { ContaEmissora, FiltroRecebiveis, Recebivel, StatusRecebivel, TipoServico } from '@cobranca/shared';
+import { CONTA_EMISSORA_LABEL, CONTAS_EMISSORAS_VALIDAS, TIPO_SERVICO_LABEL, TIPOS_SERVICO_VALIDOS } from '@cobranca/shared';
 import { recebiveisService, recebiveisQueryKeys } from '@/services/recebiveis';
 import { boletosService } from '@/services/boletos';
 import { ApiClientError } from '@/lib/api-client';
@@ -43,6 +43,13 @@ const STATUS_OPCOES: { valor: StatusRecebivel | ''; label: string }[] = [
 const CONTA_OPCOES: { valor: ContaEmissora | ''; label: string }[] = [
   { valor: '', label: 'Todas as empresas' },
   ...CONTAS_EMISSORAS_VALIDAS.map((c) => ({ valor: c, label: CONTA_EMISSORA_LABEL[c] })),
+];
+
+// Filtro por tipo de serviço — cobrança médica vs contabilidade (migration 0050): a tela deixou
+// de ser só de médicos quando a Emissão passou a atender clientes de contabilidade também.
+const TIPO_SERVICO_OPCOES: { valor: TipoServico | ''; label: string }[] = [
+  { valor: '', label: 'Todos os serviços' },
+  ...TIPOS_SERVICO_VALIDOS.map((t) => ({ valor: t, label: TIPO_SERVICO_LABEL[t] })),
 ];
 
 const MOTIVO_MIN = 5;
@@ -118,6 +125,7 @@ export function RecebiveisManager() {
   const [competencia, setCompetencia] = useState('');
   const [status, setStatus] = useState<StatusRecebivel | ''>('');
   const [conta, setConta] = useState<ContaEmissora | ''>('');
+  const [tipoServico, setTipoServico] = useState<TipoServico | ''>('');
   const [cancelando, setCancelando] = useState<Recebivel | null>(null);
   const [baixandoId, setBaixandoId] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -144,6 +152,7 @@ export function RecebiveisManager() {
     competencia: competencia || undefined,
     statusDerivado: status || undefined,
     contaEmissora: conta || undefined,
+    tipoServico: tipoServico || undefined,
   };
 
   const { data, isLoading } = useQuery({
@@ -210,11 +219,21 @@ export function RecebiveisManager() {
               <option key={o.valor} value={o.valor}>{o.label}</option>
             ))}
           </select>
+          <select
+            value={tipoServico}
+            onChange={(e) => setTipoServico(e.target.value as TipoServico | '')}
+            className="input w-44"
+            aria-label="Filtrar por tipo de serviço"
+          >
+            {TIPO_SERVICO_OPCOES.map((o) => (
+              <option key={o.valor} value={o.valor}>{o.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={11} />
+        <TableSkeleton rows={6} cols={12} />
       ) : recebiveis.length === 0 ? (
         <EmptyState
           icon={
@@ -228,7 +247,7 @@ export function RecebiveisManager() {
         />
       ) : (
         <div className="card overflow-hidden">
-          {/* Scroll horizontal: com 11 colunas a tabela estoura a largura no celular —
+          {/* Scroll horizontal: com 12 colunas a tabela estoura a largura no celular —
               o container arrasta pro lado e nada (nem o botão do PDF) fica cortado. */}
           <div className="overflow-x-auto">
             <table className="data-table whitespace-nowrap">
@@ -236,6 +255,7 @@ export function RecebiveisManager() {
               <tr>
                 <th>Médico</th>
                 <th>Empresa</th>
+                <th>Serviço</th>
                 <th>Competência</th>
                 <th className="text-right">Valor</th>
                 <th>Emitido em</th>
@@ -262,6 +282,14 @@ export function RecebiveisManager() {
                   <td>
                     <span className="badge-slate" title="Empresa emissora do boleto">
                       {CONTA_EMISSORA_LABEL[r.contaEmissora]}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      className={r.tipoServico === 'contabilidade' ? 'badge-amber' : 'badge-slate'}
+                      title="Cobrança médica ou contabilidade"
+                    >
+                      {TIPO_SERVICO_LABEL[r.tipoServico]}
                     </span>
                   </td>
                   <td className="font-mono tabular text-cc-ink-2">{r.competencia}</td>

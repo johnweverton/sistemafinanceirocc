@@ -58,6 +58,13 @@ export function DashboardManager() {
     queryKey: recebiveisQueryKeys.recebiveis({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro, tipoServico: tipoFiltro }),
     queryFn: () => recebiveisService.listar({ competencia: filtro, statusDerivado: 'vencido', contaEmissora: contaFiltro, tipoServico: tipoFiltro }),
   });
+  // Lembrete de vencimento (Épico 13, Fase 1) — indicador de auditoria pedido pela CEO para
+  // confirmar que os lembretes automáticos estão saindo, sem precisar cobrar a equipe. Independe
+  // dos filtros acima (competência/conta/tipo de serviço) — é sempre "o mês corrente todo".
+  const lembretesQ = useQuery({
+    queryKey: dashboardQueryKeys.lembretesVencimento(),
+    queryFn: () => dashboardService.lembretesVencimento(),
+  });
 
   const linhas = useMemo(() => comps.data ?? [], [comps.data]);
   // Opções do seletor: só competências reais (exclui a linha de rollup).
@@ -141,6 +148,12 @@ export function DashboardManager() {
         <Kpi label="Em aberto" valor={brl(kpi?.totalEmAberto ?? 0)} />
         <Kpi label="Vencido" valor={brl(kpi?.totalVencido ?? 0)} tom="warning" />
         <Kpi label="Inadimplência" valor={pct(kpi?.taxaInadimplencia ?? 0)} tom={(kpi?.taxaInadimplencia ?? 0) > 0.2 ? 'danger' : 'default'} />
+      </div>
+
+      {/* Indicadores operacionais (separados dos valores em R$ acima) — Épico 13: visibilidade
+          de que o lembrete automático de vencimento está de fato saindo. */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+        <Kpi label="Lembretes enviados (mês)" valor={String(lembretesQ.data?.enviadosNoMes ?? 0)} />
       </div>
 
       {/* Cobrança Médica × Contabilidade — feedback do dono 2026-08-19: "separar as emissões". */}

@@ -9,9 +9,23 @@ import { medicosService, queryKeys as medicoQueryKeys } from '@/services/medicos
 import { DisparoBadges } from '@/components/boletos/DisparoBadges';
 import { LoteEmissaoDialog } from './LoteEmissaoDialog';
 import { ApiClientError } from '@/lib/api-client';
+import { baixarBlob } from '@/lib/baixar-arquivo';
 import { useToast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { brl, normalizarBusca } from '@/lib/formato';
+
+/** Especialidades que usam a regra 3x1 (teto(n/3) por atendimento) — réplica local do mesmo
+ *  critério de `usaRegra3x1` (server/engine/contagem-producao.ts), mesmo padrão já usado em
+ *  NovaExecucao.tsx (isPediatraEspecialidade/isAngiologistaEspecialidade) pra não importar
+ *  código do engine pro client. Usada só pra decidir se mostra o botão "Auditoria 3x1" — nunca
+ *  afeta cálculo algum aqui. */
+function usaRegra3x1Cliente(especialidade: string | null | undefined): boolean {
+  if (!especialidade) return false;
+  const e = especialidade.toLowerCase();
+  return (
+    e.includes('pediatr') || e.includes('urolog') || e.includes('ginecolog') || e.includes('ortoped') || e.includes('angiolog')
+  );
+}
 
 function classeLabel(classe: string): string {
   switch (classe) {
@@ -119,6 +133,12 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     () => new Map((medicos ?? []).map((m) => [m.id, m.contaEmissora])),
     [medicos],
   );
+  // Gate do botão "Auditoria 3x1" (achado 2026-09-04) — zero fetch novo, reaproveita a MESMA
+  // lista de médicos já carregada acima pra `contaPorMedico`.
+  const especialidadePorMedico = useMemo(
+    () => new Map((medicos ?? []).map((m) => [m.id, m.especialidade])),
+    [medicos],
+  );
 
   // Revisão manual de 'alerta' → 'ok' (gap de arquitetura identificado 2026-07-08: um resultado
   // em alerta nunca tinha caminho de saída). Ao confirmar, o item some do grupo "alerta" e reaparece
@@ -189,6 +209,27 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
     },
   });
 
+  // Atalho "usar consolidado" (achado 2026-09-04, feedback do dono ao ver "92 guias cobradas ·
+  // consolidado (ignora a data no agrupamento) 65 — diverge por atendimento em mais de 1 dia"):
+  // aceita o valor CONSOLIDADO já calculado como o novo total do lote principal deste resultado,
+  // sem precisar preparar planilha. Grava como contagem manual (mesma trilha da migration 0058)
+  // e recalcula — sobrevive a um "Recalcular" comum depois.
+  const usarConsolidado = useMutation({
+    mutationFn: ({ resultadoId, motivo }: { resultadoId: string; motivo: string }) =>
+      execucoesService.usarConsolidado(resultadoId, motivo),
+    onSuccess: () => {
+      toast('Valor consolidado aplicado — resultado recalculado', 'success');
+      void qc.invalidateQueries({ queryKey: execucaoQueryKeys.resultados(execucaoId) });
+    },
+    onError: (e) => {
+      if (e instanceof ApiClientError) {
+        toast(e.message, 'error');
+        return;
+      }
+      toast('Erro ao usar o valor consolidado', 'error');
+    },
+  });
+
   // Recalcula um resultado já gravado com os itens de produção ATUAIS da origem (achado real
   // 2026-08-04: dado corrigido no sistema de origem depois que a execução já tinha rodado, sem
   // forma de refletir a correção sem criar uma execução nova inteira).
@@ -204,6 +245,21 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         return;
       }
       toast(e instanceof ApiClientError ? e.message : 'Erro ao recalcular resultado', 'error');
+    },
+  });
+
+  // Auditoria visual da regra 3x1 (achado 2026-09-04, Dra. Emilie: contagem manual deu 59,
+  // sistema deu 69, segunda conferência manual deu 61 — divergência real sem forma de ver ONDE).
+  // Baixa uma planilha .xlsx com cada procedimento marcado/colorido por qual "guia" (grupo de
+  // até 3) ele foi somado. SEM a trava de boleto emitido do recálculo (só lê, nunca grava) — o
+  // caso real é auditar um resultado possivelmente já emitido.
+  const auditoria3x1 = useMutation({
+    mutationFn: async (resultado: ExecucaoResultado) => {
+      const blob = await execucoesService.auditoria3x1(resultado.id);
+      baixarBlob(blob, `auditoria-3x1-${normalizarBusca(resultado.nome)}.xlsx`);
+    },
+    onError: (e) => {
+      toast(e instanceof ApiClientError ? e.message : 'Erro ao gerar a auditoria 3x1', 'error');
     },
   });
 
@@ -259,6 +315,11 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         onReenviar={(id) => reenviar.mutate(id)}
         onRecalcular={(id) => recalcular.mutate(id)}
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
+        onUsarConsolidado={(id, motivo) => usarConsolidado.mutate({ resultadoId: id, motivo })}
+        usarConsolidadoPendingId={usarConsolidado.isPending ? usarConsolidado.variables?.resultadoId : null}
+        onAuditoria3x1={(r) => auditoria3x1.mutate(r)}
+        auditoria3x1PendingId={auditoria3x1.isPending ? auditoria3x1.variables?.id : null}
+        usaRegra3x1={(medicoId) => usaRegra3x1Cliente(especialidadePorMedico.get(medicoId))}
         acaoEmLote={
           ok.length > 0 ? (
             <button onClick={() => setLoteAberto(true)} className="btn-secondary btn btn-sm">
@@ -277,6 +338,11 @@ export function RelatorioGrupos({ execucaoId }: { execucaoId: string }) {
         revisarPendingId={revisar.isPending ? revisar.variables?.resultadoId : null}
         onRecalcular={(id) => recalcular.mutate(id)}
         recalcularPendingId={recalcular.isPending ? recalcular.variables : null}
+        onUsarConsolidado={(id, motivo) => usarConsolidado.mutate({ resultadoId: id, motivo })}
+        usarConsolidadoPendingId={usarConsolidado.isPending ? usarConsolidado.variables?.resultadoId : null}
+        onAuditoria3x1={(r) => auditoria3x1.mutate(r)}
+        auditoria3x1PendingId={auditoria3x1.isPending ? auditoria3x1.variables?.id : null}
+        usaRegra3x1={(medicoId) => usaRegra3x1Cliente(especialidadePorMedico.get(medicoId))}
       />
       <Grupo titulo="Sem dados no sistema" count={semDados.length} cor="gray" resultados={semDados} resumido />
       <Grupo
@@ -390,6 +456,11 @@ function Grupo({
   onReenviar,
   onRecalcular,
   recalcularPendingId,
+  onUsarConsolidado,
+  usarConsolidadoPendingId,
+  onAuditoria3x1,
+  auditoria3x1PendingId,
+  usaRegra3x1,
   acaoEmLote,
 }: {
   titulo: string;
@@ -409,6 +480,19 @@ function Grupo({
    *  resultados de médico (não empresa/cliente) sem boleto emitido ainda. */
   onRecalcular?: (resultadoId: string) => void;
   recalcularPendingId?: string | null;
+  /** Atalho "usar consolidado" (achado 2026-09-04) — aceita `guiasConsolidado` como o novo total
+   *  do lote principal, grava como contagem manual e recalcula. Só oferecido quando há
+   *  divergência (`guiasConsolidado !== guias`) e nas mesmas condições de `onRecalcular`. */
+  onUsarConsolidado?: (resultadoId: string, motivo: string) => void;
+  usarConsolidadoPendingId?: string | null;
+  /** Auditoria visual da regra 3x1 (achado 2026-09-04) — planilha .xlsx por procedimento, cor
+   *  por grupo. Ao contrário de `onRecalcular`, disponível mesmo com boleto já emitido (só lê,
+   *  nunca grava). */
+  onAuditoria3x1?: (resultado: ExecucaoResultado) => void;
+  auditoria3x1PendingId?: string | null;
+  /** Decide, por médico, se este resultado usa a regra 3x1 (gate do botão acima) — função em vez
+   *  de mapa pra não acoplar `Grupo` ao formato de `especialidadePorMedico`. */
+  usaRegra3x1?: (medicoId: string) => boolean;
   /** Ação de lote no cabeçalho do grupo (ex.: "Emitir todos os pendentes") — o grupo não sabe o
    *  que é, só reserva o espaço; mantém a emissão individual intacta ao lado como fallback. */
   acaoEmLote?: React.ReactNode;
@@ -450,15 +534,50 @@ function Grupo({
                   <span className="tabular font-semibold text-cc-ink">{brl(r.totalValor ?? 0)}</span>
                 )}
               </div>
-              {!resumido && (
-                <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
-                  {totalGuiasTodosLotes(r)} guias
-                  {r.subtotais && r.subtotais.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length > 1 && ' (todos os lotes)'}
-                  {' · '}
-                  {r.cirurgias ?? 0} cirurgias · consolidado {r.guiasConsolidado ?? 0}
-                  {r.subtotais && r.subtotais.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length > 1 && ' (lote principal)'}
-                </div>
-              )}
+              {!resumido && (() => {
+                const temMultiplosLotes =
+                  (r.subtotais?.filter((s) => s.classe !== 'CONSULTA_PEDIATRIA').length ?? 0) > 1;
+                // Achado real 2026-09-04 (conferência da competência AGOSTO): mostrar guias ·
+                // cirurgias · consolidado lado a lado, sem dizer qual é o valor COBRADO, deixava
+                // quem confere manualmente sem saber contra qual número comparar — pra alguns
+                // médicos "batia" com guias, pra outros com consolidado, dependendo se havia
+                // atendimento espalhado em mais de 1 dia (MODO INCONSISTENTE). Agora só 1 número
+                // em destaque (o cobrado, somando todos os lotes) — o detalhe de agrupamento 3x1
+                // fica na tabela abaixo, por classe (inclusive Outros Hospitais/Imobilizações, que
+                // antes não tinham NENHUM diagnóstico equivalente ao do lote principal).
+                const consolidadoDivergente =
+                  r.guiasConsolidado != null && r.guias != null && r.guiasConsolidado !== r.guias;
+                // Achado 2026-09-04 (feedback do dono): a divergência sozinha era só um "ver
+                // alerta" sem ação — oferece direto o atalho "usar consolidado" (mesmas condições
+                // de `onRecalcular`: precisa de médico e ainda não pode ter boleto emitido).
+                const podeUsarConsolidado =
+                  Boolean(onUsarConsolidado) &&
+                  r.medicoId != null &&
+                  !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0));
+                return (
+                  <>
+                    <div className="mt-1 font-mono text-2xs uppercase tracking-wide text-cc-muted">
+                      <span className="font-semibold text-cc-ink">{totalGuiasTodosLotes(r)} guias cobradas</span>
+                      {temMultiplosLotes && ' (todos os lotes — ver detalhe abaixo)'}
+                      {consolidadoDivergente && (
+                        <>
+                          {' · '}
+                          consolidado (ignora a data no agrupamento) {r.guiasConsolidado} — diverge por atendimento
+                          em mais de 1 dia
+                        </>
+                      )}
+                    </div>
+                    {consolidadoDivergente && podeUsarConsolidado && (
+                      <UsarConsolidadoAcao
+                        guias={r.guias!}
+                        guiasConsolidado={r.guiasConsolidado!}
+                        pending={usarConsolidadoPendingId === r.id}
+                        onConfirmar={(motivo) => onUsarConsolidado!(r.id, motivo)}
+                      />
+                    )}
+                  </>
+                );
+              })()}
               {!resumido && r.subtotais && r.subtotais.length > 0 && (
                 <div className="overflow-x-auto">
                 <table className="mt-3 w-full text-xs">
@@ -473,7 +592,14 @@ function Grupo({
                             ? '—'
                             : s.classe === 'CONSULTA_PEDIATRIA'
                               ? `${s.guias} consultas`
-                              : `${s.guias} guias`}
+                              : // Achado 2026-09-04: quando a classe usa a regra 3x1 (Pediatra/
+                                // Urologista/Ginecologista/Ortopedista/Angiologista), mostra o
+                                // agrupamento explícito — "12 atendimentos → 8 guias" — em vez de
+                                // só o número final, que sozinho não explica por que é menor que
+                                // uma contagem manual de atendimentos.
+                                s.atendimentos && s.atendimentos !== s.guias
+                                  ? `${s.atendimentos} atend. → ${s.guias} guias (3x1)`
+                                  : `${s.guias} guias`}
                         </td>
                         <td className="py-1.5 text-cc-muted">{s.faixa}</td>
                         <td className="py-1.5 text-right tabular text-cc-ink">{brl(s.valor)}</td>
@@ -491,21 +617,39 @@ function Grupo({
                   </p>
                 ))}
               {resumido && r.alertas[0] && <p className="mt-1 text-xs text-cc-muted">{r.alertas[0]}</p>}
-              {onRecalcular &&
-                r.medicoId &&
-                !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0)) && (
-                  <div className="mt-3 flex items-center justify-end border-t border-cc-hairline pt-3">
-                    <button
-                      type="button"
-                      className="btn-ghost btn btn-sm"
-                      disabled={recalcularPendingId != null}
-                      title="Reprocessa este resultado com os itens de produção atuais da origem"
-                      onClick={() => onRecalcular(r.id)}
-                    >
-                      {recalcularPendingId === r.id ? 'Recalculando…' : 'Recalcular'}
-                    </button>
+              {(() => {
+                const mostraAuditoria3x1 = Boolean(onAuditoria3x1 && r.medicoId && usaRegra3x1?.(r.medicoId));
+                const mostraRecalcular = Boolean(
+                  onRecalcular && r.medicoId && !(emitidos?.has(r.id) || (r.disparos && r.disparos.length > 0)),
+                );
+                if (!mostraAuditoria3x1 && !mostraRecalcular) return null;
+                return (
+                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-cc-hairline pt-3">
+                    {mostraAuditoria3x1 && (
+                      <button
+                        type="button"
+                        className="btn-primary btn btn-sm"
+                        disabled={auditoria3x1PendingId != null}
+                        title="Baixa uma planilha mostrando cada procedimento e em qual guia (grupo de até 3) ele foi contado, para conferência manual"
+                        onClick={() => onAuditoria3x1!(r)}
+                      >
+                        {auditoria3x1PendingId === r.id ? 'Gerando…' : 'Auditoria 3x1'}
+                      </button>
+                    )}
+                    {mostraRecalcular && (
+                      <button
+                        type="button"
+                        className="btn-primary btn btn-sm"
+                        disabled={recalcularPendingId != null}
+                        title="Reprocessa este resultado com os itens de produção atuais da origem"
+                        onClick={() => onRecalcular!(r.id)}
+                      >
+                        {recalcularPendingId === r.id ? 'Recalculando…' : 'Recalcular'}
+                      </button>
+                    )}
                   </div>
-                )}
+                );
+              })()}
               {onRevisar && (
                 <AcaoRevisar
                   pending={revisarPendingId === r.id}
@@ -638,6 +782,96 @@ function AcaoRevisar({
           onClick={() => onConfirmar(motivo.trim())}
         >
           {pending ? 'Confirmando…' : 'Confirmar liberação'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Atalho "usar consolidado" (achado 2026-09-04, feedback do dono ao ver "92 guias cobradas ·
+ * consolidado (ignora a data no agrupamento) 65 — diverge por atendimento em mais de 1 dia" e não
+ * ter como fazer nada com esse número na tela): expande sob demanda, mesmo espírito de
+ * `AcaoRevisar` acima — motivo obrigatório, foco vai para o campo ao abrir e volta pro gatilho ao
+ * fechar. Motivo vem pré-preenchido com um texto padrão (editável) pra reduzir atrito no caso
+ * comum, mas nunca dispara sem o operador confirmar.
+ */
+function UsarConsolidadoAcao({
+  guias,
+  guiasConsolidado,
+  pending,
+  onConfirmar,
+}: {
+  guias: number;
+  guiasConsolidado: number;
+  pending: boolean;
+  onConfirmar: (motivo: string) => void;
+}) {
+  const MOTIVO_PADRAO =
+    'Aceito o valor consolidado (ignora a data no agrupamento) por divergência de atendimento em mais de 1 dia.';
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState(MOTIVO_PADRAO);
+  const painelId = useId();
+  const gatilhoRef = useRef<HTMLButtonElement>(null);
+  const motivoRef = useRef<HTMLTextAreaElement>(null);
+
+  const jaAbriu = useRef(false);
+  useEffect(() => {
+    if (aberto) {
+      jaAbriu.current = true;
+      motivoRef.current?.focus();
+      motivoRef.current?.select();
+    } else if (jaAbriu.current) {
+      gatilhoRef.current?.focus();
+    }
+  }, [aberto]);
+
+  function fechar() {
+    setAberto(false);
+    setMotivo(MOTIVO_PADRAO);
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        ref={gatilhoRef}
+        type="button"
+        className="mt-1 text-2xs normal-case tracking-normal text-cc-accent underline decoration-dotted hover:decoration-solid"
+        aria-expanded={false}
+        aria-controls={painelId}
+        onClick={() => setAberto(true)}
+      >
+        Usar consolidado ({guiasConsolidado} guias) no lugar de {guias}
+      </button>
+    );
+  }
+
+  return (
+    <div id={painelId} className="mt-1.5 space-y-1.5 rounded border border-cc-border bg-cc-surface-2/60 p-2 normal-case">
+      <p className="text-xs text-cc-ink-2">
+        Substitui <strong>{guias} guias cobradas</strong> por <strong>{guiasConsolidado} (consolidado)</strong> e
+        recalcula o valor deste médico.
+      </p>
+      <textarea
+        ref={motivoRef}
+        value={motivo}
+        onChange={(e) => setMotivo(e.target.value)}
+        aria-label="Motivo de usar o consolidado"
+        rows={2}
+        disabled={pending}
+        className="input w-full text-xs"
+      />
+      <div className="flex items-center justify-end gap-2">
+        <button type="button" className="btn-ghost btn btn-sm" disabled={pending} onClick={fechar}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="btn-primary btn btn-sm"
+          disabled={pending || motivo.trim().length < MOTIVO_MIN}
+          onClick={() => onConfirmar(motivo.trim())}
+        >
+          {pending ? 'Aplicando…' : `Usar ${guiasConsolidado}`}
         </button>
       </div>
     </div>

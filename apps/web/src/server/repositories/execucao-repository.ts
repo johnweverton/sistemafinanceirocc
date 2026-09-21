@@ -49,10 +49,10 @@ export async function criarExecucao(
     producaoOutrosHospitaisNome?: string | null;
     producaoImobilizacoesExternaId?: string | null;
     producaoImobilizacoesNome?: string | null;
-    /** Sub-lote de Imobilizações (achado 2026-08-25, migration 0053) — mutuamente exclusivo com
-     *  producaoImobilizacoesExternaId acima. */
-    producaoImobilizacoesLoteExternaId?: string | null;
-    producaoImobilizacoesLoteNome?: string | null;
+    /** Sub-lotes de Imobilizações (achado 2026-08-25, migration 0053; virou ARRAY na migration
+     *  0059) — mutuamente exclusivo com producaoImobilizacoesExternaId acima. */
+    producaoImobilizacoesLoteExternaIds?: string[] | null;
+    producaoImobilizacoesLoteNomes?: string[] | null;
     producaoCateterExternaIds?: string[] | null;
     producaoCateterNomes?: string[] | null;
     producaoFistulaExternaIds?: string[] | null;
@@ -63,6 +63,16 @@ export async function criarExecucao(
     producaoCartaRedeExternaId?: string | null;
     producaoCartaRedeNome?: string | null;
     cartaRedeGuias?: number | null;
+    /** Contagem de guias conferida MANUALMENTE, importada de planilha (migration 0058) — quando
+     *  preenchida, o motor pula a contagem automática do lote principal DESTE médico. `motivo` é
+     *  obrigatório junto (validado no dispararExecucaoSchema): é o texto do alerta de auditoria. */
+    guiasManuaisTotal?: number | null;
+    /** Mesmo mecanismo acima, por classe (migration 0060, achado 2026-09-04) — cada uma
+     *  independente, substitui a contagem automática SÓ daquela classe pra este médico. */
+    guiasManuaisConsultas?: number | null;
+    guiasManuaisImobilizacoes?: number | null;
+    guiasManuaisOutrosHospitais?: number | null;
+    guiasManuaisMotivo?: string | null;
   }[],
   /** Marca a execução como agregada por empresa (Story 10.4b) — null/ausente = execução normal. */
   empresaId?: string | null,
@@ -109,8 +119,8 @@ export async function criarExecucao(
       producao_outros_hospitais_nome: s.producaoOutrosHospitaisNome ?? null,
       producao_imobilizacoes_externa_id: s.producaoImobilizacoesExternaId ?? null,
       producao_imobilizacoes_nome: s.producaoImobilizacoesNome ?? null,
-      producao_imobilizacoes_lote_externa_id: s.producaoImobilizacoesLoteExternaId ?? null,
-      producao_imobilizacoes_lote_nome: s.producaoImobilizacoesLoteNome ?? null,
+      producao_imobilizacoes_lote_externa_ids: s.producaoImobilizacoesLoteExternaIds ?? null,
+      producao_imobilizacoes_lote_nomes: s.producaoImobilizacoesLoteNomes ?? null,
       producao_cateter_externa_ids: s.producaoCateterExternaIds ?? null,
       producao_cateter_nomes: s.producaoCateterNomes ?? null,
       producao_fistula_externa_ids: s.producaoFistulaExternaIds ?? null,
@@ -124,6 +134,28 @@ export async function criarExecucao(
       // grava quando o operador de fato informou um número nesta seleção.
       carta_rede_informado_por: s.cartaRedeGuias != null ? iniciadoPor : null,
       carta_rede_informado_em: s.cartaRedeGuias != null ? new Date().toISOString() : null,
+      guias_manuais_total: s.guiasManuaisTotal ?? null,
+      guias_manuais_consultas: s.guiasManuaisConsultas ?? null,
+      guias_manuais_imobilizacoes: s.guiasManuaisImobilizacoes ?? null,
+      guias_manuais_outros_hospitais: s.guiasManuaisOutrosHospitais ?? null,
+      guias_manuais_motivo: s.guiasManuaisMotivo ?? null,
+      // Mesma auditoria do carta_rede_informado_por/_em acima (migration 0058, estendida na
+      // 0060) — grava quem/quando sempre que QUALQUER um dos 4 campos vier preenchido nesta
+      // linha, não só o total do lote principal.
+      guias_manuais_informado_por:
+        s.guiasManuaisTotal != null ||
+        s.guiasManuaisConsultas != null ||
+        s.guiasManuaisImobilizacoes != null ||
+        s.guiasManuaisOutrosHospitais != null
+          ? iniciadoPor
+          : null,
+      guias_manuais_informado_em:
+        s.guiasManuaisTotal != null ||
+        s.guiasManuaisConsultas != null ||
+        s.guiasManuaisImobilizacoes != null ||
+        s.guiasManuaisOutrosHospitais != null
+          ? new Date().toISOString()
+          : null,
     }))
   );
   if (selecoesError) {
@@ -484,6 +516,39 @@ export async function atualizarResultado(
     .single();
   if (error) throw new ApiError(500, 'Falha ao atualizar resultado recalculado', 'DB_ERROR', { error: error.message });
   return toExecucaoResultado(data as ExecucaoResultadoRow);
+}
+
+/**
+ * Sobrescreve guias_manuais_total/motivo (+ auditoria informado_por/_em) de UMA seleção já
+ * gravada de uma execução — atalho "usar consolidado" (achado 2026-09-04): em vez de o operador
+ * preparar uma planilha antes de disparar, ele aceita direto na tela do relatório o valor
+ * CONSOLIDADO (ignora a data no agrupamento) que o Engine já calculou pro resultado atual. Grava
+ * na SELEÇÃO (não só no resultado) pra sobreviver a um "Recalcular" futuro — sem isso, recalcular
+ * reprocessaria pela contagem automática de novo e desfaria a correção em silêncio.
+ * Só mexe no total/motivo do lote PRINCIPAL — os outros 3 campos (guias_manuais_consultas/
+ * imobilizacoes/outros_hospitais) ficam intocados, sejam null ou já preenchidos por outra via.
+ */
+export async function definirGuiasManuaisTotalDaSelecao(
+  execucaoId: string,
+  medicoId: string,
+  total: number,
+  motivo: string,
+  informadoPor: string,
+): Promise<void> {
+  const db = getSupabaseAdmin();
+  const { error } = await db
+    .from('execucao_selecoes')
+    .update({
+      guias_manuais_total: total,
+      guias_manuais_motivo: motivo,
+      guias_manuais_informado_por: informadoPor,
+      guias_manuais_informado_em: new Date().toISOString(),
+    })
+    .eq('execucao_id', execucaoId)
+    .eq('medico_id', medicoId);
+  if (error) {
+    throw new ApiError(500, 'Falha ao gravar contagem manual na seleção', 'DB_ERROR', { error: error.message });
+  }
 }
 
 export async function atualizarProgresso(execucaoId: string, progresso: number): Promise<void> {

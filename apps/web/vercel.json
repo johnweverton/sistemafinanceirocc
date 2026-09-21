@@ -2,7 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/relatorio-mensal",
-      "schedule": "0 12 1 * *"
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/lembretes-vencimento",
+      "schedule": "0 11 * * *"
     }
   ]
 }

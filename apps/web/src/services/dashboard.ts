@@ -19,6 +19,9 @@ export const dashboardService = {
     apiFetch<AgingFaixa[]>(`/dashboard/aging${qs(competencia, contaEmissora, tipoServico)}`),
   tipoServico: (competencia?: string) =>
     apiFetch<ResumoPorTipoServico[]>(`/dashboard/tipo-servico${qs(competencia)}`),
+  /** Contagem de lembretes de vencimento enviados no mês corrente (Épico 13). */
+  lembretesVencimento: () =>
+    apiFetch<{ enviadosNoMes: number }>('/dashboard/lembretes-vencimento'),
 };
 
 export const dashboardQueryKeys = {
@@ -29,4 +32,5 @@ export const dashboardQueryKeys = {
   aging: (competencia?: string, contaEmissora?: ContaEmissora, tipoServico?: TipoServico) =>
     ['dashboard', 'aging', competencia ?? null, contaEmissora ?? null, tipoServico ?? null] as const,
   tipoServico: (competencia?: string) => ['dashboard', 'tipoServico', competencia ?? null] as const,
+  lembretesVencimento: () => ['dashboard', 'lembretesVencimento'] as const,
 };

@@ -23,11 +23,11 @@ describe('novaEmpresaSchema', () => {
       nome: 'MEDISA',
       cobranca: {
         pagadorTipo: 'PJ',
-        pagadorDocumento: '12345678000199',
+        pagadorDocumento: '11222333000181', // dígito verificador válido
         pagadorNome: 'MEDISA Serviços Médicos Ltda',
       },
     });
-    expect(r.cobranca?.pagadorDocumento).toBe('12345678000199');
+    expect(r.cobranca?.pagadorDocumento).toBe('11222333000181');
   });
 
   it('cobrança PJ com CPF (11 dígitos) → rejeita (documento incompatível com o tipo)', () => {

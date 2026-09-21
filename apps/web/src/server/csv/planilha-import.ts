@@ -22,12 +22,19 @@ export function normalizarNome(s: string): string {
 export function parseCsv(text: string): Record<string, string>[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2 || !lines[0]) return [];
-  const headers = lines[0].split(',').map((h) => h.trim().replace(/^﻿/, ''));
+  // Auto-detecta o separador: conta vírgulas vs ponto-e-vírgulas no cabeçalho e usa o que
+  // aparecer mais. CSVs gerados em PT-BR/locales europeus usam ';' por padrão (Excel, LibreOffice
+  // salvos em "CSV separado por ponto-e-vírgula") — hardcodar ',' rejeita esses arquivos.
+  const headerLine = lines[0];
+  const nCommas = (headerLine.match(/,/g) ?? []).length;
+  const nSemicolons = (headerLine.match(/;/g) ?? []).length;
+  const sep = nSemicolons > nCommas ? ';' : ',';
+  const headers = headerLine.split(sep).map((h) => h.trim().replace(/^\uFEFF/, ''));
   return lines
     .slice(1)
     .filter((l) => l.trim())
     .map((line) => {
-      const values = line.split(',').map((v) => v.trim());
+      const values = line.split(sep).map((v) => v.trim());
       return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
     });
 }

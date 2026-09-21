@@ -323,13 +323,134 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     expect(resultado.subtotais.some((s) => s.classe === 'CONSULTA_PEDIATRIA')).toBe(false);
   });
 
-  // Achado 2026-08-25: mesmo caso do Humberto (sub-lote de consulta acima), mas para
-  // Imobilizações — a produção mensal do médico pode ter um sub-lote de imobilizações (ex.:
-  // "1º QUINZENA IMOBILIZAÇÕES") dentro dela, em vez de vir como produção de nível-topo separada.
-  // Ao contrário de Consultas, escolher o sub-lote NÃO precisa recalcular "guias restantes":
-  // Imobilizações já é classe totalmente separada da produção principal — o teste prova que o
-  // motor busca via `buscarItensPorLote` (loteId), nunca `buscarItens` (producaoId) reaproveitando
-  // a produção flat que teria o mesmo nome/competência.
+  // Migration 0058 (aprovado 2026-09-03): execução MISTA — na MESMA competência, parte dos médicos
+  // é processada pelo motor normal e parte entra com o total de guias já conferido à mão pelo dono
+  // (planilha). Exercita o caminho inteiro (seleção → orquestrador → Engine), que é onde o achado
+  // A1 (2026-09-02) mostrou que um campo novo pode ser esquecido no meio.
+  it('Migration 0058 — execução mista: um médico com contagem manual, outro no fluxo automático', async () => {
+    const producao = (n: number, prefixo: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        data: '2026-06-10',
+        pacienteNome: `${prefixo}-${i}`,
+        atendimentoExternoId: `AT-${prefixo}-${i}`,
+        codigoProcedimento: '30715040',
+        descricaoProcedimento: 'Visita hospitalar',
+        statusOrigem: 'Devidamente Pago',
+        viaAcesso: false,
+        tipoAto: 'Eletivo',
+        valorCobradoOrigem: 100,
+        valorPagoOrigem: 100,
+      }));
+
+    const state = novoEstado([
+      medicoFake({ id: 'm-manual', cpf: '11144477735', nome: 'Dr. Conferido a Mao', statusHapvida: 'credenciado' }),
+      medicoFake({ id: 'm-auto', cpf: '98765432100', nome: 'Dr. Automatico', statusHapvida: 'credenciado' }),
+    ]);
+    state.itensPorProducao['p-manual'] = producao(10, 'M');
+    state.itensPorProducao['p-auto'] = producao(10, 'A');
+
+    const selecoes = [
+      {
+        medicoId: 'm-manual',
+        producaoExternaId: 'p-manual',
+        producaoNome: 'Junho 2026',
+        guiasManuaisTotal: 42,
+        guiasManuaisMotivo: 'Conferencia manual do dono',
+      },
+      { medicoId: 'm-auto', producaoExternaId: 'p-auto', producaoNome: 'Junho 2026' },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const porMedico = new Map(state.resultados.get(exec.id)!.map((x) => [x.medicoId, x.r]));
+    const manual = porMedico.get('m-manual')!;
+    const automatico = porMedico.get('m-auto')!;
+
+    // Mesmíssima produção (10 itens) nos dois: só o da planilha sai com 42.
+    expect(manual.guias).toBe(42);
+    expect(manual.totalValor).toBe(394.12); // faixa até 50, credenciado
+    expect(manual.alertas[0]).toContain('CONTAGEM MANUAL (planilha): 42 guia(s)');
+    expect(manual.alertas[0]).toContain('Conferencia manual do dono');
+    // GATE do dono 2026-09-03: a marca é auditoria, não pendência — sai 'ok', pronto pra emitir
+    // sem passar pelo "Revisar e liberar" (emissão exige status 'ok').
+    expect(manual.status).toBe('ok');
+
+    expect(automatico.guias).toBe(10);
+    expect(automatico.totalValor).toBe(263.59); // faixa até 30, credenciado
+    expect(automatico.alertas.some((a) => a.includes('CONTAGEM MANUAL'))).toBe(false);
+  });
+
+  // Migration 0060 (achado 2026-09-04): "o médico pode ter produção normal, imobilizações,
+  // consultas e etc... são tabelas diferentes, não tenho como colocar 200 se 100 foi guias
+  // normal e 100 foi consultas". Cada classe tem sua PRÓPRIA coluna/override — o teste prova
+  // fim a fim (orquestrador → Engine) que o override de Imobilizações NUNCA vaza pro principal
+  // (nem vice-versa), mesmo vindo os dois na mesma seleção.
+  it('Migration 0060 — override manual POR CLASSE: principal e Imobilizações divergem cada um da própria contagem automática', async () => {
+    const producao = (n: number, prefixo: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        data: '2026-06-10',
+        pacienteNome: `${prefixo}-${i}`,
+        atendimentoExternoId: `AT-${prefixo}-${i}`,
+        codigoProcedimento: '30715040',
+        descricaoProcedimento: 'Visita hospitalar',
+        statusOrigem: 'Devidamente Pago',
+        viaAcesso: false,
+        tipoAto: 'Eletivo',
+        valorCobradoOrigem: 100,
+        valorPagoOrigem: 100,
+      }));
+
+    const state = novoEstado([
+      medicoFake({
+        id: 'm-multi',
+        cpf: '11144477735',
+        nome: 'Dr. Multi Classe',
+        statusHapvida: 'credenciado',
+        fazImobilizacoes: true,
+      }),
+    ]);
+    state.itensPorProducao['p-principal'] = producao(10, 'P'); // automático daria 10
+    state.itensPorProducao['p-imob'] = producao(30, 'I'); // automático daria 30
+
+    const selecoes = [
+      {
+        medicoId: 'm-multi',
+        producaoExternaId: 'p-principal',
+        producaoNome: 'Junho 2026',
+        producaoImobilizacoesExternaId: 'p-imob',
+        producaoImobilizacoesNome: 'Imobilizações Junho 2026',
+        guiasManuaisTotal: 15,
+        guiasManuaisImobilizacoes: 6,
+        guiasManuaisMotivo: 'Guias normais e Imobilizações conferidas a mao',
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-06', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    // Principal usa o override (15), NÃO os 10 automáticos.
+    expect(resultado.subtotais.find((s) => s.classe === 'HAPVIDA_CRED')).toMatchObject({ guias: 15 });
+    // Imobilizações usa o SEU PRÓPRIO override (6), NÃO os 30 automáticos nem o 15 do principal.
+    expect(resultado.subtotais.find((s) => s.classe === 'IMOBILIZACOES')).toMatchObject({ guias: 6 });
+    // Uma linha de alerta só, listando os 2 overrides usados.
+    expect(resultado.alertas[0]).toBe(
+      'CONTAGEM MANUAL (planilha): 15 guia(s) da produção principal, 6 guia(s) de Imobilizações ' +
+        'informado(s) manualmente. Motivo: Guias normais e Imobilizações conferidas a mao',
+    );
+    expect(resultado.status).toBe('ok');
+  });
+
+  // Achado 2026-08-25 (migration 0059: virou ARRAY): mesmo caso do Humberto (sub-lote de consulta
+  // acima), mas para Imobilizações — a produção mensal do médico pode ter sub-lote(s) de
+  // imobilizações (ex.: "1º QUINZENA IMOBILIZAÇÕES") dentro dela, em vez de vir como produção de
+  // nível-topo separada. Ao contrário de Consultas, escolher o(s) sub-lote(s) NÃO precisa
+  // recalcular "guias restantes": Imobilizações já é classe totalmente separada da produção
+  // principal — o teste prova que o motor busca via `buscarItensPorLote` (loteId), nunca
+  // `buscarItens` (producaoId) reaproveitando a produção flat que teria o mesmo nome/competência.
   it('Achado 2026-08-25 — médico com sub-lote de Imobilizações DENTRO da produção mensal: usa o lote (buscarItensPorLote), nunca a produção flat', async () => {
     const medico = medicoFake({
       id: 'm-imob-lote',
@@ -362,8 +483,8 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
         medicoId: 'm-imob-lote',
         producaoExternaId: 'p-julho-completa',
         producaoNome: 'Julho - 2026',
-        producaoImobilizacoesLoteExternaId: 'lote-imob',
-        producaoImobilizacoesLoteNome: '1º QUINZENA IMOBILIZAÇÕES',
+        producaoImobilizacoesLoteExternaIds: ['lote-imob'],
+        producaoImobilizacoesLoteNomes: ['1º QUINZENA IMOBILIZAÇÕES'],
       },
     ];
     const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
@@ -376,6 +497,59 @@ describe('Integração — execução completa em 3 grupos (modo local)', () => 
     expect(resultado.subtotais.find((s) => s.classe === 'HAPVIDA_CRED')).toMatchObject({ guias: 5 });
     // Imobilizações vem do SUB-LOTE (4), nunca reaproveitando a produção flat (5).
     expect(resultado.subtotais.find((s) => s.classe === 'IMOBILIZACOES')).toMatchObject({ guias: 4 });
+  });
+
+  // Achado 2026-09-03 (migration 0059): médico VH com Imobilizações tem a produção mensal
+  // dividida em VÁRIOS sub-lotes de Imobilizações (um por dia/período), não só um — todos devem
+  // ser somados na mesma classe, mesmo mecanismo já usado para Cateter/Fístula/Angiografia
+  // (migration 0046).
+  it('Achado 2026-09-03 — médico VH com VÁRIOS sub-lotes de Imobilizações no mês: soma todos', async () => {
+    const medico = medicoFake({
+      id: 'm-imob-varios-lotes',
+      cpf: '22233344466',
+      nome: 'Dr. Vários Sub-lotes Imobilizações',
+      fazImobilizacoes: true,
+      especialidade: 'Ortopedia',
+    });
+    const state = novoEstado([medico]);
+
+    state.itensPorProducao['p-agosto-completa'] = Array.from({ length: 3 }, (_, i) => ({
+      data: '2026-08-01', pacienteNome: `G${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '30715040', descricaoProcedimento: 'Visita hospitalar',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+    state.itensPorLote['lote-imob-05'] = Array.from({ length: 2 }, (_, i) => ({
+      data: '2026-08-05', pacienteNome: `Imob-05-${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '31309054', descricaoProcedimento: 'Imobilização',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+    state.itensPorLote['lote-imob-11-12'] = Array.from({ length: 3 }, (_, i) => ({
+      data: '2026-08-11', pacienteNome: `Imob-11-${i}`, atendimentoExternoId: null,
+      codigoProcedimento: '31309054', descricaoProcedimento: 'Imobilização',
+      statusOrigem: 'Devidamente Pago', viaAcesso: false, tipoAto: 'Eletivo',
+      valorCobradoOrigem: 100, valorPagoOrigem: 100,
+    }));
+
+    const selecoes = [
+      {
+        medicoId: 'm-imob-varios-lotes',
+        producaoExternaId: 'p-agosto-completa',
+        producaoNome: 'Agosto - 2026',
+        producaoImobilizacoesLoteExternaIds: ['lote-imob-05', 'lote-imob-11-12'],
+        producaoImobilizacoesLoteNomes: ['IMOBILIZAÇÕES - 05/08', 'IMOBILIZAÇÕES 11/08 AO 12/08'],
+      },
+    ];
+    const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
+
+    const exec = await iniciarExecucao('2026-08', selecoes, 'u', deps);
+    await processarProximoLote(exec.id, deps);
+
+    const resultado = state.resultados.get(exec.id)!.map((x) => x.r)[0]!;
+    expect(resultado.subtotais.find((s) => s.classe === 'HAPVIDA_CRED')).toMatchObject({ guias: 3 });
+    // Imobilizações = soma dos DOIS sub-lotes (2 + 3 = 5), nunca só o primeiro selecionado.
+    expect(resultado.subtotais.find((s) => s.classe === 'IMOBILIZACOES')).toMatchObject({ guias: 5 });
   });
 });
 

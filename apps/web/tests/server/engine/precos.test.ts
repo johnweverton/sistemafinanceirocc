@@ -185,6 +185,35 @@ describe('processarMedico — OUTROS_HOSPITAIS acima de 80, somado a Hapvida (St
       r.alertas.some((a) => a.includes('5 item(ns)') && a.includes('Outros Hospitais') && a.includes('outra') && a.includes('competência')),
     ).toBe(true);
   });
+
+  // Achado real 2026-09-04 (conferência da competência AGOSTO, caso da Dra. Camilla): Imobilizações
+  // usa a MESMA regra 3x1 do lote principal quando a especialidade é 3x1 (Ortopedista, GATE
+  // 2026-08-06) — 6 atendimentos DISTINTOS (senha própria cada um) do MESMO paciente no MESMO dia
+  // agrupam em teto(6/3) = 2 guias, porque o agrupamento cai pro paciente+data quando a senha não
+  // se repete (`chaveAgrupamento3x1`). `Subtotal.atendimentos` precisa expor o 6 bruto ao lado do
+  // 2 cobrado — sem isso, o relatório só mostrava "2 guias" e quem conferia manualmente (contando
+  // os 6 atendimentos reais) não tinha como saber por que o número cobrado era menor.
+  it('Imobilizações com 6 atendimentos distintos do mesmo paciente/dia → 2 guias (3x1), Subtotal.atendimentos expõe o bruto', () => {
+    const itensPrincipal = Array.from({ length: 42 }, (_, i) => item(i));
+    const itensImobilizacoes = Array.from({ length: 6 }, (_, i) => ({
+      ...item(9000 + i),
+      pacienteNome: 'Paciente Repetido',
+      atendimentoExternoId: `AT-${i}`, // senha ÚNICA por linha — cai pro fallback por paciente+data
+    }));
+
+    const r = processarMedico({
+      medico: {
+        id: 'camilla', cpf: '00000000006', nome: 'Dra. Camilla',
+        statusHapvida: 'credenciado', fazImobilizacoes: true,
+        modoMudancaData: 'nao', especialidade: 'Ortopedia',
+      } as any,
+      itens: itensPrincipal,
+      itensImobilizacoes,
+    });
+
+    const subtotalImobilizacoes = r.subtotais?.find((s) => s.classe === 'IMOBILIZACOES');
+    expect(subtotalImobilizacoes).toMatchObject({ guias: 2, atendimentos: 6 });
+  });
 });
 
 describe('tabelaSemExcedentePorGuia (Story 10.7 — Dr. Adilson, contrato antigo)', () => {

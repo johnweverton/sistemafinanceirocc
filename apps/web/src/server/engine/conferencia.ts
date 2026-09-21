@@ -8,8 +8,20 @@ import { usaRegra3x1 } from './contagem-producao';
 export const LIMIAR_VARIACAO = 0.4;
 
 /**
+ * Alerta de especialidade ausente no cadastro (achado 2026-09-02, auditoria da contagem 3x1):
+ * médico importado da origem entra com `especialidade: null`, e TODAS as regras específicas de
+ * contagem (`usaRegra3x1`, listas de exceção) simplesmente desligam — sem nenhum sinal para o
+ * operador. Cobre só o caso vazio/nulo; detectar "especialidade escrita errada" exigiria uma
+ * lista canônica que não existe hoje.
+ */
+export const ALERTA_ESPECIALIDADE_AUSENTE =
+  'Especialidade não cadastrada — regras específicas de contagem (3x1, exceções) podem não estar ' +
+  'sendo aplicadas. Verificar cadastro do médico.';
+
+/**
  * Gera a lista de alertas de conferência para um médico.
  * Espelha checar() do Python:
+ *  - especialidade ausente no cadastro + produção sendo contada → alerta (achado 2026-09-02)
  *  - modo do cadastro != modo observado no dado → alerta (PRD §5.3)
  *  - procedimentos sem valor OU sem descrição → alerta de dado incompleto (PRD §5.6)
  *  - variação > LIMIAR vs. histórico → alerta (PRD §8.5)
@@ -23,6 +35,12 @@ export function checar(
   modoDetectado?: ModoObservado,
 ): string[] {
   const alertas: string[] = [];
+
+  // `itens` aqui já são os VÁLIDOS que o chamador está contando — sem produção neste mês não há
+  // contagem que pudesse estar errada, e o alerta só faria ruído.
+  if (!especialidade || especialidade.trim() === '') {
+    if (itens.length > 0) alertas.push(ALERTA_ESPECIALIDADE_AUSENTE);
+  }
 
   if (usaRegra3x1(especialidade) && modoDetectado) {
     if (modoCadastro !== modoDetectado) {
