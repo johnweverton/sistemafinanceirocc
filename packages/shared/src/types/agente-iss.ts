@@ -89,3 +89,24 @@ export interface CapturaIss extends Omit<NovaCapturaIss, 'capturadoEm'> {
 
 /** Limite de capturas por POST — bem acima da carteira atual (~90 empresas no perfil MASTER). */
 export const AGENTE_ISS_MAX_CAPTURAS = 500;
+
+/** Resumo da execução mais recente do agente numa competência (faixa-resumo da UI — Story 13.3). */
+export interface UltimaExecucaoIss {
+  id: string;
+  competencia: string;
+  iniciadoEm: string;
+  finalizadoEm: string | null;
+  totais: TotaisExecucaoIss;
+}
+
+/**
+ * O que o diálogo de lote precisa para pré-preencher o faturamento (Story 13.3):
+ * a proposta vigente por cliente, a última execução e o que já foi LANÇADO (com valor, para a
+ * divergência da R4 — "lançado R$ X · ISS R$ Y").
+ */
+export interface PropostasIssResposta {
+  competencia: string;
+  propostas: CapturaIss[];
+  ultimaExecucao: UltimaExecucaoIss | null;
+  lancados: { clienteContabilidadeId: string; faturamento: number }[];
+}

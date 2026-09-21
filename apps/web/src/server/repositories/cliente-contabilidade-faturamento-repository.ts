@@ -5,7 +5,7 @@
 // contábil, este lançamento NÃO gera histórico de auditoria por campo — é o próprio registro
 // versionado por competência que serve de trilha (quem lançou e quando, em `informado_por`/
 // `informado_em`).
-import type { ClienteContabilidadeFaturamento } from '@cobranca/shared';
+import type { CapturaIss, ClienteContabilidadeFaturamento, OrigemFaturamento } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
 import {
@@ -13,6 +13,7 @@ import {
   type ClienteContabilidadeFaturamentoRow,
 } from './mappers';
 import { listarClientesContabilidadePorIds } from './cliente-contabilidade-repository';
+import { buscarCapturasIssPorIds } from './iss-captura-repository';
 
 /**
  * Lança (ou atualiza, se a competência já tiver um lançamento) o faturamento de um cliente
@@ -24,6 +25,10 @@ export async function lancarFaturamento(
   competencia: string,
   faturamento: number,
   informadoPor: string,
+  proveniencia: { origem: OrigemFaturamento; issCapturaId: string | null } = {
+    origem: 'manual',
+    issCapturaId: null,
+  },
 ): Promise<ClienteContabilidadeFaturamento> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
@@ -35,6 +40,8 @@ export async function lancarFaturamento(
         faturamento,
         informado_por: informadoPor,
         informado_em: new Date().toISOString(),
+        origem: proveniencia.origem,
+        iss_captura_id: proveniencia.issCapturaId,
       },
       { onConflict: 'cliente_contabilidade_id,competencia' },
     )
@@ -49,6 +56,28 @@ export async function lancarFaturamento(
 export interface LancamentoFaturamentoLote {
   clienteContabilidadeId: string;
   faturamento: number;
+  /**
+   * Captura do ISS que o operador aceitou (Story 13.3). É uma ALEGAÇÃO do cliente HTTP: só vira
+   * `origem = 'iss_fortaleza'` se o servidor confirmar que a captura é deste cliente, desta
+   * competência, está `capturado` e tem exatamente este valor — senão o lançamento sai `manual`.
+   */
+  issCapturaId?: string | null;
+}
+
+/** Captura que legitima `origem = 'iss_fortaleza'` para ESTE lançamento (mesmo cliente, mês e valor). */
+function capturaConfere(
+  captura: CapturaIss | undefined,
+  competencia: string,
+  l: LancamentoFaturamentoLote,
+): boolean {
+  return (
+    !!captura &&
+    captura.status === 'capturado' &&
+    captura.clienteContabilidadeId === l.clienteContabilidadeId &&
+    captura.competencia === competencia &&
+    captura.valorServicosPrestados !== null &&
+    Math.round(captura.valorServicosPrestados * 100) === Math.round(l.faturamento * 100)
+  );
 }
 
 export interface ResultadoLancamentoFaturamentoLote {
@@ -74,9 +103,28 @@ export async function lancarFaturamentoLote(
   informadoPor: string,
 ): Promise<ResultadoLancamentoFaturamentoLote> {
   const resultado: ResultadoLancamentoFaturamentoLote = { lancados: 0, falhas: [] };
+  const idsCapturas = [...new Set(lancamentos.flatMap((l) => (l.issCapturaId ? [l.issCapturaId] : [])))];
+  // Se a conferência falhar, os lançamentos seguem como `manual`: perder o selo de origem é
+  // aceitável, perder o lançamento (ou marcar `iss_fortaleza` sem conferir) não é.
+  const capturas = new Map<string, CapturaIss>();
+  try {
+    for (const c of await buscarCapturasIssPorIds(idsCapturas)) capturas.set(c.id, c);
+  } catch {
+    /* segue sem proveniência — ver comentário acima */
+  }
   for (const l of lancamentos) {
     try {
-      await lancarFaturamento(l.clienteContabilidadeId, competencia, l.faturamento, informadoPor);
+      const captura = l.issCapturaId ? capturas.get(l.issCapturaId) : undefined;
+      const doIss = capturaConfere(captura, competencia, l);
+      await lancarFaturamento(
+        l.clienteContabilidadeId,
+        competencia,
+        l.faturamento,
+        informadoPor,
+        doIss
+          ? { origem: 'iss_fortaleza', issCapturaId: captura!.id }
+          : { origem: 'manual', issCapturaId: null },
+      );
       resultado.lancados += 1;
     } catch (e) {
       const motivo = e instanceof ApiError ? e.message : 'Falha ao lançar faturamento';
@@ -164,4 +212,27 @@ export async function buscarFaturamento(
     throw new ApiError(500, 'Falha ao buscar faturamento', 'DB_ERROR', { error: error.message });
   }
   return data ? toClienteContabilidadeFaturamento(data as ClienteContabilidadeFaturamentoRow) : null;
+}
+
+/**
+ * Faturamentos lançados na competência COM o valor (Story 13.3, regra R4): o diálogo de lote
+ * compara com a proposta do ISS para dizer "lançado R$ X · ISS R$ Y" em vez de sobrescrever.
+ */
+export async function listarFaturamentosDaCompetencia(
+  competencia: string,
+): Promise<{ clienteContabilidadeId: string; faturamento: number }[]> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('clientes_contabilidade_faturamentos')
+    .select('cliente_contabilidade_id, faturamento')
+    .eq('competencia', competencia);
+  if (error) {
+    throw new ApiError(500, 'Falha ao listar faturamentos da competência', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  return (data as { cliente_contabilidade_id: string; faturamento: number | string }[]).map((r) => ({
+    clienteContabilidadeId: r.cliente_contabilidade_id,
+    faturamento: Number(r.faturamento),
+  }));
 }

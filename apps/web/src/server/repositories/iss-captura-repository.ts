@@ -7,6 +7,7 @@ import type {
   CapturaIss,
   ExecucaoIssRegistrada,
   TotaisExecucaoIss,
+  UltimaExecucaoIss,
 } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
@@ -192,4 +193,55 @@ export async function listarPropostasIssVigentes(competencia: string): Promise<C
     }
   }
   return [...vigentes.values()];
+}
+
+/** Execução mais recente do agente na competência (faixa-resumo do diálogo de lote — Story 13.3). */
+export async function buscarUltimaExecucaoIss(competencia: string): Promise<UltimaExecucaoIss | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('iss_execucoes_agente')
+    .select('id, competencia, iniciado_em, finalizado_em, totais')
+    .eq('competencia', competencia)
+    .order('iniciado_em', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new ApiError(500, 'Falha ao buscar a última execução do agente ISS', 'DB_ERROR', {
+      error: error.message,
+    });
+  }
+  if (!data) return null;
+  const row = data as {
+    id: string;
+    competencia: string;
+    iniciado_em: string;
+    finalizado_em: string | null;
+    totais: Partial<TotaisExecucaoIss> | null;
+  };
+  return {
+    id: row.id,
+    competencia: row.competencia,
+    iniciadoEm: row.iniciado_em,
+    finalizadoEm: row.finalizado_em,
+    totais: {
+      capturado: row.totais?.capturado ?? 0,
+      nao_encontrado: row.totais?.nao_encontrado ?? 0,
+      sem_escrituracao: row.totais?.sem_escrituracao ?? 0,
+      erro: row.totais?.erro ?? 0,
+    },
+  };
+}
+
+/**
+ * Capturas por id — usado pelo lançamento em lote para CONFERIR, no servidor, que o valor que o
+ * operador aceitou é mesmo o da captura citada antes de gravar `origem = 'iss_fortaleza'`.
+ */
+export async function buscarCapturasIssPorIds(ids: string[]): Promise<CapturaIss[]> {
+  if (ids.length === 0) return [];
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from('iss_capturas').select('*').in('id', ids);
+  if (error) {
+    throw new ApiError(500, 'Falha ao buscar capturas do ISS', 'DB_ERROR', { error: error.message });
+  }
+  return (data as IssCapturaRow[]).map(toCapturaIss);
 }

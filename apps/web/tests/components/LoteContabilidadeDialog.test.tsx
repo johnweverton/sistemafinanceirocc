@@ -29,17 +29,20 @@ const mockComBoleto = vi.fn();
 const mockDispararLote = vi.fn();
 const mockLancarFaturamentoLote = vi.fn();
 const mockFaturamentosLancados = vi.fn();
+const mockPropostasIss = vi.fn();
 vi.mock('../../src/services/clientes-contabilidade', () => ({
   clientesContabilidadeService: {
     comBoleto: (...a: unknown[]) => mockComBoleto(...a),
     dispararLote: (...a: unknown[]) => mockDispararLote(...a),
     lancarFaturamentoLote: (...a: unknown[]) => mockLancarFaturamentoLote(...a),
     faturamentosLancados: (...a: unknown[]) => mockFaturamentosLancados(...a),
+    propostasIss: (...a: unknown[]) => mockPropostasIss(...a),
   },
   clienteContabilidadeQueryKeys: {
     clientes: () => ['clientes-contabilidade'],
     comBoleto: (c: string) => ['clientes-contabilidade', 'com-boleto', c],
     faturamentosLancados: (c: string) => ['clientes-contabilidade', 'faturamentos-lancados', c],
+    propostasIss: (c: string) => ['clientes-contabilidade', 'propostas-iss', c],
   },
 }));
 
@@ -148,6 +151,8 @@ beforeEach(() => {
   sessionStorage.clear();
   mockComBoleto.mockResolvedValue({ clienteContabilidadeIds: [] });
   mockFaturamentosLancados.mockResolvedValue({ clienteContabilidadeIds: [] });
+  // Story 13.3: por padrão o agente do ISS ainda não rodou — o passo 1 fica igual ao de antes.
+  mockPropostasIss.mockResolvedValue({ competencia: '2026-06', propostas: [], ultimaExecucao: null, lancados: [] });
   mockDispararLote.mockResolvedValue({ execucaoId: 'exec-1' });
   mockRetomar.mockResolvedValue({ ok: true });
   mockDetalhe.mockResolvedValue(execucaoFake());
@@ -776,5 +781,195 @@ describe('LoteContabilidadeDialog — Escape/backdrop no fluxo de composição (
 
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText('Aguarde o processamento terminar.')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Story 13.3 — propostas do agente do ISS Fortaleza no passo 1 do lote (Épico 13).
+// O agente ACELERA o lançamento; quem lança é o operador (decisão G3).
+// ---------------------------------------------------------------------------------------------
+
+function propostaIss(clienteId: string, over: Record<string, unknown> = {}) {
+  return {
+    id: `cap-${clienteId}`,
+    execucaoId: 'exec-iss-1',
+    clienteContabilidadeId: clienteId,
+    competencia: '2026-06',
+    status: 'capturado',
+    valorServicosPrestados: 34375.07,
+    quantidadeNotas: 10,
+    situacaoIss: 'Fechada - Retificadora(1)',
+    competenciaFechada: true,
+    inscricaoMunicipal: '196992-7',
+    razaoSocialIss: 'EMPRESA',
+    alertas: [],
+    mensagemErro: null,
+    capturadoEm: '2026-09-21T13:40:00Z',
+    ...over,
+  };
+}
+
+function respostaIss(over: Record<string, unknown> = {}) {
+  return {
+    competencia: '2026-06',
+    propostas: [],
+    ultimaExecucao: {
+      id: 'exec-iss-1',
+      competencia: '2026-06',
+      iniciadoEm: '2026-09-21T13:40:00Z',
+      finalizadoEm: '2026-09-21T13:45:00Z',
+      totais: { capturado: 1, nao_encontrado: 1, sem_escrituracao: 0, erro: 0 },
+    },
+    lancados: [],
+    ...over,
+  };
+}
+
+describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
+  it('pré-preenche o campo com a proposta e mostra o selo com a situação do ISS', async () => {
+    mockPropostasIss.mockResolvedValue(respostaIss({ propostas: [propostaIss('cc-1')] }));
+    renderDialog([faixaA, faixaB]);
+
+    const campos = await screen.findAllByRole('spinbutton');
+    await waitFor(() => expect(campos[0]).toHaveValue(34375.07));
+    expect(campos[1]).toHaveValue(null); // sem proposta → vazio, como antes
+    expect(screen.getByText(/ISS · Fechada - Retificadora\(1\)/)).toBeInTheDocument();
+  });
+
+  it('lançar sem mexer no campo envia o valor da proposta E a captura aceita', async () => {
+    mockPropostasIss.mockResolvedValue(respostaIss({ propostas: [propostaIss('cc-1')] }));
+    mockLancarFaturamentoLote.mockResolvedValue({ lancados: 1, falhas: [] });
+    renderDialog([faixaA, faixaB]);
+
+    await waitFor(() => expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(34375.07));
+    fireEvent.click(await screen.findByRole('button', { name: /Lançar faturamentos e continuar/i }));
+
+    await waitFor(() => expect(mockLancarFaturamentoLote).toHaveBeenCalledTimes(1));
+    expect(mockLancarFaturamentoLote).toHaveBeenCalledWith('2026-06', [
+      { clienteContabilidadeId: 'cc-1', faturamento: 34375.07, issCapturaId: 'cap-cc-1' },
+    ]);
+  });
+
+  it('se o operador corrige o valor, o lançamento NÃO cita a captura (é digitação manual)', async () => {
+    mockPropostasIss.mockResolvedValue(respostaIss({ propostas: [propostaIss('cc-1')] }));
+    mockLancarFaturamentoLote.mockResolvedValue({ lancados: 1, falhas: [] });
+    renderDialog([faixaA, faixaB]);
+
+    const campos = await screen.findAllByRole('spinbutton');
+    await waitFor(() => expect(campos[0]).toHaveValue(34375.07));
+    fireEvent.change(campos[0]!, { target: { value: '34000' } });
+    fireEvent.click(await screen.findByRole('button', { name: /Lançar faturamentos e continuar/i }));
+
+    await waitFor(() => expect(mockLancarFaturamentoLote).toHaveBeenCalledTimes(1));
+    const [, lancamentos] = mockLancarFaturamentoLote.mock.calls[0]!;
+    expect(lancamentos).toHaveLength(1);
+    expect(lancamentos[0].faturamento).toBe(34000);
+    expect(lancamentos[0].issCapturaId).toBeUndefined();
+  });
+
+  it('o operador pode APAGAR a proposta — campo vazio não volta a ser preenchido sozinho', async () => {
+    mockPropostasIss.mockResolvedValue(respostaIss({ propostas: [propostaIss('cc-1')] }));
+    renderDialog([faixaA, faixaB]);
+
+    const campos = await screen.findAllByRole('spinbutton');
+    await waitFor(() => expect(campos[0]).toHaveValue(34375.07));
+    fireEvent.change(campos[0]!, { target: { value: '' } });
+
+    expect(campos[0]).toHaveValue(null);
+    // Sem nenhum valor no passo 1 o botão troca de rótulo e fica desabilitado: a proposta apagada
+    // não foi reaplicada por baixo dos panos.
+    expect(screen.getByRole('button', { name: /Digite ao menos um faturamento/i })).toBeDisabled();
+    expect(botaoLancar()).not.toBeInTheDocument();
+  });
+
+  it('R4: lançamento existente diferente da proposta → divergência e campo NÃO pré-preenchido', async () => {
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({
+        propostas: [propostaIss('cc-1', { valorServicosPrestados: 8000 })],
+        lancados: [{ clienteContabilidadeId: 'cc-1', faturamento: 4500 }],
+      }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    const campos = await screen.findAllByRole('spinbutton');
+    await waitFor(() =>
+      expect(screen.getByText(/lançado R\$\s*4\.500,00 · ISS R\$\s*8\.000,00/)).toBeInTheDocument(),
+    );
+    expect(campos[0]).toHaveValue(null);
+  });
+
+  it('R2: competência aberta no ISS pré-preenche mas avisa que o valor pode mudar', async () => {
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({ propostas: [propostaIss('cc-1', { competenciaFechada: false })] }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    await waitFor(() => expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(34375.07));
+    expect(screen.getByText(/competência aberta — o valor pode mudar/)).toBeInTheDocument();
+  });
+
+  it('R5: captura com alerta NÃO pré-preenche e pede conferência no portal', async () => {
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({
+        propostas: [
+          propostaIss('cc-1', { valorServicosPrestados: 0, alertas: ['possivel_nota_fora_escrituracao'] }),
+        ],
+      }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    await waitFor(() => expect(screen.getByText(/possível nota fora da escrituração/)).toBeInTheDocument());
+    expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(null);
+  });
+
+  it('cliente que o agente não achou fica vazio, com o motivo e listado como digitação manual', async () => {
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({
+        propostas: [
+          propostaIss('cc-1'),
+          propostaIss('cc-2', { status: 'nao_encontrado', valorServicosPrestados: null }),
+        ],
+      }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    await waitFor(() => expect(screen.getByText(/empresa não encontrada no portal/)).toBeInTheDocument());
+    expect(screen.getAllByRole('spinbutton')[1]).toHaveValue(null);
+    expect(screen.getByText(/Precisam de digitação manual \(1\)/)).toBeInTheDocument();
+  });
+
+  it('faixa-resumo mostra a última captura e os totais do agente', async () => {
+    mockPropostasIss.mockResolvedValue(respostaIss({ propostas: [propostaIss('cc-1')] }));
+    renderDialog([faixaA, faixaB]);
+
+    const resumo = await screen.findByText(/Última captura do ISS/);
+    const texto = (resumo.textContent ?? '').replace(/\s+/g, ' ');
+    expect(texto).toMatch(/1 capturado · 1 não encontrado · 0 sem escrituração · 0 erros/);
+  });
+
+  it('agente que ainda não rodou → aviso neutro, passo 1 igual ao de antes', async () => {
+    renderDialog([faixaA, faixaB]);
+
+    await waitFor(() => expect(screen.getByText(/O agente do ISS ainda não rodou/)).toBeInTheDocument());
+    screen.getAllByRole('spinbutton').forEach((campo) => expect(campo).toHaveValue(null));
+  });
+
+  it('falha ao carregar as propostas NÃO bloqueia o passo 1 — só avisa', async () => {
+    mockPropostasIss.mockRejectedValue(new Error('rede'));
+    await preencher(['4500', '9000']);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Não foi possível carregar as propostas do ISS/)).toBeInTheDocument(),
+    );
+    await waitFor(() => expect(botaoLancar()).toBeEnabled());
+  });
+
+  it('trocar a competência consulta as propostas da competência nova', async () => {
+    renderDialog([faixaA, faixaB]);
+    await waitFor(() => expect(mockPropostasIss).toHaveBeenCalledWith('2026-06'));
+
+    fireEvent.change(screen.getByLabelText(/Competência/i), { target: { value: '2026-05' } });
+
+    await waitFor(() => expect(mockPropostasIss).toHaveBeenCalledWith('2026-05'));
   });
 });

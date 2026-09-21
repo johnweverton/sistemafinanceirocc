@@ -31,7 +31,7 @@ por empresa. O agente lê o valor no portal e o entrega como **proposta** no di�
 | 13.0 | Feita (absorvida na 13.2) | Gravação real do portal em 2026-09-21 → seletores + fixtures |
 | 13.1 | InReview | Servidor: migration `0061_agente_iss.sql`, rotas `GET /api/integracoes/iss/alvos` e `POST /api/integracoes/iss/execucoes` (bearer token, SHA-256 em `AGENTE_ISS_TOKEN_SHA256`), R5, `listarPropostasIssVigentes` |
 | 13.2 | InReview (**falta validação ao vivo**) | CLI `apps/agente-iss` → `npm run iss:faturamento` |
-| 13.3 | Não iniciada | UI: pré-preencher propostas no `LoteContabilidadeDialog` (selos, divergência R4, `origem` no lançamento) — ver arquitetura §6 |
+| 13.3 | InReview | UI: propostas do ISS no `LoteContabilidadeDialog` (selos, divergência R4, `origem` conferida no servidor) — ver `docs/stories/13.3.agente-iss-propostas-no-lote.story.md`. Falta só aplicar a migration 0061 e ver com dados reais |
 
 Testes na saída desta sessão: suíte completa verde (web 138 arquivos, agente 51 testes, shared).
 
@@ -49,7 +49,7 @@ Testes na saída desta sessão: suíte completa verde (web 138 arquivos, agente 
 2. **Dono**: aplicar `supabase/migrations/0061_agente_iss.sql` no Supabase (conta externa, ref
    `nxxhhempgmevzxbrjvbo`); gerar o token (comando em `docs/stories/13.1…md` › Dev Notes); pôr
    `AGENTE_ISS_TOKEN_SHA256` na Vercel e `AGENTE_ISS_TOKEN` + `SISTEMA_URL` no `.env` do agente.
-3. **13.3** (UI), que pode começar em paralelo ao passo 1.
+3. ~~13.3 (UI)~~ implementada; falta conferir com capturas reais após o passo 2.
 4. **Dar Ciência (G2)**: gravar o fluxo com `node apps/agente-iss/scripts/gravador.cjs` quando
    uma empresa tiver comunicado pendente, e só então automatizar. Hoje: empresa com comunicado →
    status `erro` + snapshot (falha segura).
