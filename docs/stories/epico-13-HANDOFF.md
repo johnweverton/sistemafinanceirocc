@@ -26,34 +26,42 @@ por empresa. O agente lê o valor no portal e o entrega como **proposta** no di�
 | — | Preferência do dono: **validar no sistema real antes de automatizar** (gravar tela/HTML real). Nada de seletor por suposição. |
 
 ## Estado
+Mergeado na `master` pelo PR #2 (2026-09-21) e **validado em produção** (`cobrancacc.vercel.app`).
+
 | Story | Status | O que é |
 |---|---|---|
 | 13.0 | Feita (absorvida na 13.2) | Gravação real do portal em 2026-09-21 → seletores + fixtures |
-| 13.1 | InReview | Servidor: migration `0061_agente_iss.sql`, rotas `GET /api/integracoes/iss/alvos` e `POST /api/integracoes/iss/execucoes` (bearer token, SHA-256 em `AGENTE_ISS_TOKEN_SHA256`), R5, `listarPropostasIssVigentes` |
-| 13.2 | InReview (**falta validação ao vivo**) | CLI `apps/agente-iss` → `npm run iss:faturamento` |
-| 13.3 | InReview | UI: propostas do ISS no `LoteContabilidadeDialog` (selos, divergência R4, `origem` conferida no servidor) — ver `docs/stories/13.3.agente-iss-propostas-no-lote.story.md`. Falta só aplicar a migration 0061 e ver com dados reais |
+| 13.1 | Done (validada em produção) | Servidor: migration `0061_agente_iss.sql` (aplicada), rotas `GET /api/integracoes/iss/alvos` e `POST /api/integracoes/iss/execucoes` (bearer token, SHA-256 em `AGENTE_ISS_TOKEN_SHA256`, configurada na Vercel), R5, `listarPropostasIssVigentes` |
+| 13.2 | Done (validada ao vivo) | CLI `apps/agente-iss` → `npm run iss:faturamento` |
+| 13.3 | Done (validada em produção) | UI: propostas do ISS no `LoteContabilidadeDialog` (selos, divergência R4, `origem` conferida no servidor) — ver `docs/stories/13.3.agente-iss-propostas-no-lote.story.md` |
 
-Testes na saída desta sessão: suíte completa verde (web 138 arquivos, agente 51 testes, shared).
+### Validação real (2026-09-21)
+- `--offline` com 2 CNPJs de teste: login OK, valores conferidos pelo dono contra o portal.
+- Envio real com `--limite 2` (AQG SERVICOS MEDICOS LTDA R$ 23.202,42 e BERCI SERVICOS MEDICOS LTDA
+  R$ 2.917,93, competência 2026-08): execução aceita pelo servidor, 2 capturados, 0 erros.
+- Em **Clientes Contábeis › Calcular em lote** (competência 2026-08) os dois campos vêm
+  pré-preenchidos, com o selo "ISS · Fechada - Retificadora(N) · capturado em 21/09" e a faixa-resumo
+  da última captura. Ainda **não** foi clicado "Lançar faturamentos e continuar" com esses valores.
+- Os 2 CNPJs de teste usados na gravação **não** são clientes `faixa_faturamento` ativos com
+  `pagadorDocumento`: no envio real o agente os ignora ("não são clientes ativos em faixa de
+  faturamento"). Para testar o envio use `--limite N`, que pega os primeiros alvos reais.
+- Na 2ª execução, as duas empresas caíram no fallback "pesquisa não trouxe a empresa — percorrendo a
+  lista completa" (~15 s por empresa em vez de ~12 s). Resultado correto; se muitas empresas da
+  carteira caírem nele, investigar por que a pesquisa por CNPJ não filtrou.
+
+Testes: suíte do web com 6 falhas **fora do Épico 13** (2 em `guias-manuais-import.test.ts`, já
+falhavam; 4 em `medico-repository-duplicata.test.ts`, teste de 08/09 sem a implementação).
 
 ## Próximos passos (em ordem)
-1. **Validação ao vivo da 13.2** (AC 9). Na máquina que vai rodar o agente, crie
-   `%USERPROFILE%\agente-iss\.env` com `ISS_CPF=` e `ISS_SENHA=` e rode:
-   ```
-   npm install
-   npm run iss:faturamento -- --offline --headed --competencia 2026-08 --cnpj 08293377000198 --cnpj 07286006000116
-   ```
-   Confira: os valores batem com a tela? O log diz "percorrendo a lista completa"? Se disser, a
-   pesquisa por CNPJ não filtrou e o fallback de paginação foi usado. Se algo falhar, os snapshots
-   ficam em `%USERPROFILE%\agente-iss\execucoes\<carimbo>\snapshots\`: leia o HTML e ajuste
-   `src/portal/seletores.ts`.
-2. **Dono**: aplicar `supabase/migrations/0061_agente_iss.sql` no Supabase (conta externa, ref
-   `nxxhhempgmevzxbrjvbo`); gerar o token (comando em `docs/stories/13.1…md` › Dev Notes); pôr
-   `AGENTE_ISS_TOKEN_SHA256` na Vercel e `AGENTE_ISS_TOKEN` + `SISTEMA_URL` no `.env` do agente.
-3. ~~13.3 (UI)~~ implementada; falta conferir com capturas reais após o passo 2.
-4. **Dar Ciência (G2)**: gravar o fluxo com `node apps/agente-iss/scripts/gravador.cjs` quando
+1. **Rodar a carteira inteira** de uma competência: `npm run iss:faturamento -- --competencia AAAA-MM`
+   (~12–15 s por empresa; ~90 empresas ≈ 20–25 min). Conferir no diálogo de lote quantas vêm
+   pré-preenchidas, quantas caem em "digitação manual" e o log de "percorrendo a lista completa".
+2. **Dar Ciência (G2)**: gravar o fluxo com `node apps/agente-iss/scripts/gravador.cjs` quando
    uma empresa tiver comunicado pendente, e só então automatizar. Hoje: empresa com comunicado →
    status `erro` + snapshot (falha segura).
-5. @qa gate das 13.1/13.2 (as stories foram escritas e implementadas sem @sm/@po, a pedido do dono).
+3. @qa gate das 13.1/13.2/13.3 (as stories foram escritas e implementadas sem @sm/@po, a pedido do dono).
+4. Depois de conferir um lote real, validar o lançamento com `origem = 'iss_fortaleza'` e o texto
+   "lançado R$ X · confere com o ISS" ao reabrir o diálogo.
 
 ## Fatos do portal que não são óbvios (vieram da gravação real)
 - RichFaces 3.3.3 com **ids estáveis**: `alteraInscricaoForm:*` (modal de inscrição),
