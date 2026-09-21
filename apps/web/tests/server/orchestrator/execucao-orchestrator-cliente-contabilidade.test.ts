@@ -62,6 +62,8 @@ describe('Orquestrador — cliente contábil, modo faixa_faturamento (Story 11.3
       faturamento: 4500,
       informadoPor: 'u',
       informadoEm: '2026-07-01T00:00:00Z',
+      origem: 'manual',
+      issCapturaId: null,
     });
     const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
 
@@ -83,6 +85,8 @@ describe('Orquestrador — cliente contábil, modo faixa_faturamento (Story 11.3
       faturamento: 8000,
       informadoPor: 'u',
       informadoEm: '2026-07-01T00:00:00Z',
+      origem: 'manual',
+      issCapturaId: null,
     });
     const deps = fakeDeps(state, 5, processarProximoLote, { autoEncadear: true });
 

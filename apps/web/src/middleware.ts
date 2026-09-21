@@ -148,8 +148,10 @@ export const config = {
   // manifest/sw.js/icons/logo precisam ficar fora do gate de auth: o navegador os busca
   // mesmo deslogado (tela de login, instalação do PWA), e um redirect para /login quebraria
   // o parse do manifest e o registro do service worker (SecurityError em fetch redirecionado).
+  // Integrações de máquina (api/integracoes — agente ISS, Story 13.1) também ficam fora: não há
+  // usuário logado, a autenticação é o bearer token dedicado validado no route handler.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icons/|logo.svg|api/health|api/webhooks).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icons/|logo.svg|api/health|api/webhooks|api/integracoes).*)',
   ],
 };
 

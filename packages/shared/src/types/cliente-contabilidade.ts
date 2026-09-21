@@ -5,6 +5,7 @@
 // (DadosCobranca, CondicoesCobranca, ContaEmissora) e o mecanismo de regra de preço (RegraPreco).
 import type { ContaEmissora } from './conta-emissora';
 import type { DadosCobranca, CondicoesCobranca, RegraPreco } from './medico';
+import type { OrigemFaturamento } from './agente-iss';
 
 /** Regime tributário do cliente — metadado informativo/relatório. Quem decide a regra de cálculo
  *  é `modoCobranca`, não o regime (existem exceções fixas dentro do Simples Nacional). */
@@ -79,4 +80,8 @@ export interface ClienteContabilidadeFaturamento {
   faturamento: number;
   informadoPor: string;
   informadoEm: string;
+  /** De onde veio o número (Story 13.1): digitado ou aceito de uma proposta do ISS. */
+  origem: OrigemFaturamento;
+  /** Captura do ISS aceita, quando `origem = 'iss_fortaleza'`. */
+  issCapturaId: string | null;
 }

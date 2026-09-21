@@ -132,6 +132,17 @@ const serverSchema = z.object({
   // Destinatários do relatório mensal (ex.: a CEO), e-mails separados por vírgula — mesmo
   // formato de BOOTSTRAP_ADMIN_EMAILS. Vazio/ausente = cron roda mas pula o envio (log, não erro).
   RELATORIO_MENSAL_EMAILS: z.string().optional(),
+
+  // ---------------------------------------------------------------------------
+  // AGENTE ISS — captura de faturamento no ISS Fortaleza (Story 13.1, Épico 13).
+  // ---------------------------------------------------------------------------
+  // SHA-256 (hex) do token que o agente local envia como `Authorization: Bearer <token>`. Só o
+  // hash fica na Vercel; o token em si vive apenas no .env da máquina do escritório. Ausente =
+  // rotas /api/integracoes/iss/* sempre 401 (fail-closed).
+  AGENTE_ISS_TOKEN_SHA256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/i, 'AGENTE_ISS_TOKEN_SHA256 deve ser um SHA-256 em hex (64 caracteres)')
+    .optional(),
 });
 
 export const publicEnv = publicSchema.parse({
@@ -192,6 +203,7 @@ export function getServerEnv() {
     SMTP_PASS: process.env.SMTP_PASS,
     CRON_SECRET: process.env.CRON_SECRET,
     RELATORIO_MENSAL_EMAILS: process.env.RELATORIO_MENSAL_EMAILS,
+    AGENTE_ISS_TOKEN_SHA256: process.env.AGENTE_ISS_TOKEN_SHA256,
   });
 }
 

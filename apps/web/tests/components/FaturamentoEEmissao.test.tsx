@@ -85,6 +85,8 @@ describe('FaturamentoEEmissao', () => {
         faturamento: 4500,
         informadoPor: 'user-1',
         informadoEm: '2026-07-24T00:00:00Z',
+        origem: 'manual',
+        issCapturaId: null,
       },
       preview: { valor: 250, alertas: [], subtotalFaixa: 'faturamento R$4500.00 < R$5000.00 → R$250.00' },
     });
@@ -123,6 +125,8 @@ describe('FaturamentoEEmissao', () => {
         faturamento: 4000,
         informadoPor: 'user-1',
         informadoEm: '2026-06-24T00:00:00Z',
+        origem: 'manual',
+        issCapturaId: null,
       },
     ]);
 

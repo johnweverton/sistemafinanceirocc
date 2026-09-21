@@ -4,6 +4,7 @@ export * from './types/tipo-servico';
 export * from './types/medico';
 export * from './types/empresa';
 export * from './types/cliente-contabilidade';
+export * from './types/agente-iss';
 export * from './types/integracao';
 export * from './types/execucao';
 export * from './types/preco';
