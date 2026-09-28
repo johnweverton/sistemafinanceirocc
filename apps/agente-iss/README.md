@@ -7,6 +7,8 @@ cada cliente contábil em modo *faixa de faturamento* e envia os valores ao Sist
 Arquitetura: [`docs/architecture/feature-agente-faturamento-iss.md`](../../docs/architecture/feature-agente-faturamento-iss.md) ·
 Story: [`docs/stories/13.2.agente-iss-cli.story.md`](../../docs/stories/13.2.agente-iss-cli.story.md)
 
+> **Tutorial passo a passo (operador e instalação):** [`docs/tutorial-agente-iss.md`](../../docs/tutorial-agente-iss.md)
+
 ## Para o operador
 
 ### Jeito recomendado: botão "Buscar no ISS" no sistema (Story 13.5)
