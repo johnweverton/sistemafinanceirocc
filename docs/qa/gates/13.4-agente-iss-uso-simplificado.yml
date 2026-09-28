@@ -1,0 +1,84 @@
+# QA Gate — Story 13.4 (Fase 1: simplificação de uso do agente ISS) — iteração 1
+storyId: "13.4"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-09-28"
+commit: 2c00bf1
+epic: "13 — Agente de faturamento ISS Fortaleza (docs/architecture/feature-agente-faturamento-iss.md)"
+verdict: PASS
+iterations:
+  - n: 1
+    verdict: PASS
+    issues: [REL-134-1 (low), REL-134-2 (low), TEST-134-1 (low), A11Y-134-1 (info), SEC-134-1 (info), OPS-134-1 (info)]
+
+resumo_do_veredito: >
+  PASS. Os 16 ACs estão implementados e 14 deles travados por teste automatizado (AC 15 — `.cmd` — e
+  AC 16 — README — são artefatos verificados por leitura). `estadoPropostaIss`, `mesmoValor`,
+  `valorInicialDoCampo` e `capturaAceita` não mudaram (diff conferido); R2/R4/R5 e G1–G4 intactos:
+  nenhuma linha nova grava em `clientes_contabilidade_faturamentos`, `configurar` nunca loga no
+  portal e grava o `.env` só depois de `validarConfig` (mesma recusa de OneDrive) passar. Nenhum
+  defeito médio/alto; ficam débitos baixos de robustez do reenvio automático.
+
+notes: >
+  Comandos reexecutados pelo @qa (árvore em 848fa8f + correções QA): typecheck agente-iss exit 0;
+  typecheck shared exit 0; typecheck web só os 2 erros pré-existentes do arquivo NÃO rastreado
+  medico-repository-duplicata.test.ts; lint web sem erros (4 warnings pré-existentes em
+  NovaExecucao.tsx); testes agente-iss, shared e web — ver QA Results da story 13.5 para os
+  números finais (a suíte é compartilhada). `.cmd` conferidos: ASCII puro, CRLF no checkout
+  (`git ls-files --eol` → `w/crlf attr/text eol=crlf`), `.gitattributes` novo cobre `*.cmd`/`*.bat`.
+
+rastreabilidade:
+  AC1: apps/web/tests/lib/proposta-iss.test.ts — classificacaoVisualIss (7 casos + "sem jargão visível")
+  AC2: apps/web/tests/components/LoteContabilidadeDialog.test.tsx — selo verde "Veio do ISS", title com detalhe técnico
+  AC3: PropostaIss.tsx usa text-xs (leitura); sem teste de classe CSS (aceitável)
+  AC4: ResumoCapturaIss inalterado (diff)
+  AC5: proposta-iss.test.ts — estadoPropostaIss/mesmoValor/capturaAceita inalterados e verdes
+  AC6: apps/agente-iss/tests/reenvio.test.ts (marca grava/limpa, varredura só pendentes, falha não interrompe); vigiar.test.ts chama reenviarPendentes
+  AC7-8: apps/agente-iss/tests/cli-apoio.test.ts — AJUDA em duas seções, todas as flags
+  AC9-11: apps/agente-iss/tests/assistente.test.ts — Enter = mês anterior, MM/AAAA, sem TTY não pergunta, link e abrir/recusar
+  AC12: apps/web/tests/components/ClientesContabilidadeManager.test.tsx + proposta-iss.test.ts (competenciaDoLinkLote rejeita 2026-13, 2026-8, texto)
+  AC13-14: apps/agente-iss/tests/configurar.test.ts — .env montado, reuso de validarConfig (OneDrive), 401 → "token inválido"
+  AC15: scripts/agente-iss/Buscar faturamento ISS.cmd — leitura (manual)
+  AC16: apps/agente-iss/README.md — leitura
+
+issues:
+  - id: REL-134-1
+    severity: low
+    titulo: "POST /api/integracoes/iss/execucoes não é idempotente — reenvio automático pode duplicar a execução"
+    description: >
+      `registrarExecucaoIss` sempre insere. Se o servidor gravou mas a resposta se perdeu (timeout de
+      60 s do agente, queda de rede), `enviarComMarca` grava `envio-pendente` e a próxima execução
+      reenvia a MESMA rodada → segunda `iss_execucoes_agente` + capturas duplicadas. Impacto funcional
+      nulo na proposta vigente (mesmo `capturado_em` e valores), mas duplica trilha/histórico. Com o
+      reenvio agora automático, o que antes dependia de alguém copiar um comando passa a acontecer sozinho.
+    recommendation: "Chave de idempotência no servidor (competencia + iniciado_em + maquina): devolver a execução existente em vez de inserir."
+  - id: REL-134-2
+    severity: low
+    titulo: "Marca `envio-pendente` é permanente para erros determinísticos (422)"
+    description: >
+      Um 422 (ex.: cliente removido da carteira) nunca vai passar, mas a marca fica e o agente tenta
+      de novo em toda execução, para sempre, logando a falha.
+    recommendation: "Não marcar (ou marcar como `envio-recusado`, fora da varredura) quando o status for 4xx diferente de 401/408/429."
+  - id: TEST-134-1
+    severity: low
+    titulo: "Lacunas pequenas de teste"
+    description: >
+      (a) `?lote=` inválido só é testado na função pura, não no Manager; (b) a ordem "reenvio antes dos
+      alvos" e o pulo em --offline/--sem-envio vivem em `main()` (cli.ts), sem teste.
+  - id: A11Y-134-1
+    severity: info
+    titulo: "Selo sem role=alert — aceitável"
+    description: >
+      Um `role="alert"` por linha disparava N anúncios ao abrir o diálogo; o progresso da busca já tem
+      região `role="status"` (13.5) e o aviso de agente desligado continua `role="alert"`. O rótulo em
+      texto ("Confira", "Digite à mão") não depende só de cor. `tabIndex=0` em `<p>` só para exibir o
+      `title` é um paliativo: `title` não aparece em toque nem é lido de forma consistente — se o
+      detalhe técnico precisar ser acessível, trocar por disclosure.
+  - id: SEC-134-1
+    severity: info
+    titulo: "configurar mostra o CPF MASTER em claro no prompt \"Enter mantém …\""
+    description: "Só local (tela do escritório); token já é mascarado. Considerar mascarar o CPF também."
+  - id: OPS-134-1
+    severity: info
+    titulo: "Validação ao vivo pendente"
+    description: "Duplo clique em TTY real (senha sem eco no console do Windows, `start` abrindo o navegador) e o link ?lote= em produção — pendência declarada pelo @dev."
