@@ -30,6 +30,9 @@ const mockDispararLote = vi.fn();
 const mockLancarFaturamentoLote = vi.fn();
 const mockFaturamentosLancados = vi.fn();
 const mockPropostasIss = vi.fn();
+const mockSolicitacaoIss = vi.fn();
+const mockSolicitarBuscaIss = vi.fn();
+const mockCancelarSolicitacaoIss = vi.fn();
 vi.mock('../../src/services/clientes-contabilidade', () => ({
   clientesContabilidadeService: {
     comBoleto: (...a: unknown[]) => mockComBoleto(...a),
@@ -37,13 +40,24 @@ vi.mock('../../src/services/clientes-contabilidade', () => ({
     lancarFaturamentoLote: (...a: unknown[]) => mockLancarFaturamentoLote(...a),
     faturamentosLancados: (...a: unknown[]) => mockFaturamentosLancados(...a),
     propostasIss: (...a: unknown[]) => mockPropostasIss(...a),
+    solicitacaoIss: (...a: unknown[]) => mockSolicitacaoIss(...a),
+    solicitarBuscaIss: (...a: unknown[]) => mockSolicitarBuscaIss(...a),
+    cancelarSolicitacaoIss: (...a: unknown[]) => mockCancelarSolicitacaoIss(...a),
   },
   clienteContabilidadeQueryKeys: {
     clientes: () => ['clientes-contabilidade'],
     comBoleto: (c: string) => ['clientes-contabilidade', 'com-boleto', c],
     faturamentosLancados: (c: string) => ['clientes-contabilidade', 'faturamentos-lancados', c],
     propostasIss: (c: string) => ['clientes-contabilidade', 'propostas-iss', c],
+    solicitacaoIss: (c: string) => ['clientes-contabilidade', 'solicitacao-iss', c],
   },
+}));
+
+// Story 13.5: polling da solicitação do ISS em 50 ms (em vez de 5 s) para os testes de progresso
+// não dependerem de relógio falso — o resto do módulo é o real.
+vi.mock('../../src/lib/solicitacao-iss', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/lib/solicitacao-iss')>()),
+  INTERVALO_POLLING_SOLICITACAO_MS: 50,
 }));
 
 const mockResultados = vi.fn();
@@ -153,6 +167,8 @@ beforeEach(() => {
   mockFaturamentosLancados.mockResolvedValue({ clienteContabilidadeIds: [] });
   // Story 13.3: por padrão o agente do ISS ainda não rodou — o passo 1 fica igual ao de antes.
   mockPropostasIss.mockResolvedValue({ competencia: '2026-06', propostas: [], ultimaExecucao: null, lancados: [] });
+  // Story 13.5: por padrão nunca houve busca no ISS pelo sistema nesta competência.
+  mockSolicitacaoIss.mockResolvedValue(null);
   mockDispararLote.mockResolvedValue({ execucaoId: 'exec-1' });
   mockRetomar.mockResolvedValue({ ok: true });
   mockDetalhe.mockResolvedValue(execucaoFake());
@@ -985,5 +1001,198 @@ describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
     fireEvent.change(screen.getByLabelText(/Competência/i), { target: { value: '2026-05' } });
 
     await waitFor(() => expect(mockPropostasIss).toHaveBeenCalledWith('2026-05'));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Story 13.5 (Fase 2): "Buscar no ISS" pelo sistema — botão, andamento com polling, invalidação
+// das propostas a cada tick, aviso de agente parado, cancelar e "Tentar de novo" por empresa.
+// ---------------------------------------------------------------------------------------------
+
+function solicitacaoFake(over: Record<string, unknown> = {}) {
+  return {
+    id: 'sol-1',
+    competencia: '2026-06',
+    documentos: null,
+    status: 'pendente',
+    solicitadoPor: 'u1',
+    solicitadoEm: new Date().toISOString(),
+    iniciadoEm: null,
+    finalizadoEm: null,
+    progressoAtual: null,
+    progressoTotal: null,
+    execucaoId: null,
+    mensagemErro: null,
+    maquina: null,
+    heartbeatEm: null,
+    ...over,
+  };
+}
+
+const faixaComDocumento = {
+  ...faixaA,
+  cobranca: { pagadorDocumento: '08.293.377/0001-98' } as ClienteContabilidade['cobranca'],
+};
+
+function botaoBuscarIss() {
+  return screen.getByRole('button', { name: 'Buscar no ISS' });
+}
+
+const agoraIso = () => new Date().toISOString();
+
+describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', () => {
+  it('sem busca ativa: "Buscar no ISS" habilitado; clicar pede a carteira inteira e mostra "Na fila"', async () => {
+    mockSolicitarBuscaIss.mockResolvedValue(solicitacaoFake());
+    renderDialog([faixaA, faixaB]);
+
+    await waitFor(() => expect(botaoBuscarIss()).toBeEnabled());
+    fireEvent.click(botaoBuscarIss());
+
+    await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', undefined));
+    expect(await screen.findByText(/Na fila — aguardando o computador do escritório/)).toBeInTheDocument();
+    expect(botaoBuscarIss()).toBeDisabled();
+  });
+
+  it('busca ativa: botão desabilitado COM o motivo, indicador "Buscando no ISS… 34/90" e "Cancelar busca"', async () => {
+    mockSolicitacaoIss.mockResolvedValue(
+      solicitacaoFake({ status: 'em_andamento', progressoAtual: 34, progressoTotal: 90, heartbeatEm: agoraIso() }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    expect(await screen.findByText('Buscando no ISS… 34/90')).toBeInTheDocument();
+    expect(botaoBuscarIss()).toBeDisabled();
+    expect(botaoBuscarIss()).toHaveAttribute('title', 'Já existe uma busca no ISS em andamento para 2026-06');
+    expect(screen.getByText(/Já existe uma busca no ISS em andamento para 2026-06 — os campos/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancelar busca' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument(); // agente vivo: sem aviso
+  });
+
+  it('cada tick do polling revalida as propostas: campo não tocado se preenche, o digitado fica', async () => {
+    let tick = 0;
+    mockSolicitacaoIss.mockImplementation(async () => {
+      tick += 1;
+      if (tick === 1) {
+        return solicitacaoFake({ status: 'em_andamento', progressoAtual: 0, progressoTotal: 2, heartbeatEm: agoraIso() });
+      }
+      if (tick === 2) {
+        return solicitacaoFake({ status: 'em_andamento', progressoAtual: 1, progressoTotal: 2, heartbeatEm: agoraIso() });
+      }
+      return solicitacaoFake({ status: 'concluida', progressoAtual: 2, progressoTotal: 2, finalizadoEm: agoraIso() });
+    });
+    // As propostas "chegam" depois que o agente leu a 1ª empresa.
+    mockPropostasIss.mockImplementation(async () =>
+      tick >= 2
+        ? respostaIss({ propostas: [propostaIss('cc-1'), propostaIss('cc-2')] })
+        : respostaIss({ propostas: [] }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    const campos = await screen.findAllByRole('spinbutton');
+    fireEvent.change(campos[1]!, { target: { value: '777' } }); // o operador já digitou o 2º
+
+    await waitFor(() => expect(campos[0]).toHaveValue(34375.07));
+    expect(campos[1]).toHaveValue(777); // nada sobrescreve o que foi digitado
+    await waitFor(() => expect(screen.getByText(/Busca no ISS concluída às/)).toBeInTheDocument());
+    expect(mockPropostasIss.mock.calls.length).toBeGreaterThanOrEqual(3);
+
+    // Concluída: o polling para sozinho.
+    const chamadas = mockSolicitacaoIss.mock.calls.length;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(mockSolicitacaoIss.mock.calls.length).toBe(chamadas);
+    expect(screen.queryByRole('button', { name: 'Cancelar busca' })).not.toBeInTheDocument();
+    expect(botaoBuscarIss()).toBeEnabled();
+  });
+
+  it('pendente há mais de 3 min: avisa que o computador do escritório parece desligado', async () => {
+    mockSolicitacaoIss.mockResolvedValue(
+      solicitacaoFake({ solicitadoEm: new Date(Date.now() - 10 * 60_000).toISOString() }),
+    );
+    renderDialog([faixaA, faixaB]);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/computador do escritório com o agente parece desligado/);
+  });
+
+  it('em andamento com heartbeat parado há mais de 3 min também avisa', async () => {
+    mockSolicitacaoIss.mockResolvedValue(
+      solicitacaoFake({
+        status: 'em_andamento',
+        progressoAtual: 3,
+        progressoTotal: 90,
+        heartbeatEm: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    );
+    renderDialog([faixaA, faixaB]);
+    expect(await screen.findByText(/parece desligado/)).toBeInTheDocument();
+  });
+
+  it('"Cancelar busca" chama o cancelar e o botão some; "Buscar no ISS" volta a valer', async () => {
+    mockSolicitacaoIss.mockResolvedValue(solicitacaoFake());
+    mockCancelarSolicitacaoIss.mockResolvedValue(solicitacaoFake({ status: 'cancelada', finalizadoEm: agoraIso() }));
+    renderDialog([faixaA, faixaB]);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar busca' }));
+
+    await waitFor(() => expect(mockCancelarSolicitacaoIss).toHaveBeenCalledWith('sol-1'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Cancelar busca' })).not.toBeInTheDocument());
+    expect(screen.getByText(/Busca no ISS cancelada às/)).toBeInTheDocument();
+    expect(botaoBuscarIss()).toBeEnabled();
+  });
+
+  it('"Tentar de novo" na empresa não encontrada pede a busca SÓ do documento dela', async () => {
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({ propostas: [propostaIss('cc-1', { status: 'nao_encontrado', valorServicosPrestados: null })] }),
+    );
+    mockSolicitarBuscaIss.mockResolvedValue(solicitacaoFake({ documentos: ['08293377000198'] }));
+    renderDialog([faixaComDocumento, faixaB]);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Tentar de novo no ISS: Padaria Bom Pão Ltda/ }));
+
+    await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', ['08293377000198']));
+    expect(await screen.findByText(/Na fila \(1 empresa\)/)).toBeInTheDocument();
+  });
+
+  it('"Tentar de novo" por empresa fica desabilitado com busca ativa; não aparece sem documento', async () => {
+    mockSolicitacaoIss.mockResolvedValue(solicitacaoFake({ status: 'em_andamento', heartbeatEm: agoraIso() }));
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({
+        propostas: [
+          propostaIss('cc-1', { status: 'erro', valorServicosPrestados: null }),
+          // cc-2 sem documento no cadastro: não há o que buscar
+          propostaIss('cc-2', { status: 'nao_encontrado', valorServicosPrestados: null }),
+        ],
+      }),
+    );
+    renderDialog([faixaComDocumento, faixaB]);
+
+    const tentar = await screen.findByRole('button', { name: /Tentar de novo no ISS: Padaria/ });
+    await waitFor(() => expect(tentar).toBeDisabled());
+    expect(screen.queryByRole('button', { name: /Tentar de novo no ISS: Clínica Vida/ })).not.toBeInTheDocument();
+  });
+
+  it('sem escrituração (resposta legítima do portal) não oferece "Tentar de novo"', async () => {
+    mockPropostasIss.mockResolvedValue(
+      respostaIss({ propostas: [propostaIss('cc-1', { status: 'sem_escrituracao', valorServicosPrestados: null })] }),
+    );
+    renderDialog([faixaComDocumento, faixaB]);
+    await screen.findByText(/sem escrituração nesta competência/);
+    expect(screen.queryByRole('button', { name: /Tentar de novo no ISS/ })).not.toBeInTheDocument();
+  });
+
+  it('consulta da busca indisponível (ex.: migration ainda não aplicada) não bloqueia o passo 1', async () => {
+    mockSolicitacaoIss.mockRejectedValue(new ApiClientError(500, 'relation does not exist', 'DB_ERROR'));
+    await preencher(['4500', '9000']);
+
+    expect(
+      await screen.findByText(/Não foi possível verificar as buscas no ISS pelo sistema/, {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Buscar no ISS' })).not.toBeInTheDocument();
+    await waitFor(() => expect(botaoLancar()).toBeEnabled());
+  });
+
+  it('trocar a competência consulta a busca da competência nova', async () => {
+    renderDialog([faixaA, faixaB]);
+    await waitFor(() => expect(mockSolicitacaoIss).toHaveBeenCalledWith('2026-06'));
+    fireEvent.change(screen.getByLabelText(/Competência/i), { target: { value: '2026-05' } });
+    await waitFor(() => expect(mockSolicitacaoIss).toHaveBeenCalledWith('2026-05'));
   });
 });

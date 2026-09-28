@@ -23,6 +23,7 @@ import {
   listarClientesContabilidade,
   listarClientesContabilidadePorIds,
 } from './cliente-contabilidade-repository';
+import { exigirSolicitacaoIssEmAndamento } from './iss-solicitacao-repository';
 
 function somenteDigitos(doc: string | null | undefined): string {
   return (doc ?? '').replace(/\D/g, '');
@@ -112,6 +113,10 @@ export function totalizarCapturas(capturas: { status: keyof TotaisExecucaoIss }[
  * "0 capturados". O agente guarda o JSON localmente e reenvia.
  */
 export async function registrarExecucaoIss(input: NovaExecucaoIssInput): Promise<ExecucaoIssRegistrada> {
+  // Story 13.5 (AC 13): execução que diz atender uma solicitação do sistema web só entra se ela
+  // estiver `em_andamento` — mesma disciplina de "valida tudo antes de gravar, 422 se não bate".
+  // Quem CONCLUI a solicitação continua sendo `POST .../solicitacoes/{id}/concluir`.
+  if (input.solicitacaoId) await exigirSolicitacaoIssEmAndamento(input.solicitacaoId);
   await validarClientes(input.capturas.map((c) => c.clienteContabilidadeId));
   const historico = await historicoParaR5(input);
   const totais = totalizarCapturas(input.capturas);

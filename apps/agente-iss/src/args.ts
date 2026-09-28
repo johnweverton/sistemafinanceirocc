@@ -17,6 +17,10 @@ export interface OpcoesCli {
   /** Não fala com o sistema: alvos vêm de --cnpj, resultado só fica no JSON local. */
   offline: boolean;
   ajuda: boolean;
+  /** Story 13.5: atende pedidos do sistema web, consultando a cada 60 s. */
+  vigiar: boolean;
+  /** Story 13.5: atende no máximo um pedido do sistema e termina (tarefa agendada). */
+  umaVez: boolean;
 }
 
 export class ErroArgs extends Error {}
@@ -44,7 +48,14 @@ Avançado (depuração):
   --sem-envio             não envia ao sistema (só salva o JSON local)
   --offline               não fala com o sistema (exige --cnpj; só salva o JSON local)
                           — para validar a leitura do portal antes do sistema estar no ar
-  --reenviar ARQUIVO      reenvia manualmente um JSON salvo, sem abrir o portal`;
+  --reenviar ARQUIVO      reenvia manualmente um JSON salvo, sem abrir o portal
+  --vigiar                fica esperando os pedidos feitos no sistema (botão "Buscar no ISS")
+                          e os executa; consulta a cada 60 s (Ctrl+C para parar)
+  --uma-vez               atende no máximo UM pedido do sistema e termina — é o que a tarefa
+                          agendada (scripts\\agente-iss\\instalar-tarefa-agendada.cmd) roda a cada minuto`;
+
+/** Flags que não combinam com --vigiar/--uma-vez: a competência e as empresas vêm do pedido. */
+const INCOMPATIVEIS_COM_VIGIAR = ['competencia', 'cnpj', 'limite', 'offline', 'sem-envio', 'reenviar'] as const;
 
 export function lerOpcoes(argv: string[], hoje: Date = new Date()): OpcoesCli {
   let v;
@@ -61,12 +72,27 @@ export function lerOpcoes(argv: string[], hoje: Date = new Date()): OpcoesCli {
         reenviar: { type: 'string' },
         offline: { type: 'boolean', default: false },
         ajuda: { type: 'boolean', default: false },
+        vigiar: { type: 'boolean', default: false },
+        'uma-vez': { type: 'boolean', default: false },
       },
       strict: true,
       allowPositionals: false,
     }).values;
   } catch (e) {
     throw new ErroArgs(`${(e as Error).message}\n\n${AJUDA}`);
+  }
+
+  // Story 13.5 (AC 15, 16): modos que atendem pedidos do sistema web.
+  const vigiar = v.vigiar ?? false;
+  const umaVez = v['uma-vez'] ?? false;
+  if (vigiar && umaVez) throw new ErroArgs('Use --vigiar OU --uma-vez, não os dois.');
+  if (vigiar || umaVez) {
+    const conflito = INCOMPATIVEIS_COM_VIGIAR.find((k) => v[k] !== undefined && v[k] !== false);
+    if (conflito) {
+      throw new ErroArgs(
+        `--${conflito} não combina com ${vigiar ? '--vigiar' : '--uma-vez'}: a competência e as empresas vêm do pedido feito no sistema.`,
+      );
+    }
   }
 
   const competencia = v.competencia ?? competenciaAnterior(hoje);
@@ -95,5 +121,7 @@ export function lerOpcoes(argv: string[], hoje: Date = new Date()): OpcoesCli {
     reenviar: v.reenviar ?? null,
     offline,
     ajuda: v.ajuda ?? false,
+    vigiar,
+    umaVez,
   };
 }

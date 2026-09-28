@@ -51,6 +51,9 @@ export const novaExecucaoIssSchema = z
       .min(1, 'Envie ao menos uma captura')
       .max(AGENTE_ISS_MAX_CAPTURAS, `Máximo de ${AGENTE_ISS_MAX_CAPTURAS} capturas por execução`),
     ciencias: z.array(cienciaSchema).max(AGENTE_ISS_MAX_CAPTURAS).default([]),
+    // Story 13.5 (AC 13): execução que atende uma solicitação do sistema web. Só GUARDA de
+    // consistência (a solicitação tem de estar `em_andamento`); quem conclui é `.../concluir`.
+    solicitacaoId: z.string().uuid().optional(),
   })
   .strict()
   .refine(

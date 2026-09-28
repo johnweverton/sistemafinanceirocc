@@ -9,12 +9,15 @@
 //
 // Story 13.4: sem nenhum argumento num terminal interativo, roda o MODO ASSISTENTE (pergunta a
 // competência, confirma, e no fim oferece abrir o diálogo de lote); `configurar` grava o `.env`.
+//
+// Story 13.5: o miolo de uma rodada mora em `executarCompetencia` (executar-competencia.ts),
+// compartilhado com os modos `--vigiar`/`--uma-vez` (vigiar.ts), que atendem os pedidos feitos
+// pelo botão "Buscar no ISS" do sistema web.
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { chromium, type Browser } from 'playwright';
-import type { AlvoIss, AlvosIssResposta, NovaCapturaIss, NovaExecucaoIss } from '@cobranca/shared';
-import { AJUDA, ErroArgs, lerOpcoes } from './args';
+import type { NovaExecucaoIss } from '@cobranca/shared';
+import { AJUDA, ErroArgs, lerOpcoes, type OpcoesCli } from './args';
 import {
   comTerminal,
   confirmarInicio,
@@ -25,32 +28,19 @@ import {
 } from './assistente';
 import { executarConfigurar } from './configurar';
 import { enviarComMarca, reenviarPendentes } from './reenvio';
-import { carregarConfig, ErroConfig } from './config';
-import { buscarAlvos, enviarExecucao, ErroApi } from './api-client';
-import { criarDiagnostico, redigirCpf } from './diagnostico';
-import { ErroComunicadoPendente, ErroEmpresaNaoEncontrada, ErroLogin, PortalIss } from './portal/portal';
-import { montarExecucao, resumoTexto, type ResultadoEmpresa } from './relatorio';
-
-const VERSAO = '0.1.0';
-
-function carimbo(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-}
-
-function capturaBase(alvo: AlvoIss): Omit<NovaCapturaIss, 'status'> {
-  return {
-    clienteContabilidadeId: alvo.clienteContabilidadeId,
-    valorServicosPrestados: null,
-    quantidadeNotas: null,
-    situacaoIss: null,
-    competenciaFechada: null,
-    inscricaoMunicipal: null,
-    razaoSocialIss: null,
-    mensagemErro: null,
-    capturadoEm: new Date().toISOString(),
-  };
-}
+import { carregarConfig, ErroConfig, type ConfigAgente } from './config';
+import {
+  buscarProximaSolicitacao,
+  concluirSolicitacao,
+  enviarExecucao,
+  enviarProgresso,
+  ErroApi,
+} from './api-client';
+import { redigirCpf } from './diagnostico';
+import { ErroLogin } from './portal/portal';
+import { executarCompetencia } from './executar-competencia';
+import { resumoTexto } from './relatorio';
+import { vigiar } from './vigiar';
 
 async function enviar(sistemaUrl: string, token: string, execucao: NovaExecucaoIss, arquivo: string): Promise<boolean> {
   try {
@@ -75,6 +65,42 @@ async function enviar(sistemaUrl: string, token: string, execucao: NovaExecucaoI
 
 const escrever = (texto: string) => console.log(texto);
 
+/**
+ * Story 13.5 (AC 15, 16): atende os pedidos do sistema web. O log vai para o console E para
+ * `<pastaBase>\vigiar.log` — na tarefa agendada ninguém vê a janela.
+ */
+function rodarVigiar(opts: OpcoesCli, cfg: ConfigAgente): Promise<number> {
+  mkdirSync(cfg.pastaBase, { recursive: true });
+  const arquivoLog = join(cfg.pastaBase, 'vigiar.log');
+  const log = (msg: string) => {
+    const linha = `[${new Date().toLocaleString('pt-BR')}] ${redigirCpf(msg, cfg.issCpf)}`;
+    console.log(linha);
+    try {
+      appendFileSync(arquivoLog, linha + '\n');
+    } catch {
+      /* log em disco é conveniência — nunca derruba o agente */
+    }
+  };
+  const maquina = hostname();
+  return vigiar(
+    { umaVez: opts.umaVez },
+    {
+      buscarProxima: () => buscarProximaSolicitacao(cfg.sistemaUrl, cfg.token, maquina),
+      enviarProgresso: (id, atual, total) => enviarProgresso(cfg.sistemaUrl, cfg.token, id, atual, total),
+      enviarExecucao: (execucao, arquivoJson) =>
+        enviarComMarca(arquivoJson, execucao, (e) => enviarExecucao(cfg.sistemaUrl, cfg.token, e)),
+      concluir: (id, conclusao) => concluirSolicitacao(cfg.sistemaUrl, cfg.token, id, conclusao),
+      executar: (o) =>
+        executarCompetencia({ ...o, config: cfg, headed: opts.headed, reconhecer: opts.reconhecer }),
+      reenviarPendentes: () =>
+        reenviarPendentes(cfg.pastaBase, (e) => enviarExecucao(cfg.sistemaUrl, cfg.token, e), log),
+      esperar: (ms) => new Promise((r) => setTimeout(r, ms)),
+      log,
+      redigir: (msg) => redigirCpf(msg, cfg.issCpf),
+    },
+  );
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   // Story 13.4 (AC 13): subcomando despachado ANTES de `lerOpcoes` (que não aceita posicionais).
@@ -98,6 +124,8 @@ async function main(): Promise<number> {
   }
   const cfg = carregarConfig(undefined, { apenasPortal: opts.offline });
 
+  if (opts.vigiar || opts.umaVez) return rodarVigiar(opts, cfg);
+
   if (opts.reenviar) {
     const execucao = JSON.parse(readFileSync(opts.reenviar, 'utf8')) as NovaExecucaoIss;
     return (await enviar(cfg.sistemaUrl, cfg.token, execucao, opts.reenviar)) ? 0 : 2;
@@ -110,138 +138,21 @@ async function main(): Promise<number> {
     await reenviarPendentes(cfg.pastaBase, (e) => enviarExecucao(cfg.sistemaUrl, cfg.token, e));
   }
 
-  const pastaExecucao = join(cfg.pastaBase, 'execucoes', `${carimbo()}-${opts.competencia}`);
-  mkdirSync(pastaExecucao, { recursive: true });
-  const diag = criarDiagnostico(pastaExecucao, cfg.issCpf, opts.reconhecer);
-  diag.log(`Agente ISS v${VERSAO} — competência ${opts.competencia} — saída em ${pastaExecucao}`);
-
-  // 1. Alvos (no --offline, vêm de --cnpj; o id é fictício porque nada vai ao sistema)
-  const resposta: AlvosIssResposta = opts.offline
-    ? {
-        competencia: opts.competencia,
-        alvos: opts.documentos.map((documento) => ({
-          clienteContabilidadeId: '00000000-0000-0000-0000-000000000000',
-          nome: documento,
-          documento,
-        })),
-        semDocumento: [],
-      }
-    : await buscarAlvos(cfg.sistemaUrl, cfg.token, opts.competencia);
-  if (opts.offline) diag.log('Modo --offline: nada será enviado ao sistema.');
-  let alvos = resposta.alvos;
-  if (opts.documentos.length) {
-    alvos = alvos.filter((a) => opts.documentos.includes(a.documento));
-    const faltam = opts.documentos.filter((d) => !resposta.alvos.some((a) => a.documento === d));
-    if (faltam.length) diag.log(`Aviso: não são clientes ativos em faixa de faturamento: ${faltam.join(', ')}`);
-  }
-  if (opts.limite) alvos = alvos.slice(0, opts.limite);
-  if (resposta.semDocumento.length) {
-    diag.log(
-      `Aviso: ${resposta.semDocumento.length} cliente(s) sem CPF/CNPJ no cadastro — não dá para buscar no portal: ` +
-        resposta.semDocumento.map((s) => s.nome).join('; '),
-    );
-  }
-  if (alvos.length === 0) {
-    diag.log('Nenhuma empresa para buscar.');
-    return 0;
-  }
-  diag.log(`${alvos.length} empresa(s) para buscar.`);
-  if (assistente) {
-    const n = alvos.length;
-    const ok = await comTerminal((t) => confirmarInicio(t.perguntar, escrever, opts.competencia, n));
-    if (!ok) {
-      diag.log('Cancelado pelo operador antes de abrir o portal.');
-      return 0;
-    }
-  }
-
-  // 2. Portal
-  const iniciadoEm = new Date();
-  const resultados: ResultadoEmpresa[] = [];
-  const arquivoJson = join(pastaExecucao, 'execucao.json');
-  const salvar = () => {
-    const execucao = montarExecucao({
-      competencia: opts.competencia,
-      iniciadoEm,
-      finalizadoEm: new Date(),
-      maquina: hostname(),
-      versaoAgente: VERSAO,
-      resultados,
-    });
-    writeFileSync(arquivoJson, JSON.stringify(execucao, null, 2));
-    return execucao;
-  };
-
-  let browser: Browser | null = null;
-  process.once('SIGINT', () => {
-    diag.log('Interrompido (Ctrl+C) — salvando o que já foi lido, SEM enviar.');
-    if (resultados.length) salvar();
-    void browser?.close();
-    process.exit(130);
+  const { execucao, resultados, arquivoJson } = await executarCompetencia({
+    competencia: opts.competencia,
+    documentos: opts.documentos,
+    config: cfg,
+    limite: opts.limite,
+    headed: opts.headed,
+    reconhecer: opts.reconhecer,
+    offline: opts.offline,
+    // No modo CLI o progresso já aparece no log "(N/total)"; nada vai à rede por ele.
+    confirmarInicio: assistente
+      ? (n) => comTerminal((t) => confirmarInicio(t.perguntar, escrever, opts.competencia, n))
+      : undefined,
   });
+  if (!execucao) return 0; // nenhuma empresa para buscar, ou o operador não confirmou
 
-  try {
-    browser = await chromium
-      .launch({ channel: 'chrome', headless: !opts.headed })
-      .catch(() => chromium.launch({ headless: !opts.headed })); // sem Chrome instalado: Chromium do Playwright
-    const context = await browser.newContext({ locale: 'pt-BR', acceptDownloads: false, viewport: { width: 1600, height: 1000 } });
-    const page = await context.newPage();
-    page.setDefaultTimeout(30_000);
-    const portal = new PortalIss(page, diag);
-    await portal.login(cfg.issCpf, cfg.issSenha);
-
-    for (const [i, alvo] of alvos.entries()) {
-      diag.log(`(${i + 1}/${alvos.length}) ${alvo.nome} — ${alvo.documento}`);
-      let captura: NovaCapturaIss | null = null;
-      for (let tentativa = 1; tentativa <= 2 && !captura; tentativa += 1) {
-        try {
-          if (portal.sessaoPerdida()) await portal.recuperar(cfg.issCpf, cfg.issSenha);
-          const empresa = await portal.selecionarEmpresa(alvo.documento);
-          const leitura = await portal.lerCompetencia(opts.competencia);
-          const base = { ...capturaBase(alvo), inscricaoMunicipal: empresa.inscricao, razaoSocialIss: empresa.razaoSocial };
-          captura =
-            leitura.tipo === 'capturado'
-              ? {
-                  ...base,
-                  status: 'capturado',
-                  valorServicosPrestados: leitura.valor,
-                  quantidadeNotas: leitura.quantidade,
-                  situacaoIss: leitura.situacao || null,
-                  competenciaFechada: leitura.fechada,
-                }
-              : { ...base, status: 'sem_escrituracao' };
-        } catch (e) {
-          if (e instanceof ErroLogin) throw e; // senha errada: parar tudo (não arriscar bloqueio)
-          if (e instanceof ErroEmpresaNaoEncontrada) {
-            captura = { ...capturaBase(alvo), status: 'nao_encontrado', mensagemErro: e.message };
-            break;
-          }
-          const sessaoCaiu = portal.sessaoPerdida();
-          if (sessaoCaiu && tentativa === 1) {
-            diag.log('  sessão caiu no meio — relogando e tentando esta empresa de novo');
-            await portal.recuperar(cfg.issCpf, cfg.issSenha);
-            continue;
-          }
-          const msg = redigirCpf((e as Error).message, cfg.issCpf).slice(0, 900);
-          if (!(e instanceof ErroComunicadoPendente)) await diag.snapshot(page, `erro-${alvo.documento}`);
-          captura = { ...capturaBase(alvo), status: 'erro', mensagemErro: msg };
-          await portal.recuperar(cfg.issCpf, cfg.issSenha).catch(() => undefined);
-        }
-      }
-      const c = captura ?? { ...capturaBase(alvo), status: 'erro' as const, mensagemErro: 'Sem resultado' };
-      resultados.push({ nome: alvo.nome, documento: alvo.documento, captura: c });
-      diag.log(
-        `  → ${c.status}${c.status === 'capturado' ? ` R$ ${c.valorServicosPrestados?.toFixed(2)} (${c.situacaoIss})` : c.mensagemErro ? `: ${c.mensagemErro}` : ''}`,
-      );
-      salvar(); // parcial a cada empresa: queda no meio não perde o que já foi lido
-      await page.waitForTimeout(500); // ritmo de uso humano
-    }
-  } finally {
-    await browser?.close().catch(() => undefined);
-  }
-
-  // 3. Resultado
-  const execucao = salvar();
   console.log('\n' + resumoTexto(opts.competencia, resultados));
   console.log(`\nResultado salvo em ${arquivoJson}`);
   if (opts.semEnvio) {

@@ -117,3 +117,32 @@ describe('AJUDA', () => {
     expect(lerOpcoes(['--ajuda']).ajuda).toBe(true);
   });
 });
+
+// Story 13.5 (AC 15, 16): modos que atendem os pedidos do sistema web.
+describe('--vigiar / --uma-vez', () => {
+  it('são flags do "Avançado", com a tarefa agendada citada', () => {
+    const [comum, avancado] = AJUDA.split('Avançado');
+    expect(avancado).toContain('--vigiar');
+    expect(avancado).toContain('--uma-vez');
+    expect(avancado).toContain('instalar-tarefa-agendada.cmd');
+    expect(comum).not.toContain('--vigiar');
+  });
+
+  it('lerOpcoes reconhece cada uma; padrão é desligado', () => {
+    expect(lerOpcoes([])).toMatchObject({ vigiar: false, umaVez: false });
+    expect(lerOpcoes(['--vigiar'])).toMatchObject({ vigiar: true, umaVez: false });
+    expect(lerOpcoes(['--uma-vez', '--headed'])).toMatchObject({ vigiar: false, umaVez: true, headed: true });
+  });
+
+  it.each([
+    [['--vigiar', '--uma-vez']],
+    [['--vigiar', '--competencia', '2026-08']],
+    [['--uma-vez', '--cnpj', '07286006000116']],
+    [['--vigiar', '--offline', '--cnpj', '07286006000116']],
+    [['--uma-vez', '--sem-envio']],
+    [['--vigiar', '--limite', '2']],
+    [['--uma-vez', '--reenviar', 'x.json']],
+  ])('rejeita a combinação %j (a competência e as empresas vêm do pedido)', (argv) => {
+    expect(() => lerOpcoes(argv)).toThrow(ErroArgs);
+  });
+});

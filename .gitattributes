@@ -1,0 +1,4 @@
+# Scripts do cmd.exe precisam de CRLF no checkout (Story 13.4/13.5): com LF o cmd.exe le o
+# arquivo desalinhado e executa pedaços de linha. Assim não dependem de core.autocrlf.
+*.cmd text eol=crlf
+*.bat text eol=crlf

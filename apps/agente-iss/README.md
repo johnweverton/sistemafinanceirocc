@@ -9,6 +9,43 @@ Story: [`docs/stories/13.2.agente-iss-cli.story.md`](../../docs/stories/13.2.age
 
 ## Para o operador
 
+### Jeito recomendado: botão "Buscar no ISS" no sistema (Story 13.5)
+
+**Uma vez só, no computador do escritório** (alguém do sistema faz isso):
+
+1. rode `npm run iss:configurar` (CPF e senha do ISS, token do agente e endereço do sistema — ver
+   *Primeira vez neste computador* abaixo);
+2. dê um duplo clique em `scripts\agente-iss\instalar-tarefa-agendada.cmd`. Ele cria no Agendador de
+   Tarefas do Windows a tarefa **"Agente ISS - pedidos do sistema"**, que a cada minuto roda
+   `npm run iss:faturamento -- --uma-vez`: pergunta ao sistema se alguém pediu uma busca e, se sim,
+   faz a leitura; se não, termina na hora.
+   - Do jeito padrão a tarefa só roda com alguém logado no Windows, e uma janela preta pode piscar por
+     alguns segundos a cada minuto. Para não ter janela nenhuma (e rodar mesmo sem ninguém logado),
+     use `instalar-tarefa-agendada.cmd /oculta` — o Windows pede a senha **do Windows** dessa conta.
+   - Para desinstalar: `instalar-tarefa-agendada.cmd /remover`.
+   - Sem tarefa agendada, dá para deixar uma janela aberta com `npm run iss:faturamento -- --vigiar`
+     (consulta a cada 60 s até a janela ser fechada).
+
+**Depois disso, no dia a dia** (qualquer pessoa, de qualquer computador):
+
+1. abra *Clientes Contábeis › Calcular em lote* e escolha o mês;
+2. clique em **Buscar no ISS**. A linha ao lado mostra "Na fila…" e, quando o computador do escritório
+   pega o pedido (em até 1 minuto), "Buscando no ISS… 34/90";
+3. os campos que você **não** mexeu vão se preenchendo sozinhos conforme a busca avança — o que você
+   já digitou nunca é trocado;
+4. se uma empresa ficar em **Digite à mão** por "não encontrada" ou "falha na leitura", o link
+   **Tentar de novo** ao lado busca só ela.
+
+Enquanto uma busca está em andamento o botão fica desabilitado (só existe uma por mês de cada vez) e
+aparece **Cancelar busca**. Se a tela avisar que **o computador do escritório parece desligado**, é
+porque o pedido está parado há mais de 3 minutos: confira se o computador está ligado e com a tarefa
+instalada. O que o agente fez fica registrado em `%USERPROFILE%\agente-iss\vigiar.log`.
+
+A senha do ISS continua **só** no `.env` do computador do escritório: o botão não a envia, e nenhuma
+parte do sistema na internet a conhece.
+
+### Jeito manual: atalho na Área de Trabalho
+
 **O que o atalho faz.** Dê um duplo clique em **Buscar faturamento ISS** (o arquivo
 `scripts\agente-iss\Buscar faturamento ISS.cmd`; para tê-lo na Área de Trabalho, clique com o botão
 direito › *Enviar para* › *Área de trabalho (criar atalho)* — ou copie o arquivo depois de rodá-lo uma
@@ -69,8 +106,29 @@ npm run iss:faturamento -- --cnpj 08293377000198 --headed # uma empresa, vendo o
 npm run iss:faturamento -- --offline --cnpj 08293377000198 --headed
                                                           # valida a leitura do portal sem falar com o sistema
 npm run iss:faturamento -- --reenviar "<pasta>\execucao.json"  # envio falhou? reenvia sem abrir o portal
+npm run iss:faturamento -- --vigiar                       # atende os pedidos do botão "Buscar no ISS" (a cada 60 s)
+npm run iss:faturamento -- --uma-vez                      # atende no máximo UM pedido e termina (tarefa agendada)
 npm run iss:faturamento -- --ajuda
 ```
+
+### Modo vigiar / agendado (Story 13.5)
+
+`--vigiar` e `--uma-vez` não aceitam `--competencia`, `--cnpj`, `--limite`, `--offline`, `--sem-envio`
+nem `--reenviar`: a competência e as empresas vêm do pedido feito no sistema (`--headed` e
+`--reconhecer` continuam valendo, para depuração). Por pedido, o agente:
+
+1. reivindica o pedido em `GET /api/integracoes/iss/solicitacoes/proxima` (o sistema o marca
+   *em andamento* em nome desta máquina — dois agentes nunca pegam o mesmo);
+2. reenvia o que tiver ficado pendente de execuções anteriores;
+3. abre o navegador e faz **um login novo** (a sessão do portal não é reaproveitada entre pedidos),
+   lendo só as empresas pedidas (pedido de "Tentar de novo" = uma empresa só);
+4. manda o progresso a cada empresa (`POST .../progresso` — é também o sinal de vida);
+5. envia a execução com o `solicitacaoId` e fecha o pedido (`POST .../concluir`).
+
+Senha recusada, portal fora do ar ou nenhuma empresa para buscar fecham o pedido como **falhou**, com a
+mensagem, para a tela não ficar esperando. Se o operador cancelar no meio, o agente para na empresa
+seguinte (o parcial fica salvo, sem envio). Se o computador desligar no meio, o pedido é entregue de
+novo depois de 10 minutos sem sinal de vida.
 
 Cada execução cria `%USERPROFILE%\agente-iss\execucoes\<data-hora>-<competência>\` com:
 

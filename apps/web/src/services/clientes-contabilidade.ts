@@ -3,6 +3,7 @@ import type {
   ClienteContabilidadeHistorico,
   ClienteContabilidadeFaturamento,
   PropostasIssResposta,
+  SolicitacaoIss,
   ExecucaoHistoricoMedicoItem,
   DadosCobranca,
   CondicoesCobranca,
@@ -146,6 +147,23 @@ export const clientesContabilidadeService = {
     apiFetch<PropostasIssResposta>(
       `/clientes-contabilidade/faturamentos/propostas-iss?competencia=${encodeURIComponent(competencia)}`,
     ),
+  // Story 13.5: busca no ISS pedida pelo sistema e executada pelo agente do escritório.
+  /** A ativa da competência, senão a mais recente, senão `null`. */
+  solicitacaoIss: (competencia: string) =>
+    apiFetch<SolicitacaoIss | null>(
+      `/clientes-contabilidade/faturamentos/iss-solicitacoes?competencia=${encodeURIComponent(competencia)}`,
+    ),
+  /** Idempotente: se já há uma ativa na competência, o servidor devolve ELA. */
+  solicitarBuscaIss: (competencia: string, documentos?: string[]) =>
+    apiFetch<SolicitacaoIss>('/clientes-contabilidade/faturamentos/iss-solicitacoes', {
+      method: 'POST',
+      body: JSON.stringify(documentos?.length ? { competencia, documentos } : { competencia }),
+    }),
+  cancelarSolicitacaoIss: (id: string) =>
+    apiFetch<SolicitacaoIss>(
+      `/clientes-contabilidade/faturamentos/iss-solicitacoes/${encodeURIComponent(id)}/cancelar`,
+      { method: 'POST' },
+    ),
 };
 
 export const clienteContabilidadeQueryKeys = {
@@ -161,4 +179,7 @@ export const clienteContabilidadeQueryKeys = {
     ['clientes-contabilidade', 'faturamentos-lancados', competencia] as const,
   /** Propostas do agente ISS na competência (Story 13.3). */
   propostasIss: (competencia: string) => ['clientes-contabilidade', 'propostas-iss', competencia] as const,
+  /** Solicitação de busca no ISS da competência (Story 13.5). */
+  solicitacaoIss: (competencia: string) =>
+    ['clientes-contabilidade', 'solicitacao-iss', competencia] as const,
 };

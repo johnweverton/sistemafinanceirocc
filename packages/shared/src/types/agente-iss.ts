@@ -1,8 +1,9 @@
 // Domínio: agente de captura de faturamento no ISS Fortaleza (Story 13.1, Épico 13). Ver
 // docs/architecture/feature-agente-faturamento-iss.md. O agente é um CLI local (Story 13.2) que
-// fala com o sistema só por estas duas rotas (token dedicado, não service role — D2):
+// fala com o sistema só pelas rotas /api/integracoes/iss/* (token dedicado, não service role — D2):
 //   GET  /api/integracoes/iss/alvos      → AlvosIssResposta
 //   POST /api/integracoes/iss/execucoes  → NovaExecucaoIss
+//   (+ as rotas de solicitações da Story 13.5, no fim deste arquivo)
 // O que ele grava é PROPOSTA (decisão G3): o lançamento oficial continua sendo do operador.
 
 /** De onde veio o número de um lançamento oficial de faturamento. */
@@ -67,6 +68,11 @@ export interface NovaExecucaoIss {
   versaoAgente: string | null;
   capturas: NovaCapturaIss[];
   ciencias: CienciaIss[];
+  /**
+   * Story 13.5: solicitação `em_andamento` que esta execução atende (modo vigiar/agendado). É só
+   * uma GUARDA de consistência — quem conclui a solicitação é `POST .../solicitacoes/{id}/concluir`.
+   */
+  solicitacaoId?: string;
 }
 
 export type TotaisExecucaoIss = Record<StatusCapturaIss, number>;
@@ -110,3 +116,39 @@ export interface PropostasIssResposta {
   ultimaExecucao: UltimaExecucaoIss | null;
   lancados: { clienteContabilidadeId: string; faturamento: number }[];
 }
+
+// ---------------------------------------------------------------------------------------------
+// Story 13.5 (Fase 2): solicitações de busca feitas pelo sistema web. O operador pede a busca no
+// diálogo de lote; o agente local (vigiando ou agendado) a reivindica e relata o progresso:
+//   GET  /api/integracoes/iss/solicitacoes/proxima          → SolicitacaoIss (204 se nada a fazer)
+//   POST /api/integracoes/iss/solicitacoes/{id}/progresso   ← { atual, total }
+//   POST /api/integracoes/iss/solicitacoes/{id}/concluir    ← { execucaoId } | { erro }
+// A senha do ISS continua só na máquina do escritório (G4) — nada disso a transporta.
+// ---------------------------------------------------------------------------------------------
+
+export type StatusSolicitacaoIss = 'pendente' | 'em_andamento' | 'concluida' | 'falhou' | 'cancelada';
+
+/** Status em que a solicitação ainda ocupa a competência (índice único parcial da 0062). */
+export const STATUS_SOLICITACAO_ISS_ATIVOS: readonly StatusSolicitacaoIss[] = ['pendente', 'em_andamento'];
+
+/** Espelho da tabela `iss_solicitacoes` (migration 0062), em camelCase. */
+export interface SolicitacaoIss {
+  id: string;
+  competencia: string;
+  /** `null` = carteira inteira de `faixa_faturamento`; preenchido = só estes CPF/CNPJ. */
+  documentos: string[] | null;
+  status: StatusSolicitacaoIss;
+  solicitadoPor: string;
+  solicitadoEm: string;
+  iniciadoEm: string | null;
+  finalizadoEm: string | null;
+  progressoAtual: number | null;
+  progressoTotal: number | null;
+  execucaoId: string | null;
+  mensagemErro: string | null;
+  maquina: string | null;
+  heartbeatEm: string | null;
+}
+
+/** Corpo de `POST .../solicitacoes/{id}/concluir`: sucesso XOR falha. */
+export type ConclusaoSolicitacaoIss = { execucaoId: string } | { erro: string };
