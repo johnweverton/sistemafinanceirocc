@@ -36,7 +36,7 @@ import {
   enviarProgresso,
   ErroApi,
 } from './api-client';
-import { redigirCpf } from './diagnostico';
+import { redigirCredenciais } from './diagnostico';
 import { ErroLogin } from './portal/portal';
 import { executarCompetencia } from './executar-competencia';
 import { resumoTexto } from './relatorio';
@@ -73,7 +73,7 @@ function rodarVigiar(opts: OpcoesCli, cfg: ConfigAgente): Promise<number> {
   mkdirSync(cfg.pastaBase, { recursive: true });
   const arquivoLog = join(cfg.pastaBase, 'vigiar.log');
   const log = (msg: string) => {
-    const linha = `[${new Date().toLocaleString('pt-BR')}] ${redigirCpf(msg, cfg.issCpf)}`;
+    const linha = `[${new Date().toLocaleString('pt-BR')}] ${redigirCredenciais(msg, cfg.issCpf, cfg.issSenha)}`;
     console.log(linha);
     try {
       appendFileSync(arquivoLog, linha + '\n');
@@ -96,7 +96,7 @@ function rodarVigiar(opts: OpcoesCli, cfg: ConfigAgente): Promise<number> {
         reenviarPendentes(cfg.pastaBase, (e) => enviarExecucao(cfg.sistemaUrl, cfg.token, e), log),
       esperar: (ms) => new Promise((r) => setTimeout(r, ms)),
       log,
-      redigir: (msg) => redigirCpf(msg, cfg.issCpf),
+      redigir: (msg) => redigirCredenciais(msg, cfg.issCpf, cfg.issSenha),
     },
   );
 }

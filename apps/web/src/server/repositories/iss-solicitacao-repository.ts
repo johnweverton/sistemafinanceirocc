@@ -268,12 +268,38 @@ export function registrarProgressoSolicitacaoIss(
   );
 }
 
-/** Conclusão (AC 12): `{ execucaoId }` ⇒ concluida; `{ erro }` ⇒ falhou. */
-export function concluirSolicitacaoIss(
+/**
+ * Conclusão (AC 12): `{ execucaoId }` ⇒ concluida; `{ erro }` ⇒ falhou.
+ *
+ * [QA 13.5] A execução vinculada tem de ser da MESMA competência da solicitação: a FK só prova que
+ * ela existe. Sem esta checagem, uma solicitação de 2026-08 podia fechar como "concluída" apontando
+ * para uma execução de outro mês — e a tela diria "busca concluída" sem nenhuma proposta nova.
+ */
+export async function concluirSolicitacaoIss(
   id: string,
   conclusao: ConclusaoSolicitacaoIssInput,
   agora: Date = new Date(),
 ): Promise<SolicitacaoIss> {
+  if ('execucaoId' in conclusao) {
+    const db = getSupabaseAdmin();
+    const { data: execucao, error } = await db
+      .from('iss_execucoes_agente')
+      .select('id, competencia')
+      .eq('id', conclusao.execucaoId)
+      .maybeSingle();
+    if (error) throw erroDb('Falha ao conferir a execução da solicitação do ISS', error);
+    if (!execucao) throw new ApiError(422, 'Execução informada não existe', 'EXECUCAO_INVALIDA');
+    const atual = await buscarPorId(id);
+    const competenciaExecucao = (execucao as { competencia?: string }).competencia;
+    if (atual && competenciaExecucao !== atual.competencia) {
+      throw new ApiError(
+        422,
+        `A execução é da competência ${competenciaExecucao ?? '—'}, mas a solicitação é de ${atual.competencia}`,
+        'EXECUCAO_OUTRA_COMPETENCIA',
+        { solicitacaoId: id, execucaoId: conclusao.execucaoId },
+      );
+    }
+  }
   const campos =
     'execucaoId' in conclusao
       ? { status: 'concluida', execucao_id: conclusao.execucaoId, finalizado_em: agora.toISOString() }
@@ -285,7 +311,7 @@ export function concluirSolicitacaoIss(
  * Guarda de `POST /api/integracoes/iss/execucoes` (AC 13): a execução diz atender uma
  * solicitação — ela precisa existir e estar `em_andamento`. Só confere; não muda estado nenhum.
  */
-export async function exigirSolicitacaoIssEmAndamento(id: string): Promise<void> {
+export async function exigirSolicitacaoIssEmAndamento(id: string, competencia?: string): Promise<void> {
   const atual = await buscarPorId(id);
   if (!atual || atual.status !== 'em_andamento') {
     throw new ApiError(
@@ -295,6 +321,15 @@ export async function exigirSolicitacaoIssEmAndamento(id: string): Promise<void>
         : `Solicitação ${id} não encontrada`,
       'SOLICITACAO_INVALIDA',
       { solicitacaoId: id, status: atual?.status ?? null },
+    );
+  }
+  // [QA 13.5] Execução de uma competência não pode se dizer resposta a um pedido de outra.
+  if (competencia !== undefined && atual.competencia !== competencia) {
+    throw new ApiError(
+      422,
+      `A solicitação ${id} é da competência ${atual.competencia}, não de ${competencia}`,
+      'SOLICITACAO_INVALIDA',
+      { solicitacaoId: id, status: atual.status },
     );
   }
 }

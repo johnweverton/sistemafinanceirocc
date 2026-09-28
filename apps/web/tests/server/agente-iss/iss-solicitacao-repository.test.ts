@@ -230,7 +230,7 @@ describe('registrarProgressoSolicitacaoIss (AC 11)', () => {
 
 describe('concluirSolicitacaoIss (AC 12)', () => {
   it('sucesso ⇒ concluida com execucao_id e finalizado_em', async () => {
-    banco.tabelas.iss_execucoes_agente!.push({ id: 'exec-1' });
+    banco.tabelas.iss_execucoes_agente!.push({ id: 'exec-1', competencia: '2026-08' });
     semear({ id: 's1', status: 'em_andamento' });
     const r = await concluirSolicitacaoIss('s1', { execucaoId: 'exec-1' }, AGORA);
     expect(r).toMatchObject({
@@ -261,6 +261,17 @@ describe('concluirSolicitacaoIss (AC 12)', () => {
     expect(linha('s1').status).toBe('em_andamento');
   });
 
+  it('[QA] execução de OUTRA competência ⇒ 422, solicitação continua em andamento', async () => {
+    banco.tabelas.iss_execucoes_agente!.push({ id: 'exec-julho', competencia: '2026-07' });
+    semear({ id: 's1', status: 'em_andamento', competencia: '2026-08' });
+    await expect(concluirSolicitacaoIss('s1', { execucaoId: 'exec-julho' })).rejects.toMatchObject({
+      status: 422,
+      code: 'EXECUCAO_OUTRA_COMPETENCIA',
+    });
+    expect(linha('s1').status).toBe('em_andamento');
+    expect(linha('s1').execucao_id).toBeNull();
+  });
+
   it('depois de concluída, a competência aceita uma nova solicitação', async () => {
     semear({ id: 's1', status: 'em_andamento' });
     await concluirSolicitacaoIss('s1', { erro: 'x' });
@@ -281,6 +292,12 @@ describe('exigirSolicitacaoIssEmAndamento (guarda do AC 13)', () => {
 
   it('inexistente ⇒ 422', async () => {
     await expect(exigirSolicitacaoIssEmAndamento('nao-existe')).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('[QA] competência da execução diferente da solicitação ⇒ 422; igual passa', async () => {
+    semear({ id: 's1', status: 'em_andamento', competencia: '2026-08' });
+    await expect(exigirSolicitacaoIssEmAndamento('s1', '2026-07')).rejects.toMatchObject({ status: 422 });
+    await expect(exigirSolicitacaoIssEmAndamento('s1', '2026-08')).resolves.toBeUndefined();
   });
 
   it('só lê: nenhuma escrita', async () => {

@@ -12,6 +12,18 @@ export function redigirCpf(texto: string, cpf: string): string {
   return texto.split(cpf).join('[CPF]').split(formatado).join('[CPF]');
 }
 
+/**
+ * [QA 13.5] Tira o CPF E a senha do login de uma mensagem que SAI da máquina do escritório (modo
+ * vigiar: `concluir { erro }` grava a mensagem no banco e a mostra na tela do operador). Defesa em
+ * profundidade da decisão G4 — hoje nenhuma mensagem conhecida carrega a senha, mas um erro do
+ * navegador ou do portal que a ecoasse iria parar na Vercel. Senha curta demais (< 4) não é
+ * redigida: trocaria pedaços comuns de texto.
+ */
+export function redigirCredenciais(texto: string, cpf: string, senha: string): string {
+  const semCpf = redigirCpf(texto, cpf);
+  return senha.length >= 4 ? semCpf.split(senha).join('[SENHA]') : semCpf;
+}
+
 export function criarDiagnostico(pastaExecucao: string, cpf: string, reconhecer: boolean): Diagnostico {
   mkdirSync(join(pastaExecucao, 'snapshots'), { recursive: true });
   const arquivoLog = join(pastaExecucao, 'agente.log');

@@ -202,6 +202,16 @@ describe('POST /api/integracoes/iss/solicitacoes/[id]/concluir (AC 12)', () => {
     expect(linha(S1).status).toBe('concluida');
   });
 
+  it('[QA] execucaoId de OUTRA competência → 422, solicitação continua em andamento', async () => {
+    const EXEC = '66666666-6666-4666-8666-666666666666';
+    banco.tabelas.iss_execucoes_agente!.push({ id: EXEC, competencia: '2026-07' });
+    banco.tabelas.iss_solicitacoes!.push(solicitacaoRow({ id: S1, status: 'em_andamento', competencia: '2026-08' }));
+    const r = await concluir(req(`/x`, { corpo: { execucaoId: EXEC } }), comId(S1));
+    expect(r.status).toBe(422);
+    expect((await r.json()).error.code).toBe('EXECUCAO_OUTRA_COMPETENCIA');
+    expect(linha(S1)).toMatchObject({ status: 'em_andamento', execucao_id: null });
+  });
+
   it('execucaoId que não existe → 422 (FK), solicitação continua em andamento', async () => {
     banco.tabelas.iss_solicitacoes!.push(solicitacaoRow({ id: S1, status: 'em_andamento' }));
     const r = await concluir(req(`/x`, { corpo: { execucaoId: '55555555-5555-4555-8555-555555555555' } }), comId(S1));
@@ -230,6 +240,14 @@ describe('POST /api/integracoes/iss/execucoes — vínculo solicitacaoId (AC 13)
       expect(escritas()).toHaveLength(0);
     },
   );
+
+  it('[QA] solicitação de OUTRA competência → 422 sem gravar execução nem capturas', async () => {
+    banco.tabelas.iss_solicitacoes!.push(solicitacaoRow({ id: S1, status: 'em_andamento', competencia: '2026-07' }));
+    const r = await execucoes(req('/x', { corpo: execucaoPayload({ solicitacaoId: S1 }) }), semParams);
+    expect(r.status).toBe(422);
+    expect((await r.json()).error.code).toBe('SOLICITACAO_INVALIDA');
+    expect(escritas()).toHaveLength(0);
+  });
 
   it('solicitação inexistente → 422', async () => {
     const r = await execucoes(req('/x', { corpo: execucaoPayload({ solicitacaoId: S1 }) }), semParams);

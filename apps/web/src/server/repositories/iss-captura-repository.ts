@@ -116,7 +116,7 @@ export async function registrarExecucaoIss(input: NovaExecucaoIssInput): Promise
   // Story 13.5 (AC 13): execução que diz atender uma solicitação do sistema web só entra se ela
   // estiver `em_andamento` — mesma disciplina de "valida tudo antes de gravar, 422 se não bate".
   // Quem CONCLUI a solicitação continua sendo `POST .../solicitacoes/{id}/concluir`.
-  if (input.solicitacaoId) await exigirSolicitacaoIssEmAndamento(input.solicitacaoId);
+  if (input.solicitacaoId) await exigirSolicitacaoIssEmAndamento(input.solicitacaoId, input.competencia);
   await validarClientes(input.capturas.map((c) => c.clienteContabilidadeId));
   const historico = await historicoParaR5(input);
   const totais = totalizarCapturas(input.capturas);

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { AJUDA, lerOpcoes, ErroArgs } from '../src/args';
 import { competenciaAnterior, competenciaPortal, dataCompetenciaPortal } from '../src/competencia';
 import { lerArquivoEnv, validarConfig, ErroConfig } from '../src/config';
-import { redigirCpf } from '../src/diagnostico';
+import { redigirCpf, redigirCredenciais } from '../src/diagnostico';
 import { montarExecucao, resumoTexto } from '../src/relatorio';
 
 describe('competência', () => {
@@ -65,6 +65,17 @@ describe('config', () => {
 describe('redigirCpf', () => {
   it('remove o CPF com e sem máscara', () => {
     expect(redigirCpf('a 12345678901 b 123.456.789-01 c', '12345678901')).toBe('a [CPF] b [CPF] c');
+  });
+});
+
+describe('redigirCredenciais (QA 13.5 — mensagem que vai ao sistema no modo vigiar)', () => {
+  it('remove CPF e senha', () => {
+    expect(redigirCredenciais('fill("S3nh@#x") 123.456.789-01', '12345678901', 'S3nh@#x')).toBe(
+      'fill("[SENHA]") [CPF]',
+    );
+  });
+  it('senha curta demais não é redigida (trocaria texto comum)', () => {
+    expect(redigirCredenciais('abc abc', '12345678901', 'abc')).toBe('abc abc');
   });
 });
 
