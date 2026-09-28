@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClienteContabilidade } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
@@ -21,6 +21,7 @@ import { Pagination } from '@/components/ui/Pagination';
 import { ClienteContabilidadeForm } from './ClienteContabilidadeForm';
 import { LoteContabilidadeDialog } from './LoteContabilidadeDialog';
 import { normalizarBusca } from '@/lib/formato';
+import { clientesAlvoDoIss, competenciaDoLinkLote } from '@/lib/proposta-iss';
 
 const PAGE_SIZE = 20;
 
@@ -43,6 +44,14 @@ export function ClientesContabilidadeManager() {
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
   const [excluirLoteResultado, setExcluirLoteResultado] = useState<ExclusaoLoteResultado | null>(null);
   const [mostrarLote, setMostrarLote] = useState(false);
+  // Story 13.4 (AC 12): `?lote=AAAA-MM` é o link que o agente do ISS imprime ao terminar o envio.
+  // Com ele, a tela já abre o diálogo de lote na competência certa com os clientes que o agente
+  // atende — o operador não precisa selecionar ninguém à mão. Sem o parâmetro (ou inválido), nada
+  // muda. Lido aqui (componente já 'use client') em vez de `searchParams` em page.tsx.
+  const searchParams = useSearchParams();
+  const competenciaDoLink = competenciaDoLinkLote(searchParams?.get('lote'));
+  const [competenciaLote, setCompetenciaLote] = useState<string | undefined>(undefined);
+  const linkLoteAplicado = useRef(false);
   const [pagina, setPagina] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,6 +76,16 @@ export function ClientesContabilidadeManager() {
     const totalPaginas = Math.max(1, Math.ceil(clientesFiltrados.length / PAGE_SIZE));
     setPagina((atual) => Math.min(atual, totalPaginas));
   }, [clientesFiltrados.length]);
+
+  // Aplica o link UMA vez por montagem, quando a lista de clientes chega: fechar o diálogo não o
+  // reabre sozinho.
+  useEffect(() => {
+    if (!competenciaDoLink || !clientes || linkLoteAplicado.current) return;
+    linkLoteAplicado.current = true;
+    setSelecionados(new Set(clientesAlvoDoIss(clientes).map((c) => c.id)));
+    setCompetenciaLote(competenciaDoLink);
+    setMostrarLote(true);
+  }, [competenciaDoLink, clientes]);
 
   const criar = useMutation({
     mutationFn: (p: NovoClienteContabilidadePayload) => clientesContabilidadeService.criar(p),
@@ -208,7 +227,11 @@ export function ClientesContabilidadeManager() {
         <LoteContabilidadeDialog
           clientes={clientesSelecionadosAtivos}
           inativosSelecionados={clientesSelecionadosInativos}
-          onClose={() => setMostrarLote(false)}
+          competenciaInicial={competenciaLote}
+          onClose={() => {
+            setMostrarLote(false);
+            setCompetenciaLote(undefined);
+          }}
         />
       )}
       {confirmacao && (

@@ -1,0 +1,138 @@
+# QA Gate — Story 13.5 (Fase 2: disparo pelo sistema web e agente agendado) — iteração 1
+storyId: "13.5"
+gate: qa-gate
+reviewedBy: Quinn (@qa)
+reviewedAt: "2026-09-28"
+commit: "848fa8f + correção QA c6a0598"
+epic: "13 — Agente de faturamento ISS Fortaleza (docs/architecture/feature-agente-faturamento-iss.md)"
+verdict: CONCERNS
+iterations:
+  - n: 1
+    verdict: CONCERNS
+    issues:
+      [DATA-135-1 (medium, CORRIGIDO), SEC-135-1 (low, CORRIGIDO), OPS-135-1 (low), OPS-135-2 (low),
+       CONC-135-1 (low), REL-135-1 (low), UX-135-1 (info), MIG-135-1 (info), TEST-135-1 (info)]
+
+resumo_do_veredito: >
+  CONCERNS (não bloqueante). Os 24 ACs estão implementados e o AC 25 (fora de escopo) respeitado.
+  Achei um defeito médio — o vínculo solicitação ↔ execução não conferia a competência — e o
+  corrigi com testes que reproduzem (4 testes novos; mutação: sem o fix, falham exatamente os 4).
+  Segurança conferida na fonte: as 3 rotas do agente chamam `requireAgenteIssToken` (fail-closed,
+  timingSafeEqual) e ficam fora do middleware de sessão pelo matcher `api/integracoes`; as rotas do
+  operador passam pelo middleware (sessão) e por `requireRole(['admin','colaborador','financeiro'])`
+  (mesma guarda de propostas-iss); o token do agente não abre rota de operador (teste). G1–G4
+  preservadas: nenhuma rota recebe `ISS_SENHA`, nada grava em `clientes_contabilidade_faturamentos`,
+  o agente continua só lendo o portal. O CONCERNS é pelo que só se valida em produção (0062 não
+  aplicada, tarefa agendada não instalada) e por dois débitos operacionais da tarefa agendada.
+
+notes: >
+  Concorrência verificada: a reivindicação é SELECT + UPDATE condicional `.eq('status', lido)` (e
+  `.eq('heartbeat_em', lido)` na retomada). Em READ COMMITTED o segundo UPDATE reavalia o WHERE após
+  o lock da linha e afeta 0 linhas ⇒ 204 — dois agentes não levam a mesma solicitação. O índice único
+  parcial `uq_iss_solicitacoes_competencia_ativa` impede duas ativas; o 23505 é tratado devolvendo a
+  vencedora (201/200). Transições inválidas: progresso/concluir fora de `em_andamento` ⇒ 409;
+  cancelar terminada ⇒ 422; cancelar no meio ⇒ próximo progresso 409 ⇒ agente para (parcial local,
+  sem marca). Polling: `refetchInterval: (q) => ativa ? 5000 : false` + relógio de 15 s com
+  clearInterval no cleanup; teste prova que o polling para ao concluir. Campos digitados nunca são
+  sobrescritos (`faturamentos` só guarda o que o operador digitou; teste do tick com 777).
+
+rastreabilidade:
+  AC1-5: supabase/migrations/0062_iss_solicitacoes.sql — leitura (SQL idempotente, CHECKs, FKs, 3 índices, RLS, ROLLBACK). Sem teste contra Postgres real; fake-supabase-iss reproduz 23505/23503
+  AC6: tipos em packages/shared (typecheck)
+  AC7-9: tests/server/clientes-contabilidade/iss-solicitacoes-route.test.ts + iss-solicitacao-repository.test.ts
+  AC10-12: tests/server/agente-iss/iss-solicitacoes-agente-routes.test.ts (401 sem token, 204, retomada >10 min, corrida perdida, 409, 422)
+  AC13: iss-solicitacoes-agente-routes.test.ts — vínculo solicitacaoId (+ 2 testes QA de competência)
+  AC14: apps/agente-iss/tests/executar-competencia.test.ts
+  AC15-16: apps/agente-iss/tests/vigiar.test.ts
+  AC17: scripts/agente-iss/instalar-tarefa-agendada.cmd — leitura (schtasks não executado, por regra)
+  AC18: leitura + teste "token do agente não vale nas rotas do operador"; nenhuma rota com credencial
+  AC19-24: apps/web/tests/components/LoteContabilidadeDialog.test.tsx (11 testes) + tests/lib/solicitacao-iss.test.ts
+
+issues:
+  - id: DATA-135-1
+    severity: medium
+    status: CORRIGIDO
+    titulo: "Solicitação podia ser vinculada/concluída com execução de OUTRA competência"
+    description: >
+      `exigirSolicitacaoIssEmAndamento` (guarda do AC 13) só olhava status, e `concluirSolicitacaoIss`
+      só dependia da FK. Uma execução de 2026-07 passava na guarda de uma solicitação de 2026-08 e a
+      fechava como `concluida` — a tela diria "Busca no ISS concluída" sem nenhuma proposta nova da
+      competência pedida.
+    fix: >
+      iss-solicitacao-repository.ts — `exigirSolicitacaoIssEmAndamento(id, competencia)` recusa com 422
+      SOLICITACAO_INVALIDA; `concluirSolicitacaoIss` confere a execução (422 EXECUCAO_INVALIDA se não
+      existe, 422 EXECUCAO_OUTRA_COMPETENCIA se o mês difere). iss-captura-repository.ts passa
+      `input.competencia`. Testes: 2 no repositório, 2 nas rotas. Mutação (revertendo só o src): os 4
+      falham, nada mais.
+  - id: SEC-135-1
+    severity: low
+    status: CORRIGIDO
+    titulo: "Mensagem de erro do modo vigiar sai da máquina sem redigir a senha"
+    description: >
+      Caminho novo: `concluir { erro }` grava a mensagem no banco e a mostra na tela. Só o CPF era
+      redigido. Nenhuma mensagem conhecida hoje carrega a senha, mas G4 é regra dura.
+    fix: "diagnostico.ts `redigirCredenciais` (CPF + senha ≥ 4) usada no log e no `redigir` do vigiar (cli.ts); 2 testes em cli-apoio.test.ts."
+  - id: OPS-135-1
+    severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      O instalador compila o agente UMA vez e a tarefa roda `node apps\agente-iss\dist\cli.mjs --uma-vez`
+      por um roteiro gerado em %USERPROFILE%\agente-iss\tarefa-agendada.cmd (fora do OneDrive). Após
+      `git pull`, rodar o instalador de novo.
+    titulo: "Tarefa agendada recompila o agente a cada minuto dentro do OneDrive"
+    description: >
+      O `/tr` roda `npm run iss:faturamento -- --uma-vez`, e o script `start` é `node build.mjs && node
+      dist/cli.mjs` — reescreve `apps/agente-iss/dist/cli.mjs` 1.440 vezes por dia numa pasta
+      sincronizada pelo OneDrive (churn de sincronização, possível arquivo travado pelo sync).
+    recommendation: "Na tarefa, chamar `node apps\\agente-iss\\dist\\cli.mjs --uma-vez` (build uma vez na instalação)."
+  - id: OPS-135-2
+    severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      O `/tr` passou a ser só o caminho do roteiro entre aspas (`\"%ROTEIRO%\"`); o `cd /d "%REPO%"` fica
+      dentro do roteiro. Ensaio a seco com schtasks/npm trocados por echo, repositório e perfil com
+      espaço no caminho: tarefa registrada com o caminho inteiro e roteiro executado com sucesso.
+    titulo: "`/tr` quebra se o caminho do repositório tiver espaço"
+    description: >
+      `\"%REPO%\"` não é escape para o cmd: as aspas internas encerram o bloco e o caminho fica sem
+      aspas. O caminho atual (…\\OneDrive\\Documentos\\JOHN\\Sistema_financeiro_cc) não tem espaço, então
+      funciona hoje; em outra máquina/pasta com espaço a tarefa fica inválida.
+  - id: CONC-135-1
+    severity: low
+    titulo: "Retomada por heartbeat pode duplicar trabalho se o agente original estiver vivo e lento"
+    description: >
+      Se uma única empresa travar > 10 min sem progresso, outro ciclo retoma; os dois terminam, o
+      segundo `concluir` recebe 409 (logado). Duas execuções gravadas, mesma proposta. Premissa de um
+      agente por vez (G4) torna isso teórico.
+  - id: REL-135-1
+    severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      O 422 da solicitação cancelada agora é recusa definitiva: vira `envio-recusado`, não entra na fila
+      de reenvio, e a mensagem de falha deixa de prometer reenvio (vigiar.ts). A reentrega de uma
+      execução JÁ gravada (solicitação concluída) é resolvida pela chave de idempotência (201 com a
+      execução existente).
+    titulo: "Cancelar entre o último progresso e o envio: proposta chega assim mesmo"
+    description: >
+      O POST /execucoes com `solicitacaoId` recebe 422, o JSON ganha `envio-pendente` e o reenvio
+      automático o manda depois como execução comum. G3 preservada (é só proposta), mas contraria a
+      expectativa de "cancelei". Mesmo mecanismo de REL-134-1/134-2 (gate 13.4).
+  - id: UX-135-1
+    severity: info
+    titulo: "Aviso de 'parece desligado' pode acender cedo"
+    description: >
+      Entre a reivindicação e o progresso 0/N o agente roda `reenviarPendentes` + `buscarAlvos`; depois
+      vem o login. Normalmente < 3 min, mas com várias pendências e rede lenta o aviso pode aparecer
+      com o agente vivo. Enviar o progresso 0 antes do reenvio resolve.
+  - id: MIG-135-1
+    severity: info
+    titulo: "0062 coerente com 0061; aplicação manual pendente"
+    description: >
+      SQL idempotente, CHECKs iguais aos da 0061, FKs para profiles e iss_execucoes_agente, índice
+      único parcial + 2 de apoio, RLS só-leitura. A policy usa lista explícita de papéis (AC 4) em vez
+      de `has_profile()` da 0061 — equivalente hoje (os 3 papéis são todos). Rollback comentado ok.
+      Até ser aplicada, o painel mostra aviso e o passo 1 segue à mão (teste).
+  - id: TEST-135-1
+    severity: info
+    titulo: "Sem teste contra Postgres real"
+    description: "Índice parcial, FK e a semântica do UPDATE condicional são verificados só no dublê em memória."

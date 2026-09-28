@@ -17,6 +17,11 @@ export function competenciaAnterior(hoje: Date = new Date()): string {
   return mes === 0 ? `${ano - 1}-12` : `${ano}-${String(mes).padStart(2, '0')}`;
 }
 
+/** Mês corrente de `hoje`, no relógio local (Story 13.4 — `configurar` valida o token com ele). */
+export function competenciaCorrente(hoje: Date = new Date()): string {
+  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+}
+
 /** '2026-08' → '08/2026' */
 export function competenciaPortal(c: string): string {
   const [ano, mes] = c.split('-');

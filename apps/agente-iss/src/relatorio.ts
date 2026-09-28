@@ -14,8 +14,11 @@ export function montarExecucao(params: {
   maquina: string;
   versaoAgente: string;
   resultados: ResultadoEmpresa[];
+  /** QA 13.4/13.5: a MESMA em todo `salvar()` da execução — é ela que torna o reenvio idempotente. */
+  chaveIdempotencia?: string;
 }): NovaExecucaoIss {
   return {
+    ...(params.chaveIdempotencia ? { chaveIdempotencia: params.chaveIdempotencia } : {}),
     competencia: params.competencia,
     iniciadoEm: params.iniciadoEm.toISOString(),
     finalizadoEm: params.finalizadoEm.toISOString(),

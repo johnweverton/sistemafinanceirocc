@@ -83,10 +83,15 @@ vi.mock('../../src/services/clientes-contabilidade', () => ({
     comBoleto: (...a: unknown[]) => mockComBoleto(...a),
     faturamentosLancados: (...a: unknown[]) => mockFaturamentosLancados(...a),
     propostasIss: (...a: unknown[]) => mockPropostasIss(...a),
+    // Story 13.5: o diálogo de lote consulta a busca no ISS pedida pelo sistema.
+    solicitacaoIss: vi.fn(async () => null),
+    solicitarBuscaIss: vi.fn(),
+    cancelarSolicitacaoIss: vi.fn(),
   },
   clienteContabilidadeQueryKeys: {
     clientes: () => ['clientes-contabilidade'],
     propostasIss: (competencia: string) => ['clientes-contabilidade', 'propostas-iss', competencia],
+    solicitacaoIss: (competencia: string) => ['clientes-contabilidade', 'solicitacao-iss', competencia],
     comBoleto: (competencia: string) => ['clientes-contabilidade', 'com-boleto', competencia],
     faturamentosLancados: (competencia: string) => [
       'clientes-contabilidade',

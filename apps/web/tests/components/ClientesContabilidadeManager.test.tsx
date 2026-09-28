@@ -8,8 +8,26 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../src/components/ui/Toast';
 
 const mockPush = vi.fn();
+// Story 13.4 (AC 12): o Manager lê `?lote=AAAA-MM`; cada teste escolhe a query string.
+let mockQueryString = '';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
+  useSearchParams: () => new URLSearchParams(mockQueryString),
+}));
+
+// O diálogo real busca meia dúzia de rotas; aqui só importa COM QUE clientes e competência ele abre.
+const mockDialogoLote = vi.fn();
+vi.mock('../../src/components/clientes-contabilidade/LoteContabilidadeDialog', () => ({
+  LoteContabilidadeDialog: (props: { clientes: { id: string }[]; competenciaInicial?: string; onClose: () => void }) => {
+    mockDialogoLote(props);
+    return (
+      <div role="dialog" aria-label="Lote">
+        <span>competência {props.competenciaInicial ?? 'padrão'}</span>
+        <span>clientes {props.clientes.map((c) => c.id).join(',')}</span>
+        <button onClick={props.onClose}>Fechar lote</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../src/services/clientes-contabilidade', () => ({
@@ -62,6 +80,8 @@ const clienteInativo = { ...clienteFaixa, id: 'cc-3', nome: 'Encerrado ME', ativ
 
 beforeEach(() => {
   mockPush.mockClear();
+  mockDialogoLote.mockClear();
+  mockQueryString = '';
   vi.mocked(clientesContabilidadeService.listar).mockResolvedValue([clienteFaixa, clienteFixo]);
 });
 
@@ -154,5 +174,58 @@ describe('ClientesContabilidadeManager', () => {
     fireEvent.click(linkEmissao);
 
     expect(mockPush).not.toHaveBeenCalled();
+  });
+});
+
+// Story 13.4 (AC 12) — link de volta do agente do ISS: `/clientes-contabilidade?lote=AAAA-MM`.
+describe('ClientesContabilidadeManager — ?lote=AAAA-MM (Story 13.4)', () => {
+  const outroFaixa = { ...clienteFaixa, id: 'cc-4', nome: 'Mercadinho Sol' };
+
+  it('com ?lote=2026-08 seleciona os faixa_faturamento ativos e abre o diálogo nessa competência', async () => {
+    mockQueryString = 'lote=2026-08';
+    vi.mocked(clientesContabilidadeService.listar).mockResolvedValue([
+      clienteFaixa,
+      clienteFixo,
+      clienteInativo,
+      outroFaixa,
+    ]);
+    renderComProviders();
+
+    const dialogo = await screen.findByRole('dialog', { name: 'Lote' });
+    expect(dialogo).toHaveTextContent('competência 2026-08');
+    expect(dialogo).toHaveTextContent('clientes cc-1,cc-4');
+    // a seleção fica visível na tela, como se o operador tivesse marcado à mão
+    expect(screen.getByText(/2 selecionados/)).toBeInTheDocument();
+  });
+
+  it('fechar o diálogo aberto pelo link não o reabre sozinho', async () => {
+    mockQueryString = 'lote=2026-08';
+    renderComProviders();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Fechar lote' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Lote' })).not.toBeInTheDocument());
+    expect(mockDialogoLote.mock.calls.every(([p]) => p.competenciaInicial === '2026-08')).toBe(true);
+  });
+
+  it.each(['', 'lote=2026-13', 'lote=agosto'])('sem parâmetro válido (%s) nada muda: diálogo fechado, nada selecionado', async (qs) => {
+    mockQueryString = qs;
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
+
+    expect(screen.queryByRole('dialog', { name: 'Lote' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/selecionados?/)).not.toBeInTheDocument();
+    expect(mockDialogoLote).not.toHaveBeenCalled();
+  });
+
+  it('abrir o lote pela seleção manual continua sem competência forçada', async () => {
+    renderComProviders();
+    await waitFor(() => expect(screen.getByText('Padaria Bom Pão Ltda')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Selecionar todos os clientes'));
+    fireEvent.click(screen.getByRole('button', { name: /Calcular em lote/ }));
+
+    const dialogo = await screen.findByRole('dialog', { name: 'Lote' });
+    expect(dialogo).toHaveTextContent('competência padrão');
   });
 });

@@ -1,9 +1,9 @@
 // Partes puras do CLI: argumentos, competência, configuração, relatório e redação do CPF.
 import { describe, it, expect } from 'vitest';
-import { lerOpcoes, ErroArgs } from '../src/args';
+import { AJUDA, lerOpcoes, ErroArgs } from '../src/args';
 import { competenciaAnterior, competenciaPortal, dataCompetenciaPortal } from '../src/competencia';
 import { lerArquivoEnv, validarConfig, ErroConfig } from '../src/config';
-import { redigirCpf } from '../src/diagnostico';
+import { redigirCpf, redigirCredenciais } from '../src/diagnostico';
 import { montarExecucao, resumoTexto } from '../src/relatorio';
 
 describe('competência', () => {
@@ -68,6 +68,17 @@ describe('redigirCpf', () => {
   });
 });
 
+describe('redigirCredenciais (QA 13.5 — mensagem que vai ao sistema no modo vigiar)', () => {
+  it('remove CPF e senha', () => {
+    expect(redigirCredenciais('fill("S3nh@#x") 123.456.789-01', '12345678901', 'S3nh@#x')).toBe(
+      'fill("[SENHA]") [CPF]',
+    );
+  });
+  it('senha curta demais não é redigida (trocaria texto comum)', () => {
+    expect(redigirCredenciais('abc abc', '12345678901', 'abc')).toBe('abc abc');
+  });
+});
+
 describe('relatório', () => {
   const captura = {
     clienteContabilidadeId: 'c1', status: 'capturado' as const, valorServicosPrestados: 618.84, quantidadeNotas: 3,
@@ -83,5 +94,66 @@ describe('relatório', () => {
   });
   it('resumo avisa competência aberta', () => {
     expect(resumoTexto('2026-08', [{ nome: 'EMPRESA', documento: '1', captura }])).toMatch(/ABERTA/);
+  });
+});
+
+// Story 13.4 (AC 7, 8): ajuda em camadas — uso comum no topo, depuração em "Avançado".
+describe('AJUDA', () => {
+  const [comum, avancado] = AJUDA.split('Avançado');
+
+  it('tem as duas seções, na ordem certa', () => {
+    expect(comum).toMatch(/Uso comum/);
+    expect(avancado).toBeDefined();
+  });
+
+  it('uso comum: competência, modo assistente, configurar e --ajuda', () => {
+    expect(comum).toMatch(/--competencia AAAA-MM/);
+    expect(comum).toMatch(/modo assistente/);
+    expect(comum).toMatch(/iss:configurar/);
+    expect(comum).toMatch(/--ajuda/);
+  });
+
+  it('todas as flags de depuração (inclusive --reenviar) estão em "Avançado", fora do uso comum', () => {
+    for (const flag of ['--offline', '--reconhecer', '--headed', '--limite', '--sem-envio', '--reenviar', '--cnpj']) {
+      expect(avancado).toContain(flag);
+      expect(comum).not.toContain(flag);
+    }
+  });
+
+  it('nenhuma flag mudou: lerOpcoes continua aceitando todas', () => {
+    expect(() =>
+      lerOpcoes(['--competencia', '2026-08', '--cnpj', '07286006000116', '--limite', '2', '--headed', '--reconhecer', '--sem-envio', '--reenviar', 'x.json']),
+    ).not.toThrow();
+    expect(lerOpcoes(['--offline', '--cnpj', '07286006000116']).offline).toBe(true);
+    expect(lerOpcoes(['--ajuda']).ajuda).toBe(true);
+  });
+});
+
+// Story 13.5 (AC 15, 16): modos que atendem os pedidos do sistema web.
+describe('--vigiar / --uma-vez', () => {
+  it('são flags do "Avançado", com a tarefa agendada citada', () => {
+    const [comum, avancado] = AJUDA.split('Avançado');
+    expect(avancado).toContain('--vigiar');
+    expect(avancado).toContain('--uma-vez');
+    expect(avancado).toContain('instalar-tarefa-agendada.cmd');
+    expect(comum).not.toContain('--vigiar');
+  });
+
+  it('lerOpcoes reconhece cada uma; padrão é desligado', () => {
+    expect(lerOpcoes([])).toMatchObject({ vigiar: false, umaVez: false });
+    expect(lerOpcoes(['--vigiar'])).toMatchObject({ vigiar: true, umaVez: false });
+    expect(lerOpcoes(['--uma-vez', '--headed'])).toMatchObject({ vigiar: false, umaVez: true, headed: true });
+  });
+
+  it.each([
+    [['--vigiar', '--uma-vez']],
+    [['--vigiar', '--competencia', '2026-08']],
+    [['--uma-vez', '--cnpj', '07286006000116']],
+    [['--vigiar', '--offline', '--cnpj', '07286006000116']],
+    [['--uma-vez', '--sem-envio']],
+    [['--vigiar', '--limite', '2']],
+    [['--uma-vez', '--reenviar', 'x.json']],
+  ])('rejeita a combinação %j (a competência e as empresas vêm do pedido)', (argv) => {
+    expect(() => lerOpcoes(argv)).toThrow(ErroArgs);
   });
 });

@@ -14,7 +14,7 @@
 // limites do sistema (teto de clientes e rate limit) ANTES de o servidor recusar; (c) acompanhar
 // o cálculo com barra + % + role="status" reaproveitando `ProgressoExecucao`; (d) separar
 // "A emitir" (só os `ok`) de "Total geral" no resumo; (e) manter o `execucaoId` recuperável.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClienteContabilidade } from '@cobranca/shared';
 import { LOTE_CONTABILIDADE_MAX_CLIENTES, LOTE_CONTABILIDADE_MAX_POR_MINUTO } from '@cobranca/shared';
@@ -28,6 +28,13 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CampoCompetencia } from '@/components/ui/CampoCompetencia';
 import { LoteEmissaoDialog } from '@/components/execucoes/LoteEmissaoDialog';
 import { ResumoCapturaIss, SeloPropostaIss } from '@/components/clientes-contabilidade/PropostaIss';
+import { SolicitacaoIssPainel } from '@/components/clientes-contabilidade/SolicitacaoIssPainel';
+import {
+  documentoParaBuscaIss,
+  INTERVALO_POLLING_SOLICITACAO_MS,
+  podeTentarDeNovoNoIss,
+  solicitacaoAtiva,
+} from '@/lib/solicitacao-iss';
 import {
   capturaAceita,
   estadoPropostaIss,
@@ -80,6 +87,7 @@ function gravarLoteEmAndamento(valor: LoteEmAndamento | null): void {
 export function LoteContabilidadeDialog({
   clientes,
   inativosSelecionados = [],
+  competenciaInicial,
   onClose,
 }: {
   /** Clientes ATIVOS já selecionados na tela (resolvidos pelo chamador — nome/modoCobranca). */
@@ -91,11 +99,17 @@ export function LoteContabilidadeDialog({
    * "Calcular em lote (7)").
    */
   inativosSelecionados?: ClienteContabilidade[];
+  /**
+   * Competência com que o diálogo abre (Story 13.4, AC 12 — link `?lote=AAAA-MM` impresso pelo
+   * agente do ISS). Ausente = mês corrente, como antes. Um lote em andamento recuperado do
+   * sessionStorage continua tendo precedência (ver efeito de recuperação abaixo).
+   */
+  competenciaInicial?: string;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [competencia, setCompetencia] = useState(competenciaAtual());
+  const [competencia, setCompetencia] = useState(competenciaInicial ?? competenciaAtual());
   const [faturamentos, setFaturamentos] = useState<Record<string, string>>({});
   const [faturamentoLancado, setFaturamentoLancado] = useState(false);
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
@@ -182,6 +196,69 @@ export function LoteContabilidadeDialog({
   function valorDoCampo(clienteId: string): string {
     return faturamentos[clienteId] ?? valorInicialDoCampo(estadoIssPorCliente(clienteId));
   }
+
+  // Story 13.5 (Fase 2): "Buscar no ISS" pelo próprio sistema. A solicitação fica no banco e o
+  // agente do escritório a executa; aqui só se pede, acompanha e cancela. Polling de 5 s SÓ
+  // enquanto ativa — mesma forma de `useExecucaoRealtime`/`LoteEmissaoDialog` — e para sozinho ao
+  // concluir/falhar/cancelar. Falha desta consulta (ex.: migration 0062 ainda não aplicada) não
+  // bloqueia nada: o painel vira um aviso e o passo 1 segue à mão, como na Story 13.3.
+  const solicitacaoQ = useQuery({
+    queryKey: clienteContabilidadeQueryKeys.solicitacaoIss(competencia),
+    queryFn: () => clientesContabilidadeService.solicitacaoIss(competencia),
+    enabled: /^\d{4}-\d{2}$/.test(competencia),
+    staleTime: 0,
+    retry: 1,
+    refetchInterval: (q) => (solicitacaoAtiva(q.state.data) ? INTERVALO_POLLING_SOLICITACAO_MS : false),
+  });
+  const solicitacaoIssAtiva = solicitacaoAtiva(solicitacaoQ.data);
+
+  // AC 21: cada tick do polling (e a conclusão) revalida as propostas. Como `faturamentos` só
+  // guarda o que o operador DIGITOU (`valorDoCampo` acima), os campos que ele não tocou se
+  // preenchem sozinhos conforme o agente avança — sem sobrescrever nada que ele já digitou.
+  const statusSolicitacaoAnterior = useRef<{ competencia: string; ativa: boolean } | null>(null);
+  useEffect(() => {
+    const s = solicitacaoQ.data;
+    const anterior = statusSolicitacaoAnterior.current;
+    const estavaAtiva = anterior?.competencia === competencia && anterior.ativa;
+    statusSolicitacaoAnterior.current = { competencia, ativa: solicitacaoAtiva(s) };
+    if (solicitacaoAtiva(s) || estavaAtiva) {
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.propostasIss(competencia) });
+    }
+    // Reage a CADA resposta do polling (dataUpdatedAt muda mesmo quando o corpo é igual).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solicitacaoQ.dataUpdatedAt]);
+
+  // Relógio do aviso "parece desligado" (AC 22): com o agente parado a resposta do polling não
+  // muda, e sem mudança não há re-render — então o tempo precisa andar por conta própria.
+  const [agora, setAgora] = useState(() => new Date());
+  useEffect(() => {
+    if (!solicitacaoIssAtiva) return;
+    setAgora(new Date());
+    const id = setInterval(() => setAgora(new Date()), 15_000);
+    return () => clearInterval(id);
+  }, [solicitacaoIssAtiva]);
+
+  const pedirBuscaIss = useMutation({
+    mutationFn: (documentos?: string[]) => clientesContabilidadeService.solicitarBuscaIss(competencia, documentos),
+    onSuccess: (s) => {
+      qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competencia), s);
+      toast('Busca no ISS pedida — o computador do escritório começa em até 1 minuto.', 'success');
+    },
+    onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao pedir a busca no ISS', 'error'),
+  });
+
+  const cancelarBuscaIss = useMutation({
+    mutationFn: (id: string) => clientesContabilidadeService.cancelarSolicitacaoIss(id),
+    onSuccess: (s) => {
+      qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competencia), s);
+      toast('Busca no ISS cancelada.', 'info');
+    },
+    onError: (e) => {
+      // 422 = já tinha terminado: a tela só estava atrasada em relação ao agente.
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.solicitacaoIss(competencia) });
+      toast(e instanceof ApiClientError ? e.message : 'Erro ao cancelar a busca no ISS', 'error');
+    },
+  });
 
   // Bloqueio duro, sem opt-in nem exceção por cliente (decisão do dono): quem está em
   // `jaEmitidos` simplesmente não entra no payload do cálculo. Cancelar o boleto anterior é o
@@ -561,6 +638,17 @@ export function LoteContabilidadeDialog({
                 ? `${alvosFaturamento.length} cliente${alvosFaturamento.length !== 1 ? 's' : ''} que falharam — confira o valor e lance de novo o faturamento de ${competencia} (quem já foi lançado não é reenviado).`
                 : `${alvosFaturamento.length} cliente${alvosFaturamento.length !== 1 ? 's' : ''} no modo “faixa de faturamento” — lance o faturamento de ${competencia} pra cada um (opcional: quem ficar em branco entra no lote como alerta, sem travar os demais).`}
             </p>
+            {/* Story 13.5: pedir a busca no ISS pelo sistema e acompanhar o agente do escritório. */}
+            <SolicitacaoIssPainel
+              competencia={competencia}
+              solicitacao={solicitacaoQ.data}
+              indisponivel={solicitacaoQ.isError}
+              agora={agora}
+              pedindo={pedirBuscaIss.isPending}
+              cancelando={cancelarBuscaIss.isPending}
+              onBuscar={() => pedirBuscaIss.mutate(undefined)}
+              onCancelar={(id) => cancelarBuscaIss.mutate(id)}
+            />
             {/* Story 13.3: faixa-resumo do agente do ISS. Falha da consulta é só um aviso — o passo 1
                 continua utilizável à mão. */}
             {propostasQ.isError ? (
@@ -581,23 +669,50 @@ export function LoteContabilidadeDialog({
               )
             )}
             <div className="max-h-52 space-y-2 overflow-y-auto">
-              {alvosFaturamento.map((c) => (
-                <div key={c.id}>
-                  <div className="flex items-center gap-3">
-                    <span className="flex-1 truncate text-sm text-cc-ink">{c.nome}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={valorDoCampo(c.id)}
-                      onChange={(e) => setFaturamentos((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                      placeholder="0.00"
-                      className="input w-32 tabular"
-                    />
+              {alvosFaturamento.map((c) => {
+                const estadoIss = estadoIssPorCliente(c.id);
+                // Story 13.5 (AC 23): "Tentar de novo" só desta empresa, no cinza por não encontrada/erro.
+                const documentoIss = documentoParaBuscaIss(c.cobranca?.pagadorDocumento);
+                const mostrarTentarIss =
+                  propostasQ.isSuccess && solicitacaoQ.isSuccess && !!documentoIss && podeTentarDeNovoNoIss(estadoIss);
+                return (
+                  <div key={c.id}>
+                    <div className="flex items-center gap-3">
+                      <span className="flex-1 truncate text-sm text-cc-ink">{c.nome}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={valorDoCampo(c.id)}
+                        onChange={(e) => setFaturamentos((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                        placeholder="0.00"
+                        className="input w-32 tabular"
+                      />
+                    </div>
+                    {propostasQ.isSuccess && (
+                      <div className="flex items-center gap-2">
+                        <SeloPropostaIss estado={estadoIss} />
+                        {mostrarTentarIss && (
+                          <button
+                            type="button"
+                            onClick={() => pedirBuscaIss.mutate([documentoIss])}
+                            disabled={solicitacaoIssAtiva || pedirBuscaIss.isPending}
+                            title={
+                              solicitacaoIssAtiva
+                                ? `Já existe uma busca no ISS em andamento para ${competencia}`
+                                : `Busca de novo no ISS só ${c.nome}`
+                            }
+                            aria-label={`Tentar de novo no ISS: ${c.nome}`}
+                            className="text-xs text-cc-accent underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-cc-muted disabled:no-underline"
+                          >
+                            Tentar de novo
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {propostasQ.isSuccess && <SeloPropostaIss estado={estadoIssPorCliente(c.id)} />}
-                </div>
-              ))}
+                );
+              })}
             </div>
             {/* AC 5 (débito DEB-12.3-B): lançar faturamento também espera a guarda de duplicidade —
                 antes só "Calcular" respeitava `guardaPronta`, então dava pra lançar faturamento em
