@@ -126,6 +126,18 @@ describe('executarCompetencia', () => {
     expect(r.avisos.join(' ')).toMatch(/1 cliente\(s\) sem CPF\/CNPJ/);
   });
 
+  it('[QA] chaveIdempotencia: um UUID por execução, o mesmo no JSON salvo; outra execução, outra chave', async () => {
+    const um = deps(portalFake({ '11111111000111': capturado(10) }).portal).d;
+    const r1 = await executarCompetencia({ competencia: '2026-08', documentos: [], config: cfg, dependencias: um });
+    const chave = r1.execucao!.chaveIdempotencia;
+    expect(chave).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(JSON.parse(readFileSync(r1.arquivoJson, 'utf8')).chaveIdempotencia).toBe(chave);
+
+    const dois = deps(portalFake({ '11111111000111': capturado(10) }).portal).d;
+    const r2 = await executarCompetencia({ competencia: '2026-08', documentos: [], config: cfg, dependencias: dois });
+    expect(r2.execucao!.chaveIdempotencia).not.toBe(chave);
+  });
+
   it('onProgresso: 0/total antes do portal e N/total a cada empresa', async () => {
     const { portal } = portalFake({});
     const { d } = deps(portal);

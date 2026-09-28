@@ -57,6 +57,19 @@ create index if not exists idx_iss_solicitacoes_pendentes
   on iss_solicitacoes (solicitado_em)
   where status = 'pendente';
 
+-- ============================================================================
+-- 3. Idempotência do envio de execuções (QA 13.4/13.5)
+-- ============================================================================
+-- O agente reenvia sozinho uma execução cujo envio falhou (Story 13.4). Se o servidor GRAVOU mas a
+-- resposta se perdeu no caminho, o reenvio duplicaria execução e capturas. O agente passa a mandar
+-- uma chave gerada uma vez por execução; a mesma chave de novo devolve a execução já gravada.
+-- Execuções antigas (e JSONs antigos reenviados) não têm chave: continuam aceitas como antes.
+alter table iss_execucoes_agente add column if not exists chave_idempotencia uuid;
+
+create unique index if not exists uq_iss_execucoes_agente_chave
+  on iss_execucoes_agente (chave_idempotencia)
+  where chave_idempotencia is not null;
+
 comment on table iss_solicitacoes is
   'Pedidos de busca no ISS Fortaleza feitos pelo sistema web e executados pelo agente local (Story 13.5, Épico 13).';
 
@@ -76,6 +89,8 @@ create policy iss_solicitacoes_select on iss_solicitacoes
 -- ============================================================================
 -- ROLLBACK (executar manualmente se necessário)
 -- ============================================================================
+-- drop index if exists uq_iss_execucoes_agente_chave;
+-- alter table iss_execucoes_agente drop column if exists chave_idempotencia;
 -- drop policy if exists iss_solicitacoes_select on iss_solicitacoes;
 -- drop index if exists idx_iss_solicitacoes_pendentes;
 -- drop index if exists idx_iss_solicitacoes_competencia;

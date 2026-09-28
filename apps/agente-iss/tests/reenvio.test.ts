@@ -5,9 +5,13 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExecucaoIssRegistrada, NovaExecucaoIss } from '@cobranca/shared';
+import { ErroApi } from '../src/api-client';
 import {
   ARQUIVO_MARCA_PENDENTE,
+  ARQUIVO_MARCA_RECUSADO,
+  ehRecusaDefinitiva,
   enviarComMarca,
+  foiRecusado,
   listarEnviosPendentes,
   marcarEnvioPendente,
   reenviarPendentes,
@@ -88,6 +92,27 @@ describe('listarEnviosPendentes', () => {
   });
 });
 
+describe('[QA] ehRecusaDefinitiva', () => {
+  it('só 4xx que não mudam sozinhos', () => {
+    expect(ehRecusaDefinitiva(new ErroApi('x', 422))).toBe(true);
+    expect(ehRecusaDefinitiva(new ErroApi('x', 400))).toBe(true);
+    expect(ehRecusaDefinitiva(new ErroApi('x', 409))).toBe(true);
+    for (const status of [401, 403, 408, 429, 500, 503]) {
+      expect(ehRecusaDefinitiva(new ErroApi('x', status))).toBe(false);
+    }
+    expect(ehRecusaDefinitiva(new ErroApi('sem resposta', null))).toBe(false);
+    expect(ehRecusaDefinitiva(new Error('qualquer'))).toBe(false);
+  });
+
+  it('enviarComMarca com 422 grava envio-recusado (não envio-pendente) e relança', async () => {
+    const arquivo = criarExecucao('20260921-130000-2026-08');
+    const enviador = vi.fn().mockRejectedValue(new ErroApi('Sistema respondeu 422', 422));
+    await expect(enviarComMarca(arquivo, execucao(), enviador)).rejects.toThrow('422');
+    expect(temEnvioPendente(arquivo)).toBe(false);
+    expect(existsSync(join(base, 'execucoes', '20260921-130000-2026-08', ARQUIVO_MARCA_RECUSADO))).toBe(true);
+  });
+});
+
 describe('reenviarPendentes', () => {
   it('reenvia cada pendente com o JSON salvo e limpa a marca', async () => {
     const a = criarExecucao('20260920-080000-2026-07', { pendente: true, competencia: '2026-07' });
@@ -121,7 +146,7 @@ describe('reenviarPendentes', () => {
     expect(log.mock.calls.flat().join('\n')).toMatch(/próxima execução/);
   });
 
-  it('JSON ilegível conta como falha e mantém a marca', async () => {
+  it('[QA] JSON ilegível sai da fila (recusado) em vez de ser tentado para sempre', async () => {
     const a = criarExecucao('20260920-080000-2026-07', { pendente: true });
     writeFileSync(a, '{ quebrado');
     const enviador = vi.fn();
@@ -129,8 +154,47 @@ describe('reenviarPendentes', () => {
     const r = await reenviarPendentes(base, enviador, () => undefined);
 
     expect(enviador).not.toHaveBeenCalled();
-    expect(r.falhas).toHaveLength(1);
+    expect(r.recusados).toHaveLength(1);
+    expect(r.falhas).toEqual([]);
+    expect(temEnvioPendente(a)).toBe(false);
+    expect(foiRecusado(a)).toBe(true);
+    expect(existsSync(a)).toBe(true); // o arquivo fica para análise
+    expect(listarEnviosPendentes(base)).toEqual([]);
+  });
+
+  it('[QA] recusa definitiva (422) tira da fila: a próxima execução não tenta de novo', async () => {
+    const a = criarExecucao('20260920-080000-2026-07', { pendente: true, competencia: '2026-07' });
+    const enviador = vi
+      .fn()
+      .mockRejectedValue(new ErroApi('Sistema respondeu 422: Solicitação não está em andamento', 422));
+    const log = vi.fn();
+
+    const r = await reenviarPendentes(base, enviador, log);
+
+    expect(r.recusados).toEqual([{ arquivo: a, erro: expect.stringMatching(/422/) }]);
+    expect(r.falhas).toEqual([]);
+    expect(temEnvioPendente(a)).toBe(false);
+    expect(foiRecusado(a)).toBe(true);
+    expect(log.mock.calls.flat().join('\n')).toMatch(/deixei de tentar/);
+
+    await reenviarPendentes(base, enviador, () => undefined);
+    expect(enviador).toHaveBeenCalledTimes(1);
+  });
+
+  it('[QA] 401 (token) e 503 continuam pendentes — conserta-se e o reenvio volta a funcionar', async () => {
+    const a = criarExecucao('20260920-080000-2026-07', { pendente: true });
+    const b = criarExecucao('20260921-080000-2026-08', { pendente: true });
+    const enviador = vi
+      .fn()
+      .mockRejectedValueOnce(new ErroApi('Sistema respondeu 401', 401))
+      .mockRejectedValueOnce(new ErroApi('Sistema respondeu 503', 503));
+
+    const r = await reenviarPendentes(base, enviador, () => undefined);
+
+    expect(r.falhas).toHaveLength(2);
+    expect(r.recusados).toEqual([]);
     expect(temEnvioPendente(a)).toBe(true);
+    expect(temEnvioPendente(b)).toBe(true);
   });
 
   it('nada pendente → não chama o sistema nem loga', async () => {

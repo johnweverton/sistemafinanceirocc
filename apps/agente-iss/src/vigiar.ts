@@ -14,6 +14,7 @@
 // A senha do ISS continua só no `.env` local (G4): nenhuma rota recebe credencial.
 import type { ConclusaoSolicitacaoIss, ExecucaoIssRegistrada, NovaExecucaoIss, SolicitacaoIss } from '@cobranca/shared';
 import { ErroApi } from './api-client';
+import { ehRecusaDefinitiva } from './reenvio';
 import type { OpcoesExecucaoCompetencia, ResultadoExecucaoCompetencia } from './executar-competencia';
 
 export const INTERVALO_VIGIAR_MS = 60_000;
@@ -119,9 +120,14 @@ export async function processarSolicitacao(s: SolicitacaoIss, deps: Dependencias
   try {
     registrada = await deps.enviarExecucao({ ...resultado.execucao, solicitacaoId: s.id }, resultado.arquivoJson);
   } catch (e) {
+    // QA 13.4/13.5: recusa definitiva (ex.: operador cancelou entre o último progresso e o envio)
+    // não entra na fila de reenvio — dizer que "será reenviado" seria mentira.
     return falhar(
-      `A leitura terminou, mas o envio ao sistema falhou (${(e as Error).message}). ` +
-        'O resultado ficou salvo no computador do escritório e será reenviado sozinho na próxima execução.',
+      ehRecusaDefinitiva(e)
+        ? `A leitura terminou, mas o sistema recusou o resultado (${(e as Error).message}). ` +
+            'Nada foi gravado; o resultado ficou só no computador do escritório.'
+        : `A leitura terminou, mas o envio ao sistema falhou (${(e as Error).message}). ` +
+            'O resultado ficou salvo no computador do escritório e será reenviado sozinho na próxima execução.',
     );
   }
   await concluirComTentativa(deps, s.id, { execucaoId: registrada.execucaoId });

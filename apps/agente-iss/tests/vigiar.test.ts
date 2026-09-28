@@ -158,6 +158,18 @@ describe('processarSolicitacao', () => {
     expect(d.concluir).toHaveBeenCalledWith('sol-1', { erro: expect.stringMatching(/reenviado/) });
   });
 
+  it('[QA] sistema recusou de vez (cancelada entre o último progresso e o envio) ⇒ não promete reenvio', async () => {
+    const { d } = criarDeps({
+      enviarExecucao: vi.fn(async () => {
+        throw new ErroApi('Sistema respondeu 422: Solicitação não está em andamento', 422);
+      }),
+    });
+    expect(await processarSolicitacao(solicitacao(), d)).toBe('falhou');
+    const erro = (d.concluir as ReturnType<typeof vi.fn>).mock.calls[0]![1].erro as string;
+    expect(erro).toMatch(/recusou/);
+    expect(erro).not.toMatch(/reenviado/);
+  });
+
   it('progresso 409 (operador cancelou) ⇒ para a leitura e NÃO conclui nem envia', async () => {
     const { d, logs } = criarDeps({
       enviarProgresso: vi.fn(async (_id: string, atual: number) => {

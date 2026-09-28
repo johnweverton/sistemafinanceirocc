@@ -262,6 +262,80 @@ describe('POST /api/integracoes/iss/execucoes — vínculo solicitacaoId (AC 13)
   });
 });
 
+describe('[QA] POST /api/integracoes/iss/execucoes — idempotência por chaveIdempotencia', () => {
+  const CHAVE = '44444444-4444-4444-8444-444444444444';
+
+  it('mesma chave duas vezes (resposta perdida + reenvio) → mesma execução, sem duplicar capturas', async () => {
+    const r1 = await execucoes(req('/x', { corpo: execucaoPayload({ chaveIdempotencia: CHAVE }) }), semParams);
+    const r2 = await execucoes(req('/x', { corpo: execucaoPayload({ chaveIdempotencia: CHAVE }) }), semParams);
+    expect(r1.status).toBe(201);
+    expect(r2.status).toBe(201);
+    const [b1, b2] = [await r1.json(), await r2.json()];
+    expect(b2).toEqual(b1);
+    expect(banco.tabelas.iss_execucoes_agente).toHaveLength(1);
+    expect(banco.tabelas.iss_capturas).toHaveLength(1);
+    expect(banco.tabelas.iss_execucoes_agente![0]!.chave_idempotencia).toBe(CHAVE);
+  });
+
+  it('reenvio de execução que atendeu solicitação já CONCLUÍDA → devolve a gravada (não 422)', async () => {
+    banco.tabelas.iss_solicitacoes!.push(solicitacaoRow({ id: S1, status: 'em_andamento', heartbeat_em: minutosAtras(1) }));
+    const corpo = execucaoPayload({ solicitacaoId: S1, chaveIdempotencia: CHAVE });
+    const r1 = await execucoes(req('/x', { corpo }), semParams);
+    const { execucaoId } = await r1.json();
+    const fim = await concluir(req(`/s/${S1}/concluir`, { corpo: { execucaoId } }), comId(S1));
+    expect(fim.status).toBe(200);
+    expect(linha(S1).status).toBe('concluida');
+
+    const r2 = await execucoes(req('/x', { corpo }), semParams);
+    expect(r2.status).toBe(201);
+    expect((await r2.json()).execucaoId).toBe(execucaoId);
+    expect(banco.tabelas.iss_execucoes_agente).toHaveLength(1);
+  });
+
+  it('corrida: a chave some da consulta mas o índice único pega → devolve a primeira', async () => {
+    let inserts = 0;
+    banco.antesDe = (op, tabela) => {
+      // Simula o outro envio gravando ENTRE a consulta e o insert deste.
+      if (op === 'insert' && tabela === 'iss_execucoes_agente' && inserts++ === 0) {
+        banco.tabelas.iss_execucoes_agente!.push({
+          id: '55555555-5555-4555-8555-555555555555',
+          competencia: '2026-08',
+          chave_idempotencia: CHAVE,
+          totais: { capturado: 1, nao_encontrado: 0, sem_escrituracao: 0, erro: 0 },
+        });
+      }
+    };
+    const r = await execucoes(req('/x', { corpo: execucaoPayload({ chaveIdempotencia: CHAVE }) }), semParams);
+    expect(r.status).toBe(201);
+    expect((await r.json()).execucaoId).toBe('55555555-5555-4555-8555-555555555555');
+    expect(banco.tabelas.iss_execucoes_agente).toHaveLength(1);
+    expect(banco.tabelas.iss_capturas).toHaveLength(0);
+  });
+
+  it('mesma chave em outra competência → 422 sem gravar', async () => {
+    await execucoes(req('/x', { corpo: execucaoPayload({ chaveIdempotencia: CHAVE }) }), semParams);
+    const r = await execucoes(
+      req('/x', { corpo: execucaoPayload({ chaveIdempotencia: CHAVE, competencia: '2026-07' }) }),
+      semParams,
+    );
+    expect(r.status).toBe(422);
+    expect((await r.json()).error.code).toBe('CHAVE_IDEMPOTENCIA_CONFLITO');
+    expect(banco.tabelas.iss_execucoes_agente).toHaveLength(1);
+  });
+
+  it('chave inválida (não-UUID) → 422 de validação', async () => {
+    const r = await execucoes(req('/x', { corpo: execucaoPayload({ chaveIdempotencia: 'abc' }) }), semParams);
+    expect(r.status).toBe(422);
+  });
+
+  it('sem chave (agente antigo) → cada envio grava, e a coluna nem é enviada', async () => {
+    await execucoes(req('/x', { corpo: execucaoPayload() }), semParams);
+    await execucoes(req('/x', { corpo: execucaoPayload() }), semParams);
+    expect(banco.tabelas.iss_execucoes_agente).toHaveLength(2);
+    expect(banco.tabelas.iss_execucoes_agente!.every((e) => !('chave_idempotencia' in e))).toBe(true);
+  });
+});
+
 describe('fluxo completo: operador pede → agente executa → operador vê concluída', () => {
   it('pedido idempotente, reivindicação, progresso, execução vinculada e conclusão', async () => {
     const pedido = await pedirDoOperador(req('/x', { token: null, corpo: { competencia: '2026-08' } }), semParams);

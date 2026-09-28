@@ -74,6 +74,11 @@ issues:
     fix: "diagnostico.ts `redigirCredenciais` (CPF + senha ≥ 4) usada no log e no `redigir` do vigiar (cli.ts); 2 testes em cli-apoio.test.ts."
   - id: OPS-135-1
     severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      O instalador compila o agente UMA vez e a tarefa roda `node apps\agente-iss\dist\cli.mjs --uma-vez`
+      por um roteiro gerado em %USERPROFILE%\agente-iss\tarefa-agendada.cmd (fora do OneDrive). Após
+      `git pull`, rodar o instalador de novo.
     titulo: "Tarefa agendada recompila o agente a cada minuto dentro do OneDrive"
     description: >
       O `/tr` roda `npm run iss:faturamento -- --uma-vez`, e o script `start` é `node build.mjs && node
@@ -82,6 +87,11 @@ issues:
     recommendation: "Na tarefa, chamar `node apps\\agente-iss\\dist\\cli.mjs --uma-vez` (build uma vez na instalação)."
   - id: OPS-135-2
     severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      O `/tr` passou a ser só o caminho do roteiro entre aspas (`\"%ROTEIRO%\"`); o `cd /d "%REPO%"` fica
+      dentro do roteiro. Ensaio a seco com schtasks/npm trocados por echo, repositório e perfil com
+      espaço no caminho: tarefa registrada com o caminho inteiro e roteiro executado com sucesso.
     titulo: "`/tr` quebra se o caminho do repositório tiver espaço"
     description: >
       `\"%REPO%\"` não é escape para o cmd: as aspas internas encerram o bloco e o caminho fica sem
@@ -96,6 +106,12 @@ issues:
       agente por vez (G4) torna isso teórico.
   - id: REL-135-1
     severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      O 422 da solicitação cancelada agora é recusa definitiva: vira `envio-recusado`, não entra na fila
+      de reenvio, e a mensagem de falha deixa de prometer reenvio (vigiar.ts). A reentrega de uma
+      execução JÁ gravada (solicitação concluída) é resolvida pela chave de idempotência (201 com a
+      execução existente).
     titulo: "Cancelar entre o último progresso e o envio: proposta chega assim mesmo"
     description: >
       O POST /execucoes com `solicitacaoId` recebe 422, o JSON ganha `envio-pendente` e o reenvio

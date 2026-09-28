@@ -4,7 +4,8 @@
 // cobre select/insert/update com eq/in/lt/order/limit/single/maybeSingle e reproduz as duas
 // restrições que a lógica usa de verdade:
 //   - o índice único parcial `uq_iss_solicitacoes_competencia_ativa` (0062) → erro 23505;
-//   - a FK `iss_solicitacoes.execucao_id → iss_execucoes_agente(id)` → erro 23503.
+//   - a FK `iss_solicitacoes.execucao_id → iss_execucoes_agente(id)` → erro 23503;
+//   - o índice único parcial `uq_iss_execucoes_agente_chave` (0062, QA 13.4/13.5) → erro 23505.
 import { randomUUID } from 'node:crypto';
 
 export type Linha = Record<string, unknown>;
@@ -48,6 +49,16 @@ function padroesDaTabela(tabela: string, agora: string): Linha {
 }
 
 function violacoes(banco: FakeBanco, tabela: string, linha: Linha): Erro | null {
+  // QA 13.4/13.5: `uq_iss_execucoes_agente_chave` (0062) — mesma chave de idempotência duas vezes.
+  if (tabela === 'iss_execucoes_agente') {
+    const chave = linha.chave_idempotencia;
+    const repetida =
+      chave != null &&
+      banco.tabelas.iss_execucoes_agente!.some((e) => e.id !== linha.id && e.chave_idempotencia === chave);
+    return repetida
+      ? { code: '23505', message: 'duplicate key value violates unique constraint "uq_iss_execucoes_agente_chave"' }
+      : null;
+  }
   if (tabela !== 'iss_solicitacoes') return null;
   if (ATIVOS.includes(String(linha.status))) {
     const outra = banco.tabelas.iss_solicitacoes!.find(

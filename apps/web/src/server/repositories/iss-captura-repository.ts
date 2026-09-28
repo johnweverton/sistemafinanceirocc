@@ -112,7 +112,52 @@ export function totalizarCapturas(capturas: { status: keyof TotaisExecucaoIss }[
  * execução é apagada — melhor nenhuma execução do que uma execução vazia que a UI mostraria como
  * "0 capturados". O agente guarda o JSON localmente e reenvia.
  */
+/**
+ * QA 13.4/13.5 — idempotência: execução já gravada com esta chave (reenvio depois de resposta
+ * perdida). Devolve o mesmo formato do registro original; `null` se a chave é nova.
+ */
+async function buscarExecucaoPorChave(
+  chave: string,
+  competencia: string,
+): Promise<ExecucaoIssRegistrada | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('iss_execucoes_agente')
+    .select('id, competencia, totais')
+    .eq('chave_idempotencia', chave)
+    .maybeSingle();
+  if (error) {
+    throw new ApiError(500, 'Falha ao consultar execução do agente ISS', 'DB_ERROR', { error: error.message });
+  }
+  if (!data) return null;
+  const existente = data as { id: string; competencia: string; totais: TotaisExecucaoIss };
+  if (existente.competencia !== competencia) {
+    throw new ApiError(
+      422,
+      'Chave de idempotência já usada por uma execução de outra competência',
+      'CHAVE_IDEMPOTENCIA_CONFLITO',
+    );
+  }
+  const { data: capturas, error: errCapturas } = await db
+    .from('iss_capturas')
+    .select('alertas')
+    .eq('execucao_id', existente.id);
+  if (errCapturas) {
+    throw new ApiError(500, 'Falha ao consultar capturas do agente ISS', 'DB_ERROR', { error: errCapturas.message });
+  }
+  const comAlerta = ((capturas ?? []) as { alertas: unknown[] | null }[]).filter(
+    (c) => (c.alertas?.length ?? 0) > 0,
+  ).length;
+  return { execucaoId: existente.id, competencia: existente.competencia, totais: existente.totais, comAlerta };
+}
+
 export async function registrarExecucaoIss(input: NovaExecucaoIssInput): Promise<ExecucaoIssRegistrada> {
+  // QA 13.4/13.5: reenvio da MESMA execução (a primeira gravou, a resposta se perdeu) devolve a
+  // já gravada — antes da guarda da solicitação, que a essa altura pode já estar concluída.
+  if (input.chaveIdempotencia) {
+    const existente = await buscarExecucaoPorChave(input.chaveIdempotencia, input.competencia);
+    if (existente) return existente;
+  }
   // Story 13.5 (AC 13): execução que diz atender uma solicitação do sistema web só entra se ela
   // estiver `em_andamento` — mesma disciplina de "valida tudo antes de gravar, 422 se não bate".
   // Quem CONCLUI a solicitação continua sendo `POST .../solicitacoes/{id}/concluir`.
@@ -132,9 +177,16 @@ export async function registrarExecucaoIss(input: NovaExecucaoIssInput): Promise
       versao_agente: input.versaoAgente,
       totais,
       ciencias: input.ciencias,
+      // Só quando vem: agente antigo (sem chave) continua gravando igual.
+      ...(input.chaveIdempotencia ? { chave_idempotencia: input.chaveIdempotencia } : {}),
     })
     .select('id')
     .single();
+  // Dois envios da mesma execução ao mesmo tempo: o segundo bate no índice único e devolve o primeiro.
+  if (errExec?.code === '23505' && input.chaveIdempotencia) {
+    const existente = await buscarExecucaoPorChave(input.chaveIdempotencia, input.competencia);
+    if (existente) return existente;
+  }
   if (errExec || !execucao) {
     throw new ApiError(500, 'Falha ao registrar execução do agente ISS', 'DB_ERROR', {
       error: errExec?.message,

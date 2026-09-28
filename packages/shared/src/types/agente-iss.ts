@@ -73,6 +73,12 @@ export interface NovaExecucaoIss {
    * uma GUARDA de consistência — quem conclui a solicitação é `POST .../solicitacoes/{id}/concluir`.
    */
   solicitacaoId?: string;
+  /**
+   * QA 13.4/13.5: gerada UMA vez por execução pelo agente. Reenviar a mesma execução (resposta
+   * perdida, reenvio automático) devolve a já gravada em vez de duplicar. Opcional: JSONs antigos
+   * não têm.
+   */
+  chaveIdempotencia?: string;
 }
 
 export type TotaisExecucaoIss = Record<StatusCapturaIss, number>;

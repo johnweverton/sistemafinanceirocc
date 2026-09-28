@@ -16,9 +16,11 @@ Story: [`docs/stories/13.2.agente-iss-cli.story.md`](../../docs/stories/13.2.age
 1. rode `npm run iss:configurar` (CPF e senha do ISS, token do agente e endereço do sistema — ver
    *Primeira vez neste computador* abaixo);
 2. dê um duplo clique em `scripts\agente-iss\instalar-tarefa-agendada.cmd`. Ele cria no Agendador de
-   Tarefas do Windows a tarefa **"Agente ISS - pedidos do sistema"**, que a cada minuto roda
-   `npm run iss:faturamento -- --uma-vez`: pergunta ao sistema se alguém pediu uma busca e, se sim,
-   faz a leitura; se não, termina na hora.
+   Tarefas do Windows a tarefa **"Agente ISS - pedidos do sistema"**, que a cada minuto roda o agente
+   com `--uma-vez`: pergunta ao sistema se alguém pediu uma busca e, se sim, faz a leitura; se não,
+   termina na hora. O instalador compila o agente uma vez e grava o roteiro da tarefa em
+   `%USERPROFILE%\agente-iss\tarefa-agendada.cmd` (fora do OneDrive; nada é recompilado a cada minuto).
+   - **Atualizou o sistema (`git pull`)? Rode o instalador de novo**, para recompilar o agente.
    - Do jeito padrão a tarefa só roda com alguém logado no Windows, e uma janela preta pode piscar por
      alguns segundos a cada minuto. Para não ter janela nenhuma (e rodar mesmo sem ninguém logado),
      use `instalar-tarefa-agendada.cmd /oculta` — o Windows pede a senha **do Windows** dessa conta.
@@ -56,7 +58,10 @@ vez de dentro da pasta do sistema). Uma janela preta abre e:
 3. entra no portal do ISS sozinho e lê o faturamento de cada empresa (não mexa no navegador se ele aparecer);
 4. no fim, manda os valores para o sistema e oferece **abrir a tela de cálculo em lote** já no mês
    certo, com os clientes marcados. Se algo falhar no envio, não precisa fazer nada: da próxima vez
-   que o atalho rodar, ele reenvia sozinho.
+   que o atalho rodar, ele reenvia sozinho (sem duplicar: cada execução leva uma chave, e o sistema
+   devolve a já gravada). Se o sistema **recusar** o resultado (ex.: um cliente saiu da faixa, ou a
+   busca foi cancelada), ele não é reenviado: a pasta da execução ganha o arquivo `envio-recusado`
+   com o motivo.
 
 A janela só fecha quando você apertar uma tecla, para dar tempo de ler o resultado.
 

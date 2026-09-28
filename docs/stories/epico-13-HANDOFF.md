@@ -69,9 +69,15 @@ falhavam; 4 em `medico-repository-duplicata.test.ts`, teste de 08/09 sem a imple
    1. **Aplicar `supabase/migrations/0062_iss_solicitacoes.sql` no Supabase** (SQL Editor, manual, como a
       0061). Sem ela o botão "Buscar no ISS" vira o aviso "Não foi possível verificar as buscas no ISS
       pelo sistema" — o resto do diálogo funciona normalmente.
-   2. @qa gate das 13.4 e 13.5; merge na `master` (PR) e deploy.
+   2. @qa gate das 13.4 (PASS) e 13.5 (CONCERNS) feito em 2026-09-28 (`docs/qa/gates/`). As
+      preocupações REL-134-1/2, OPS-135-1/2 e REL-135-1 foram corrigidas depois do gate: idempotência
+      do envio por `chaveIdempotencia` (coluna nova **na mesma 0062**), marca `envio-recusado` para
+      recusa definitiva, tarefa agendada sem build a cada minuto e com caminho entre aspas. Falta:
+      merge na `master` (PR) e deploy **depois** de aplicar a 0062 — o agente novo manda
+      `chaveIdempotencia`, que precisa da coluna.
    3. No computador do escritório: `git pull`, `npm install`, `npm run iss:configurar` (se ainda não
       feito) e **uma vez** `scripts\agente-iss\instalar-tarefa-agendada.cmd` (ou `/oculta`, sem janela).
+      Rodar o instalador de novo depois de cada `git pull` (é ele que recompila o agente).
    4. Validar ao vivo: "Buscar no ISS" numa competência real (progresso N/total, campos se preenchendo),
       "Cancelar busca" no meio, "Tentar de novo" numa empresa não encontrada, e desligar o agente para
       ver o aviso de "parece desligado" (3 min). Log do agente: `%USERPROFILE%\agente-iss\vigiar.log`.

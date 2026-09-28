@@ -44,6 +44,12 @@ rastreabilidade:
 issues:
   - id: REL-134-1
     severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      Chave de idempotência UUID gerada uma vez por execução (`executar-competencia.ts` →
+      `chaveIdempotencia` no JSON). Servidor: coluna `iss_execucoes_agente.chave_idempotencia` + índice
+      único parcial (0062); `registrarExecucaoIss` devolve a execução já gravada (antes da guarda da
+      solicitação) e trata a corrida pelo 23505. JSON antigo sem chave continua aceito.
     titulo: "POST /api/integracoes/iss/execucoes não é idempotente — reenvio automático pode duplicar a execução"
     description: >
       `registrarExecucaoIss` sempre insere. Se o servidor gravou mas a resposta se perdeu (timeout de
@@ -54,6 +60,10 @@ issues:
     recommendation: "Chave de idempotência no servidor (competencia + iniciado_em + maquina): devolver a execução existente em vez de inserir."
   - id: REL-134-2
     severity: low
+    status: CORRIGIDO (pós-gate, a pedido do dono)
+    fix: >
+      `ehRecusaDefinitiva` (4xx exceto 401/403/408/429): `enviarComMarca` grava `envio-recusado` em vez
+      de `envio-pendente`; `reenviarPendentes` tira da fila (e JSON ilegível também). Testes em reenvio.test.ts.
     titulo: "Marca `envio-pendente` é permanente para erros determinísticos (422)"
     description: >
       Um 422 (ex.: cliente removido da carteira) nunca vai passar, mas a marca fica e o agente tenta

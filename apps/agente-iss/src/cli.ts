@@ -27,7 +27,7 @@ import {
   oferecerAbrirLink,
 } from './assistente';
 import { executarConfigurar } from './configurar';
-import { enviarComMarca, reenviarPendentes } from './reenvio';
+import { ehRecusaDefinitiva, enviarComMarca, reenviarPendentes } from './reenvio';
 import { carregarConfig, ErroConfig, type ConfigAgente } from './config';
 import {
   buscarProximaSolicitacao,
@@ -55,6 +55,11 @@ async function enviar(sistemaUrl: string, token: string, execucao: NovaExecucaoI
     return true;
   } catch (e) {
     console.error(`\nFalha ao enviar ao sistema: ${(e as Error).message}`);
+    if (ehRecusaDefinitiva(e)) {
+      // QA 13.4/13.5: recusa que não muda sozinha — não vai para a fila de reenvio.
+      console.error(`O sistema recusou o resultado; ele NÃO será reenviado. O arquivo continua em ${arquivo}.`);
+      return false;
+    }
     console.error(
       'O resultado está salvo e será reenviado automaticamente na próxima execução do agente.\n' +
         `(Reenvio manual, se preferir: npm run iss:faturamento -- --reenviar "${arquivo}")`,

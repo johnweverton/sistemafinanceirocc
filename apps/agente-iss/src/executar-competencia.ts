@@ -8,6 +8,7 @@
 // Cada chamada abre o SEU navegador e faz o SEU login (AC 18): a sessão do portal não sobrevive
 // entre solicitações diferentes. Não envia nada ao sistema — quem chama decide o que fazer com a
 // execução (enviar, enviar com `solicitacaoId`, ou só salvar).
+import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -209,6 +210,8 @@ export async function executarCompetencia(opcoes: OpcoesExecucaoCompetencia): Pr
 
   // 2. Portal
   const iniciadoEm = deps.agora();
+  // QA 13.4/13.5: uma chave por execução — reenviar este JSON nunca duplica no sistema.
+  const chaveIdempotencia = randomUUID();
   const resultados: ResultadoEmpresa[] = [];
   const salvar = () => {
     const execucao = montarExecucao({
@@ -218,6 +221,7 @@ export async function executarCompetencia(opcoes: OpcoesExecucaoCompetencia): Pr
       maquina: deps.maquina(),
       versaoAgente: VERSAO_AGENTE,
       resultados,
+      chaveIdempotencia,
     });
     writeFileSync(arquivoJson, JSON.stringify(execucao, null, 2));
     return execucao;

@@ -1,9 +1,11 @@
 @echo off
 rem Instala a tarefa agendada do agente ISS (Story 13.5, AC 17 - Epico 13, Fase 2).
 rem
-rem O que faz: registra no Agendador de Tarefas do Windows uma tarefa que, A CADA MINUTO, roda
-rem     npm run iss:faturamento -- --uma-vez
-rem na pasta do sistema. Cada rodada pergunta ao sistema se alguem clicou em "Buscar no ISS"
+rem O que faz: compila o agente UMA vez, grava um roteiro curto em
+rem     %USERPROFILE%\agente-iss\tarefa-agendada.cmd
+rem (fora do OneDrive) e registra no Agendador de Tarefas do Windows uma tarefa que, A CADA
+rem MINUTO, roda esse roteiro (= node apps\agente-iss\dist\cli.mjs --uma-vez na pasta do sistema,
+rem sem recompilar nada a cada minuto). Cada rodada pergunta ao sistema se alguem clicou em "Buscar no ISS"
 rem (dialogo de lote dos clientes contabeis). Se sim, le o ISS e manda os valores; se nao, termina
 rem na hora. Basta rodar este arquivo UMA vez neste computador.
 rem
@@ -25,6 +27,8 @@ rem
 rem A senha do ISS NAO passa por aqui: continua so em %USERPROFILE%\agente-iss\.env (rode
 rem "npm run iss:configurar" antes, se ainda nao rodou).
 rem
+rem Atualizou o sistema (git pull)? Rode este arquivo de novo para recompilar o agente.
+rem
 rem ATENCAO: este arquivo e propositalmente so ASCII (sem acentos) - ver o comentario em
 rem "Buscar faturamento ISS.cmd".
 setlocal
@@ -36,7 +40,26 @@ set "REPO="
 if exist "%~dp0..\..\apps\agente-iss\package.json" for %%I in ("%~dp0..\..") do set "REPO=%%~fI"
 if not defined REPO goto sem_repo
 
-set "COMANDO=cmd /c cd /d \"%REPO%\" && npm run iss:faturamento -- --uma-vez"
+rem 1. Compila o agente uma vez (a tarefa so executa o dist\cli.mjs pronto).
+where node >nul 2>nul
+if errorlevel 1 goto sem_node
+pushd "%REPO%"
+call npm run build --workspace apps/agente-iss
+set "ERRO_BUILD=%errorlevel%"
+popd
+if not "%ERRO_BUILD%"=="0" goto falhou_build
+if not exist "%REPO%\apps\agente-iss\dist\cli.mjs" goto falhou_build
+
+rem 2. Roteiro da tarefa fora do OneDrive. Assim o /tr e so um caminho entre aspas: funciona
+rem mesmo com espaco no caminho do sistema ou do usuario (o "cmd /c cd && npm" antigo quebrava).
+set "PASTA=%USERPROFILE%\agente-iss"
+if not exist "%PASTA%" mkdir "%PASTA%"
+set "ROTEIRO=%PASTA%\tarefa-agendada.cmd"
+> "%ROTEIRO%" echo @echo off
+>> "%ROTEIRO%" echo rem Gerado por scripts\agente-iss\instalar-tarefa-agendada.cmd - nao editar.
+>> "%ROTEIRO%" echo cd /d "%REPO%"
+>> "%ROTEIRO%" echo node "apps\agente-iss\dist\cli.mjs" --uma-vez
+set "COMANDO=\"%ROTEIRO%\""
 
 if /i "%~1"=="/oculta" goto oculta
 
@@ -62,6 +85,7 @@ endlocal & exit /b 0
 :remover
 schtasks /delete /tn "%TAREFA%" /f
 if errorlevel 1 goto falhou
+if exist "%USERPROFILE%\agente-iss\tarefa-agendada.cmd" del "%USERPROFILE%\agente-iss\tarefa-agendada.cmd"
 echo Tarefa "%TAREFA%" removida.
 echo.
 pause
@@ -70,6 +94,20 @@ endlocal & exit /b 0
 :falhou
 echo.
 echo Nao consegui mexer na tarefa agendada (veja a mensagem acima). Chame o responsavel pelo sistema.
+echo.
+pause
+endlocal & exit /b 1
+
+:sem_node
+echo Nao encontrei o Node.js neste computador. Instale o Node.js 20 ou mais novo e rode de novo.
+echo.
+pause
+endlocal & exit /b 1
+
+:falhou_build
+echo.
+echo Nao consegui compilar o agente (veja a mensagem acima). Rode "npm install" na pasta do
+echo sistema e tente de novo. Se continuar, chame o responsavel pelo sistema.
 echo.
 pause
 endlocal & exit /b 1
