@@ -826,14 +826,21 @@ function respostaIss(over: Record<string, unknown> = {}) {
 }
 
 describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
-  it('pré-preenche o campo com a proposta e mostra o selo com a situação do ISS', async () => {
+  // Story 13.4 (AC 2, 3): o selo diz o que fazer ("Veio do ISS"); a situação bruta do portal
+  // ("Fechada - Retificadora(1)") só aparece no `title`, nunca como texto visível.
+  it('pré-preenche o campo com a proposta e mostra o selo verde "Veio do ISS"', async () => {
     mockPropostasIss.mockResolvedValue(respostaIss({ propostas: [propostaIss('cc-1')] }));
     renderDialog([faixaA, faixaB]);
 
     const campos = await screen.findAllByRole('spinbutton');
     await waitFor(() => expect(campos[0]).toHaveValue(34375.07));
     expect(campos[1]).toHaveValue(null); // sem proposta → vazio, como antes
-    expect(screen.getByText(/ISS · Fechada - Retificadora\(1\)/)).toBeInTheDocument();
+    const selo = screen.getByText('Veio do ISS').closest('p')!;
+    expect(selo).toHaveClass('text-xs', 'text-cc-success');
+    expect(selo).not.toHaveClass('text-2xs');
+    expect(selo.getAttribute('title')).toContain('Fechada - Retificadora(1)');
+    expect(selo.textContent).not.toMatch(/Retificadora|capturado/);
+    expect(screen.queryByText(/Retificadora/)).not.toBeInTheDocument();
   });
 
   it('lançar sem mexer no campo envia o valor da proposta E a captura aceita', async () => {
@@ -893,9 +900,11 @@ describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
 
     const campos = await screen.findAllByRole('spinbutton');
     await waitFor(() =>
-      expect(screen.getByText(/lançado R\$\s*4\.500,00 · ISS R\$\s*8\.000,00/)).toBeInTheDocument(),
+      expect(screen.getByText(/lançado R\$\s*4\.500,00 difere do ISS R\$\s*8\.000,00/)).toBeInTheDocument(),
     );
     expect(campos[0]).toHaveValue(null);
+    const selo = screen.getByText('Confira').closest('p')!;
+    expect(selo).toHaveClass('text-cc-warning');
   });
 
   it('R2: competência aberta no ISS pré-preenche mas avisa que o valor pode mudar', async () => {
@@ -905,7 +914,8 @@ describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
     renderDialog([faixaA, faixaB]);
 
     await waitFor(() => expect(screen.getAllByRole('spinbutton')[0]).toHaveValue(34375.07));
-    expect(screen.getByText(/competência aberta — o valor pode mudar/)).toBeInTheDocument();
+    expect(screen.getByText(/competência ainda aberta no ISS — o valor pode mudar/)).toBeInTheDocument();
+    expect(screen.getByText('Confira').closest('p')).toHaveClass('text-cc-warning');
   });
 
   it('R5: captura com alerta NÃO pré-preenche e pede conferência no portal', async () => {
@@ -934,6 +944,10 @@ describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
     renderDialog([faixaA, faixaB]);
 
     await waitFor(() => expect(screen.getByText(/empresa não encontrada no portal/)).toBeInTheDocument());
+    const seloManual = screen.getByText('Digite à mão').closest('p')!;
+    expect(seloManual).toHaveClass('text-cc-muted');
+    expect(seloManual.getAttribute('title')).toContain('nao_encontrado');
+    expect(seloManual.textContent).not.toContain('nao_encontrado');
     expect(screen.getAllByRole('spinbutton')[1]).toHaveValue(null);
     expect(screen.getByText(/Precisam de digitação manual \(1\)/)).toBeInTheDocument();
   });

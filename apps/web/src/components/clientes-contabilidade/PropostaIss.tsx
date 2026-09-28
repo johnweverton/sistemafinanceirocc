@@ -1,10 +1,9 @@
 'use client';
 // Peças visuais da proposta do ISS no LoteContabilidadeDialog (Story 13.3, Épico 13):
 // `SeloPropostaIss` (linha sob o campo de cada cliente) e `ResumoCapturaIss` (faixa acima da lista).
-// Só apresentação — a decisão de pré-preencher mora em `@/lib/proposta-iss`.
+// Só apresentação — a decisão de pré-preencher e o texto do selo moram em `@/lib/proposta-iss`.
 import type { UltimaExecucaoIss } from '@cobranca/shared';
-import type { EstadoPropostaIss } from '@/lib/proposta-iss';
-import { brl } from '@/lib/formato';
+import { classificacaoVisualIss, type EstadoPropostaIss, type TomSeloIss } from '@/lib/proposta-iss';
 
 function dataCurta(iso: string): string {
   const d = new Date(iso);
@@ -18,49 +17,31 @@ function dataHora(iso: string): string {
   return `${dataCurta(iso)} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+// Story 13.4 (AC 2, 3): o selo passou de ~7 variações em `text-2xs` com jargão do portal para 3
+// estados com uma ação clara ("Veio do ISS" / "Confira" / "Digite à mão"). Texto e tom vêm de
+// `classificacaoVisualIss` (função pura, testada sem renderizar); aqui só se escolhe a cor. O
+// jargão técnico (situação do ISS, status bruto, horário) fica APENAS no `title` — hover/foco.
+const COR_POR_TOM: Record<TomSeloIss, string> = {
+  verde: 'text-cc-success',
+  amarelo: 'text-cc-warning',
+  cinza: 'text-cc-muted',
+};
+
 export function SeloPropostaIss({ estado }: { estado: EstadoPropostaIss }) {
-  switch (estado.tipo) {
-    case 'sem_captura':
-      return null;
-    case 'preenchivel':
-      return estado.aberta ? (
-        <p className="text-2xs text-cc-warning">
-          ISS · competência aberta — o valor pode mudar até o fechamento
-        </p>
-      ) : (
-        <p className="text-2xs text-cc-success">
-          ISS · {estado.captura.situacaoIss ?? 'Fechada'} · capturado em {dataCurta(estado.captura.capturadoEm)}
-        </p>
-      );
-    case 'alerta':
-      return (
-        <p role="alert" className="text-2xs text-cc-warning">
-          ISS {brl(estado.valor)} · possível nota fora da escrituração — confira no portal antes de
-          digitar
-        </p>
-      );
-    case 'divergente':
-      return (
-        <p role="alert" className="text-2xs text-cc-warning">
-          lançado {brl(estado.lancado)} · ISS {brl(estado.valor)}
-        </p>
-      );
-    case 'confere':
-      return (
-        <p className="text-2xs text-cc-muted">
-          lançado {brl(estado.lancado)} · confere com o ISS
-        </p>
-      );
-    case 'indisponivel': {
-      const motivo =
-        estado.captura.status === 'nao_encontrado'
-          ? 'empresa não encontrada no portal'
-          : estado.captura.status === 'sem_escrituracao'
-            ? 'sem escrituração nesta competência (não significa faturamento zero)'
-            : 'falha na leitura do portal';
-      return <p className="text-2xs text-cc-muted">ISS: {motivo} — digite manualmente</p>;
-    }
-  }
+  const selo = classificacaoVisualIss(estado);
+  if (!selo) return null;
+  return (
+    <p
+      className={`text-xs ${COR_POR_TOM[selo.tom]}`}
+      title={selo.detalheTecnico ?? undefined}
+      // Focável para o `title` também aparecer a quem navega por teclado (AC 2).
+      tabIndex={selo.detalheTecnico ? 0 : undefined}
+      data-tom={selo.tom}
+    >
+      <span className="font-semibold">{selo.rotulo}</span>
+      {selo.motivo && <> · {selo.motivo}</>}
+    </p>
+  );
 }
 
 export function ResumoCapturaIss({

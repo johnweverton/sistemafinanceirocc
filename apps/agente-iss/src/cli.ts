@@ -4,13 +4,27 @@
 // Fluxo: busca os alvos no sistema → login no portal → para cada empresa (em série, 1 navegador):
 // trocar inscrição → Manter Escrituração → Visualizar → Somatório de Serviços Prestados → no fim,
 // UM envio com tudo (proposta para conferência — decisão G3). O JSON fica salvo localmente antes
-// do envio; se o envio falhar, `--reenviar` manda de novo sem abrir o portal.
+// do envio; se o envio falhar, fica a marca `envio-pendente` e a próxima execução reenvia sozinha
+// (Story 13.4) — `--reenviar` continua existindo para o reenvio manual.
+//
+// Story 13.4: sem nenhum argumento num terminal interativo, roda o MODO ASSISTENTE (pergunta a
+// competência, confirma, e no fim oferece abrir o diálogo de lote); `configurar` grava o `.env`.
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium, type Browser } from 'playwright';
 import type { AlvoIss, AlvosIssResposta, NovaCapturaIss, NovaExecucaoIss } from '@cobranca/shared';
 import { AJUDA, ErroArgs, lerOpcoes } from './args';
+import {
+  comTerminal,
+  confirmarInicio,
+  deveUsarAssistente,
+  iniciarAssistente,
+  linkDoLote,
+  oferecerAbrirLink,
+} from './assistente';
+import { executarConfigurar } from './configurar';
+import { enviarComMarca, reenviarPendentes } from './reenvio';
 import { carregarConfig, ErroConfig } from './config';
 import { buscarAlvos, enviarExecucao, ErroApi } from './api-client';
 import { criarDiagnostico, redigirCpf } from './diagnostico';
@@ -40,7 +54,8 @@ function capturaBase(alvo: AlvoIss): Omit<NovaCapturaIss, 'status'> {
 
 async function enviar(sistemaUrl: string, token: string, execucao: NovaExecucaoIss, arquivo: string): Promise<boolean> {
   try {
-    const r = await enviarExecucao(sistemaUrl, token, execucao);
+    // Story 13.4 (AC 6): falha grava `envio-pendente` ao lado do JSON; sucesso o remove.
+    const r = await enviarComMarca(arquivo, execucao, (e) => enviarExecucao(sistemaUrl, token, e));
     const t = r.totais;
     console.log(
       `\nEnviado ao sistema (execução ${r.execucaoId}): ${t.capturado} capturados, ${t.nao_encontrado} não encontrados, ` +
@@ -50,13 +65,33 @@ async function enviar(sistemaUrl: string, token: string, execucao: NovaExecucaoI
     return true;
   } catch (e) {
     console.error(`\nFalha ao enviar ao sistema: ${(e as Error).message}`);
-    console.error(`O resultado está salvo. Para reenviar sem abrir o portal:\n  npm run iss:faturamento -- --reenviar "${arquivo}"`);
+    console.error(
+      'O resultado está salvo e será reenviado automaticamente na próxima execução do agente.\n' +
+        `(Reenvio manual, se preferir: npm run iss:faturamento -- --reenviar "${arquivo}")`,
+    );
     return false;
   }
 }
 
+const escrever = (texto: string) => console.log(texto);
+
 async function main(): Promise<number> {
-  const opts = lerOpcoes(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  // Story 13.4 (AC 13): subcomando despachado ANTES de `lerOpcoes` (que não aceita posicionais).
+  if (argv[0] === 'configurar') {
+    return comTerminal((t) => executarConfigurar({ perguntar: t.perguntar, perguntarSenha: t.perguntarSenha, escrever }));
+  }
+
+  // Story 13.4 (AC 9, 10): assistente só sem argumentos E com terminal interativo.
+  const assistente = deveUsarAssistente(argv, process.stdin.isTTY);
+  let argvEfetivo = argv;
+  if (assistente) {
+    const competencia = await comTerminal((t) => iniciarAssistente(t.perguntar, escrever));
+    if (!competencia) return 1;
+    argvEfetivo = ['--competencia', competencia];
+  }
+
+  const opts = lerOpcoes(argvEfetivo);
   if (opts.ajuda) {
     console.log(AJUDA);
     return 0;
@@ -66,6 +101,13 @@ async function main(): Promise<number> {
   if (opts.reenviar) {
     const execucao = JSON.parse(readFileSync(opts.reenviar, 'utf8')) as NovaExecucaoIss;
     return (await enviar(cfg.sistemaUrl, cfg.token, execucao, opts.reenviar)) ? 0 : 2;
+  }
+
+  // Story 13.4 (AC 6): antes de qualquer alvo novo, reenvia o que ficou pendente de execuções
+  // anteriores. Nunca interrompe esta execução. [AUTO-DECISION] Pulado em --offline/--sem-envio:
+  // o primeiro nem tem token/URL, e o segundo promete não enviar nada ao sistema.
+  if (!opts.semEnvio) {
+    await reenviarPendentes(cfg.pastaBase, (e) => enviarExecucao(cfg.sistemaUrl, cfg.token, e));
   }
 
   const pastaExecucao = join(cfg.pastaBase, 'execucoes', `${carimbo()}-${opts.competencia}`);
@@ -104,6 +146,14 @@ async function main(): Promise<number> {
     return 0;
   }
   diag.log(`${alvos.length} empresa(s) para buscar.`);
+  if (assistente) {
+    const n = alvos.length;
+    const ok = await comTerminal((t) => confirmarInicio(t.perguntar, escrever, opts.competencia, n));
+    if (!ok) {
+      diag.log('Cancelado pelo operador antes de abrir o portal.');
+      return 0;
+    }
+  }
 
   // 2. Portal
   const iniciadoEm = new Date();
@@ -198,7 +248,13 @@ async function main(): Promise<number> {
     console.log(`${opts.offline ? '--offline' : '--sem-envio'}: nada foi enviado ao sistema.`);
     return 0;
   }
-  return (await enviar(cfg.sistemaUrl, cfg.token, execucao, arquivoJson)) ? 0 : 2;
+  const enviado = await enviar(cfg.sistemaUrl, cfg.token, execucao, arquivoJson);
+  // Story 13.4 (AC 11): no assistente, o fim aponta direto para o diálogo de lote da competência.
+  if (enviado && assistente) {
+    const link = linkDoLote(cfg.sistemaUrl, opts.competencia);
+    await comTerminal((t) => oferecerAbrirLink(t.perguntar, escrever, link));
+  }
+  return enviado ? 0 : 2;
 }
 
 main().then(

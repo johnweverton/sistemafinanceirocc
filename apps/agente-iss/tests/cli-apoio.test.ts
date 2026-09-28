@@ -1,6 +1,6 @@
 // Partes puras do CLI: argumentos, competência, configuração, relatório e redação do CPF.
 import { describe, it, expect } from 'vitest';
-import { lerOpcoes, ErroArgs } from '../src/args';
+import { AJUDA, lerOpcoes, ErroArgs } from '../src/args';
 import { competenciaAnterior, competenciaPortal, dataCompetenciaPortal } from '../src/competencia';
 import { lerArquivoEnv, validarConfig, ErroConfig } from '../src/config';
 import { redigirCpf } from '../src/diagnostico';
@@ -83,5 +83,37 @@ describe('relatório', () => {
   });
   it('resumo avisa competência aberta', () => {
     expect(resumoTexto('2026-08', [{ nome: 'EMPRESA', documento: '1', captura }])).toMatch(/ABERTA/);
+  });
+});
+
+// Story 13.4 (AC 7, 8): ajuda em camadas — uso comum no topo, depuração em "Avançado".
+describe('AJUDA', () => {
+  const [comum, avancado] = AJUDA.split('Avançado');
+
+  it('tem as duas seções, na ordem certa', () => {
+    expect(comum).toMatch(/Uso comum/);
+    expect(avancado).toBeDefined();
+  });
+
+  it('uso comum: competência, modo assistente, configurar e --ajuda', () => {
+    expect(comum).toMatch(/--competencia AAAA-MM/);
+    expect(comum).toMatch(/modo assistente/);
+    expect(comum).toMatch(/iss:configurar/);
+    expect(comum).toMatch(/--ajuda/);
+  });
+
+  it('todas as flags de depuração (inclusive --reenviar) estão em "Avançado", fora do uso comum', () => {
+    for (const flag of ['--offline', '--reconhecer', '--headed', '--limite', '--sem-envio', '--reenviar', '--cnpj']) {
+      expect(avancado).toContain(flag);
+      expect(comum).not.toContain(flag);
+    }
+  });
+
+  it('nenhuma flag mudou: lerOpcoes continua aceitando todas', () => {
+    expect(() =>
+      lerOpcoes(['--competencia', '2026-08', '--cnpj', '07286006000116', '--limite', '2', '--headed', '--reconhecer', '--sem-envio', '--reenviar', 'x.json']),
+    ).not.toThrow();
+    expect(lerOpcoes(['--offline', '--cnpj', '07286006000116']).offline).toBe(true);
+    expect(lerOpcoes(['--ajuda']).ajuda).toBe(true);
   });
 });

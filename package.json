@@ -13,7 +13,8 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "iss:faturamento": "npm run start --workspace apps/agente-iss --"
+    "iss:faturamento": "npm run start --workspace apps/agente-iss --",
+    "iss:configurar": "npm run start --workspace apps/agente-iss -- configurar"
   },
   "engines": {
     "node": ">=20",

@@ -70,7 +70,7 @@ export function carregarConfig(pastaBase = pastaBasePadrao(), opcoes: { apenasPo
   if (!existsSync(arquivo)) {
     throw new ErroConfig(
       `Arquivo de configuração não encontrado: ${arquivo}\n` +
-        'Crie-o com ISS_CPF, ISS_SENHA, AGENTE_ISS_TOKEN e SISTEMA_URL (ver apps/agente-iss/README.md).',
+        'Rode `npm run iss:configurar` para criá-lo (ou veja apps/agente-iss/README.md).',
     );
   }
   return validarConfig(pastaBase, lerArquivoEnv(readFileSync(arquivo, 'utf8')), opcoes);

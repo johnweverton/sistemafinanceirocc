@@ -7,6 +7,43 @@ cada cliente contábil em modo *faixa de faturamento* e envia os valores ao Sist
 Arquitetura: [`docs/architecture/feature-agente-faturamento-iss.md`](../../docs/architecture/feature-agente-faturamento-iss.md) ·
 Story: [`docs/stories/13.2.agente-iss-cli.story.md`](../../docs/stories/13.2.agente-iss-cli.story.md)
 
+## Para o operador
+
+**O que o atalho faz.** Dê um duplo clique em **Buscar faturamento ISS** (o arquivo
+`scripts\agente-iss\Buscar faturamento ISS.cmd`; para tê-lo na Área de Trabalho, clique com o botão
+direito › *Enviar para* › *Área de trabalho (criar atalho)* — ou copie o arquivo depois de rodá-lo uma
+vez de dentro da pasta do sistema). Uma janela preta abre e:
+
+1. pergunta **qual mês** buscar — aperte Enter para o mês anterior (o normal), ou digite, por exemplo, `08/2026`;
+2. diz quantas empresas vai ler e quanto tempo leva, e pergunta se pode começar — Enter = sim;
+3. entra no portal do ISS sozinho e lê o faturamento de cada empresa (não mexa no navegador se ele aparecer);
+4. no fim, manda os valores para o sistema e oferece **abrir a tela de cálculo em lote** já no mês
+   certo, com os clientes marcados. Se algo falhar no envio, não precisa fazer nada: da próxima vez
+   que o atalho rodar, ele reenvia sozinho.
+
+A janela só fecha quando você apertar uma tecla, para dar tempo de ler o resultado.
+
+**O que o selo embaixo de cada valor quer dizer** (na tela *Clientes Contábeis › Calcular em lote*):
+
+| Selo | O que significa | O que fazer |
+|---|---|---|
+| **Veio do ISS** (verde) | O valor foi lido do ISS e está pronto | Nada — pode seguir |
+| **Confira** (amarelo) | Há um valor, mas algo pede atenção (a frase ao lado diz o quê: mês ainda aberto no ISS, possível nota fora da escrituração, ou valor diferente do já lançado) | Confira no ISS antes de lançar |
+| **Digite à mão** (cinza) | O agente não conseguiu o valor (empresa não encontrada, sem escrituração no mês ou falha na leitura) | Digite o faturamento como antes |
+
+Passe o mouse sobre o selo para ver o detalhe técnico (útil se precisar chamar alguém).
+
+**Primeira vez neste computador.** Alguém precisa rodar `npm run iss:configurar` uma vez: ele pergunta
+o CPF e a senha do ISS, o token do agente e o endereço do sistema, grava tudo em
+`%USERPROFILE%\agente-iss\.env` (fora do OneDrive) e confere se o token está certo.
+
+**Quando chamar o responsável pelo sistema:**
+
+- a janela diz que a **senha** do ISS está errada (o agente para na hora, de propósito, para não bloquear o usuário);
+- a janela diz que o **token** não confere ou que o sistema não respondeu;
+- aparecem **muitos "Digite à mão" de uma vez** (o portal do ISS pode ter mudado);
+- a janela terminou com "Terminou com problema" e as mensagens não fazem sentido.
+
 ## Configuração (uma vez, na máquina do escritório)
 
 Crie `%USERPROFILE%\agente-iss\.env` (ex.: `C:\Users\<usuario>\agente-iss\.env`). **Fora do OneDrive**:

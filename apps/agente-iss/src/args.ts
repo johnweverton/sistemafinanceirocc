@@ -21,20 +21,30 @@ export interface OpcoesCli {
 
 export class ErroArgs extends Error {}
 
+// Story 13.4 (AC 7, 8): ajuda em camadas. O uso do dia a dia fica no topo; as flags de
+// depuração (e o reenvio manual, que agora é automático) ficam em "Avançado". Nenhuma flag mudou
+// de nome nem de comportamento.
 export const AJUDA = `Agente de faturamento ISS Fortaleza (Épico 13)
 
-Uso: npm run iss:faturamento -- [opções]
+Uso comum:
+  npm run iss:faturamento                 modo assistente: pergunta a competência e confirma
+                                          (fora de um terminal interativo, usa o mês anterior)
+  npm run iss:faturamento -- --competencia AAAA-MM
+                                          lê esta competência (padrão: mês anterior)
+  npm run iss:configurar                  cria/atualiza a configuração (CPF, senha, token, URL)
+  npm run iss:faturamento -- --ajuda      esta ajuda
 
-  --competencia AAAA-MM   competência a ler (padrão: mês anterior)
+  Envios que falharam são reenviados sozinhos no início da próxima execução.
+
+Avançado (depuração):
   --cnpj 00000000000000   só este CPF/CNPJ (pode repetir)
   --limite N              no máximo N empresas (teste)
   --headed                mostra o navegador
   --reconhecer            salva HTML + print de cada passo
   --sem-envio             não envia ao sistema (só salva o JSON local)
-  --reenviar ARQUIVO      reenvia um JSON salvo, sem abrir o portal
   --offline               não fala com o sistema (exige --cnpj; só salva o JSON local)
                           — para validar a leitura do portal antes do sistema estar no ar
-  --ajuda                 esta ajuda`;
+  --reenviar ARQUIVO      reenvia manualmente um JSON salvo, sem abrir o portal`;
 
 export function lerOpcoes(argv: string[], hoje: Date = new Date()): OpcoesCli {
   let v;

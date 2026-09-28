@@ -3,6 +3,9 @@ import { describe, it, expect } from 'vitest';
 import type { CapturaIss } from '@cobranca/shared';
 import {
   capturaAceita,
+  classificacaoVisualIss,
+  clientesAlvoDoIss,
+  competenciaDoLinkLote,
   estadoPropostaIss,
   mesmoValor,
   valorInicialDoCampo,
@@ -101,5 +104,94 @@ describe('mesmoValor', () => {
   it('ignora ruído de ponto flutuante', () => {
     expect(mesmoValor(0.1 + 0.2, 0.3)).toBe(true);
     expect(mesmoValor(10, 10.01)).toBe(false);
+  });
+});
+
+// Story 13.4 (AC 1, 5) — 3 estados visuais com ação clara, sem jargão do portal no texto visível.
+describe('classificacaoVisualIss', () => {
+  const semEspacoDuro = (t: string | null) => (t ?? '').replace(/\s/g, ' ');
+
+  it('sem captura → null (nenhum selo, como antes)', () => {
+    expect(classificacaoVisualIss(estadoPropostaIss(undefined, undefined))).toBeNull();
+  });
+
+  it('preenchível com competência fechada → verde "Veio do ISS", sem motivo', () => {
+    const c = classificacaoVisualIss(estadoPropostaIss(captura(), undefined));
+    expect(c).toMatchObject({ tom: 'verde', rotulo: 'Veio do ISS', motivo: null });
+    // o jargão do portal só aparece no detalhe técnico
+    expect(c?.detalheTecnico).toContain('Fechada - Retificadora(1)');
+    expect(c?.detalheTecnico).toContain('capturado');
+  });
+
+  it('confere com o lançado → verde "Veio do ISS", sem motivo', () => {
+    const c = classificacaoVisualIss(estadoPropostaIss(captura(), 34375.07));
+    expect(c).toMatchObject({ tom: 'verde', rotulo: 'Veio do ISS', motivo: null });
+  });
+
+  it('preenchível com competência aberta (R2) → amarelo "Confira", o valor pode mudar', () => {
+    const c = classificacaoVisualIss(estadoPropostaIss(captura({ competenciaFechada: false }), undefined));
+    expect(c).toMatchObject({ tom: 'amarelo', rotulo: 'Confira' });
+    expect(c?.motivo).toBe('competência ainda aberta no ISS — o valor pode mudar');
+  });
+
+  it('alerta (R5) → amarelo "Confira", possível nota fora da escrituração', () => {
+    const c = classificacaoVisualIss(
+      estadoPropostaIss(captura({ valorServicosPrestados: 0, alertas: ['possivel_nota_fora_escrituracao'] }), undefined),
+    );
+    expect(c).toMatchObject({ tom: 'amarelo', rotulo: 'Confira' });
+    expect(semEspacoDuro(c!.motivo)).toBe('possível nota fora da escrituração (ISS R$ 0,00) — confira antes de digitar');
+  });
+
+  it('divergente (R4) → amarelo "Confira", lançado difere do ISS', () => {
+    const c = classificacaoVisualIss(estadoPropostaIss(captura({ valorServicosPrestados: 8000 }), 4500));
+    expect(c).toMatchObject({ tom: 'amarelo', rotulo: 'Confira' });
+    expect(semEspacoDuro(c!.motivo)).toBe('lançado R$ 4.500,00 difere do ISS R$ 8.000,00');
+  });
+
+  it.each([
+    ['nao_encontrado', 'empresa não encontrada no portal do ISS'],
+    ['sem_escrituracao', 'sem escrituração nesta competência (não significa faturamento zero)'],
+    ['erro', 'falha na leitura do ISS'],
+  ] as const)('indisponível (%s) → cinza "Digite à mão" com o motivo em português', (status, motivo) => {
+    const c = classificacaoVisualIss(
+      estadoPropostaIss(captura({ status, valorServicosPrestados: null, situacaoIss: null }), undefined),
+    );
+    expect(c).toMatchObject({ tom: 'cinza', rotulo: 'Digite à mão', motivo });
+    expect(c?.detalheTecnico).toContain(`status da captura: ${status}`);
+  });
+
+  it('nenhum motivo visível cita a situação bruta, o status ou o horário da captura', () => {
+    const estados = [
+      estadoPropostaIss(captura(), undefined),
+      estadoPropostaIss(captura({ competenciaFechada: false, situacaoIss: 'Aberta' }), undefined),
+      estadoPropostaIss(captura({ valorServicosPrestados: 8000 }), 4500),
+      estadoPropostaIss(captura({ status: 'erro', valorServicosPrestados: null, mensagemErro: 'Timeout 30000ms' }), undefined),
+    ];
+    for (const e of estados) {
+      const c = classificacaoVisualIss(e)!;
+      const visivel = `${c.rotulo} ${c.motivo ?? ''}`;
+      expect(visivel).not.toMatch(/Retificadora|Fechada|Aberta|capturado|nao_encontrado|Timeout|2026-09-21|21\/09/);
+    }
+  });
+});
+
+describe('competenciaDoLinkLote (Story 13.4, AC 12)', () => {
+  it('aceita AAAA-MM válido', () => {
+    expect(competenciaDoLinkLote('2026-08')).toBe('2026-08');
+  });
+
+  it.each([null, undefined, '', '2026-13', '2026-8', 'agosto', '2026-08-01'])('rejeita %s', (v) => {
+    expect(competenciaDoLinkLote(v)).toBeNull();
+  });
+});
+
+describe('clientesAlvoDoIss (Story 13.4, AC 12)', () => {
+  it('mesmo critério de listarAlvosIss: ativos em faixa_faturamento', () => {
+    const lista = [
+      { id: 'a', ativo: true, modoCobranca: 'faixa_faturamento' },
+      { id: 'b', ativo: false, modoCobranca: 'faixa_faturamento' },
+      { id: 'c', ativo: true, modoCobranca: 'fixo' },
+    ];
+    expect(clientesAlvoDoIss(lista).map((c) => c.id)).toEqual(['a']);
   });
 });

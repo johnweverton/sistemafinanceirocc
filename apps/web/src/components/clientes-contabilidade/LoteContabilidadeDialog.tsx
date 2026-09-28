@@ -80,6 +80,7 @@ function gravarLoteEmAndamento(valor: LoteEmAndamento | null): void {
 export function LoteContabilidadeDialog({
   clientes,
   inativosSelecionados = [],
+  competenciaInicial,
   onClose,
 }: {
   /** Clientes ATIVOS já selecionados na tela (resolvidos pelo chamador — nome/modoCobranca). */
@@ -91,11 +92,17 @@ export function LoteContabilidadeDialog({
    * "Calcular em lote (7)").
    */
   inativosSelecionados?: ClienteContabilidade[];
+  /**
+   * Competência com que o diálogo abre (Story 13.4, AC 12 — link `?lote=AAAA-MM` impresso pelo
+   * agente do ISS). Ausente = mês corrente, como antes. Um lote em andamento recuperado do
+   * sessionStorage continua tendo precedência (ver efeito de recuperação abaixo).
+   */
+  competenciaInicial?: string;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [competencia, setCompetencia] = useState(competenciaAtual());
+  const [competencia, setCompetencia] = useState(competenciaInicial ?? competenciaAtual());
   const [faturamentos, setFaturamentos] = useState<Record<string, string>>({});
   const [faturamentoLancado, setFaturamentoLancado] = useState(false);
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
