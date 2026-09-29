@@ -338,10 +338,10 @@ describe('[QA] POST /api/integracoes/iss/execucoes — idempotência por chaveId
 
 describe('fluxo completo: operador pede → agente executa → operador vê concluída', () => {
   it('pedido idempotente, reivindicação, progresso, execução vinculada e conclusão', async () => {
-    const pedido = await pedirDoOperador(req('/x', { token: null, corpo: { competencia: '2026-08' } }), semParams);
+    const pedido = await pedirDoOperador(req('/x', { token: null, corpo: { competencia: '2026-08', documentos: ['08293377000198'] } }), semParams);
     expect(pedido.status).toBe(201);
     const { id } = await pedido.json();
-    const repetido = await pedirDoOperador(req('/x', { token: null, corpo: { competencia: '2026-08' } }), semParams);
+    const repetido = await pedirDoOperador(req('/x', { token: null, corpo: { competencia: '2026-08', documentos: ['08293377000198'] } }), semParams);
     expect(repetido.status).toBe(200);
     expect((await repetido.json()).id).toBe(id);
 

@@ -89,7 +89,12 @@ async function abrirNavegadorServerless(diag: Diagnostico): Promise<NavegadorNuv
  */
 export async function dispararProximoLote(): Promise<void> {
   const token = process.env.AGENTE_ISS_TOKEN;
-  const host = process.env.VERCEL_URL;
+  // Em produção, o domínio de produção (a URL própria de cada implantação fica atrás da proteção
+  // de login da Vercel); no preview, a URL da implantação + o segredo de bypass, se configurado.
+  const host =
+    process.env.VERCEL_ENV === 'production'
+      ? (process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL)
+      : process.env.VERCEL_URL;
   if (!token || !host) return;
   const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
