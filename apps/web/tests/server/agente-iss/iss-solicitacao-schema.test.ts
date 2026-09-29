@@ -13,8 +13,8 @@ import { novaExecucaoIssSchema } from '@/server/validation/agente-iss-schema';
 const UUID = '11111111-1111-4111-8111-111111111111';
 
 describe('novaSolicitacaoIssSchema (POST do operador)', () => {
-  it('só a competência = carteira inteira', () => {
-    expect(novaSolicitacaoIssSchema.parse({ competencia: '2026-08' })).toEqual({ competencia: '2026-08' });
+  it('só a competência (carteira inteira) é recusada: a busca exige as empresas', () => {
+    expect(novaSolicitacaoIssSchema.safeParse({ competencia: '2026-08' }).success).toBe(false);
   });
 
   it('documentos com máscara saem só com dígitos e sem repetição', () => {

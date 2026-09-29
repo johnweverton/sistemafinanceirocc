@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClienteContabilidade } from '@cobranca/shared';
+import type { ClienteContabilidade, ModoCobrancaContabilidade } from '@cobranca/shared';
 import { CONTA_EMISSORA_LABEL } from '@cobranca/shared';
 import { ApiClientError } from '@/lib/api-client';
 import {
@@ -39,6 +39,7 @@ export function ClientesContabilidadeManager() {
   const [modo, setModo] = useState<Modo>({ tipo: 'lista' });
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
+  const [filtroModo, setFiltroModo] = useState<ModoCobrancaContabilidade | 'todos'>('todos');
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const [importResult, setImportResult] = useState<ImportarResultado | null>(null);
@@ -66,9 +67,12 @@ export function ClientesContabilidadeManager() {
 
   const termoBusca = normalizarBusca(busca.trim());
   const clientesFiltrados = (clientes ?? []).filter((c) => {
+    if (filtroModo !== 'todos' && c.modoCobranca !== filtroModo) return false;
     if (!termoBusca) return true;
     return normalizarBusca(c.nome).includes(termoBusca);
   });
+  const totalPorModo = (modo: ModoCobrancaContabilidade) =>
+    (clientes ?? []).filter((c) => c.modoCobranca === modo).length;
 
   // Mantém a página dentro do intervalo válido quando a busca ou a lista mudam de tamanho
   // (evita ficar numa página vazia depois de filtrar, excluir ou importar).
@@ -177,6 +181,11 @@ export function ClientesContabilidadeManager() {
 
   function atualizarBusca(v: string) {
     setBusca(v);
+    setPagina(1);
+  }
+
+  function atualizarFiltroModo(v: ModoCobrancaContabilidade | 'todos') {
+    setFiltroModo(v);
     setPagina(1);
   }
 
@@ -290,6 +299,18 @@ export function ClientesContabilidadeManager() {
           placeholder="Buscar por nome..."
           className="input max-w-xs"
         />
+        {/* Filtro por modo de cobrança: combinado com "Selecionar todos" do cabeçalho da tabela,
+            permite marcar de uma vez só os clientes de faixa de faturamento ou de valor fixo. */}
+        <select
+          value={filtroModo}
+          onChange={(e) => atualizarFiltroModo(e.target.value as ModoCobrancaContabilidade | 'todos')}
+          className="input w-auto"
+          aria-label="Filtrar por modo de cobrança"
+        >
+          <option value="todos">Todos os modos de cobrança</option>
+          <option value="faixa_faturamento">Faixa de faturamento ({totalPorModo('faixa_faturamento')})</option>
+          <option value="fixo">Valor fixo ({totalPorModo('fixo')})</option>
+        </select>
         <span className="text-xs text-cc-muted">
           {clientesFiltrados.length} cliente{clientesFiltrados.length !== 1 ? 's' : ''}
         </span>
@@ -387,7 +408,7 @@ export function ClientesContabilidadeManager() {
           title={clientes && clientes.length > 0 ? 'Nenhum cliente encontrado' : 'Nenhum cliente contábil cadastrado'}
           description={
             clientes && clientes.length > 0
-              ? 'Ajuste a busca para ver outros resultados.'
+              ? 'Ajuste a busca ou o filtro de modo de cobrança para ver outros resultados.'
               : 'Cadastre o primeiro cliente para lançar faturamento e emitir boletos de honorários contábeis.'
           }
         />

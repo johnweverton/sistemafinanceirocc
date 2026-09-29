@@ -42,14 +42,14 @@ beforeEach(() => {
 
 describe('POST iss-solicitacoes (AC 7)', () => {
   it('cria pendente com solicitado_por da sessão → 201', async () => {
-    const r = await post({ competencia: '2026-08' });
+    const r = await post({ competencia: '2026-08', documentos: ['08.293.377/0001-98'] });
     expect(r.status).toBe(201);
-    expect(await r.json()).toMatchObject({ competencia: '2026-08', status: 'pendente', solicitadoPor: USUARIO, documentos: null });
+    expect(await r.json()).toMatchObject({ competencia: '2026-08', status: 'pendente', solicitadoPor: USUARIO, documentos: ['08293377000198'] });
     expect(mockRequireRole).toHaveBeenCalledWith(['admin', 'colaborador', 'financeiro']);
   });
 
   it('idempotente: já existe ativa → 200 com a MESMA, sem duplicar', async () => {
-    const primeira = await (await post({ competencia: '2026-08' })).json();
+    const primeira = await (await post({ competencia: '2026-08', documentos: ['67643870000150'] })).json();
     const r = await post({ competencia: '2026-08', documentos: ['08.293.377/0001-98'] });
     expect(r.status).toBe(200);
     expect((await r.json()).id).toBe(primeira.id);
@@ -69,13 +69,14 @@ describe('POST iss-solicitacoes (AC 7)', () => {
         banco.tabelas.iss_solicitacoes!.push(solicitacaoRow({ id: S1 }));
       }
     };
-    const r = await post({ competencia: '2026-08' });
+    const r = await post({ competencia: '2026-08', documentos: ['08.293.377/0001-98'] });
     expect(r.status).toBe(200);
     expect((await r.json()).id).toBe(S1);
   });
 
   it.each([
     [{ competencia: '08/2026' }],
+    [{ competencia: '2026-08' }],
     [{ competencia: '2026-08', documentos: ['123'] }],
     [{ competencia: '2026-08', solicitadoPor: 'outro' }],
   ])('corpo inválido %j → 422 sem gravar', async (corpo) => {
@@ -89,7 +90,7 @@ describe('POST iss-solicitacoes (AC 7)', () => {
 
   it('sem papel → 403 sem tocar no banco', async () => {
     mockRequireRole.mockRejectedValue(new ApiError(403, 'Sem permissão', 'FORBIDDEN'));
-    expect((await post({ competencia: '2026-08' })).status).toBe(403);
+    expect((await post({ competencia: '2026-08', documentos: ['08.293.377/0001-98'] })).status).toBe(403);
     expect(banco.log).toHaveLength(0);
   });
 });
@@ -131,7 +132,7 @@ describe('POST iss-solicitacoes/[id]/cancelar (AC 9)', () => {
     const r = await postCancelar(S1);
     expect(r.status).toBe(200);
     expect((await r.json()).status).toBe('cancelada');
-    expect((await post({ competencia: '2026-08' })).status).toBe(201);
+    expect((await post({ competencia: '2026-08', documentos: ['08.293.377/0001-98'] })).status).toBe(201);
   });
 
   it.each(['concluida', 'falhou', 'cancelada'])('%s → 422 (nada a cancelar)', async (status) => {

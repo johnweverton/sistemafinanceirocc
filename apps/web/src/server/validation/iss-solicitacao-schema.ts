@@ -16,13 +16,16 @@ const documentoSchema = z
 export const novaSolicitacaoIssSchema = z
   .object({
     competencia: competenciaIssSchema,
-    // Ausente = carteira inteira; presente = "Tentar de novo" só destas empresas.
+    // Obrigatório: a busca lê só as empresas do lote que o operador abriu (ou a do "Tentar de
+    // novo"). Pedir a carteira inteira sem querer custa ~30 min e vários logins no portal — e era
+    // o que uma tela antiga (sem recarregar) fazia ao omitir o campo.
     documentos: z
-      .array(documentoSchema)
-      .min(1, 'Informe ao menos um documento (ou omita o campo para buscar a carteira inteira)')
+      .array(documentoSchema, {
+        required_error: 'Informe as empresas da busca — recarregue a página e tente de novo',
+      })
+      .min(1, 'Informe ao menos uma empresa para buscar no ISS')
       .max(AGENTE_ISS_MAX_CAPTURAS)
-      .transform((docs) => [...new Set(docs)])
-      .optional(),
+      .transform((docs) => [...new Set(docs)]),
   })
   .strict();
 

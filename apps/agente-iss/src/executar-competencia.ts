@@ -16,28 +16,14 @@ import type { Page } from 'playwright';
 import type { AlvoIss, AlvosIssResposta, NovaCapturaIss, NovaExecucaoIss } from '@cobranca/shared';
 import type { ConfigAgente } from './config';
 import { buscarAlvos as buscarAlvosApi } from './api-client';
-import { criarDiagnostico as criarDiagnosticoPadrao, redigirCpf } from './diagnostico';
-import {
-  ErroComunicadoPendente,
-  ErroEmpresaNaoEncontrada,
-  ErroLogin,
-  PortalIss,
-  type Diagnostico,
-  type EmpresaSelecionada,
-  type LeituraCompetencia,
-} from './portal/portal';
+import { criarDiagnostico as criarDiagnosticoPadrao } from './diagnostico';
+import { PortalIss, type Diagnostico } from './portal/portal';
+import { lerEmpresa, type PortalParaExecucao } from './ler-empresa';
 import { montarExecucao, type ResultadoEmpresa } from './relatorio';
 
 export const VERSAO_AGENTE = '0.1.0';
 
-/** O que a rodada usa do portal — o `PortalIss` real, ou um dublê nos testes. */
-export interface PortalParaExecucao {
-  login(cpf: string, senha: string): Promise<void>;
-  sessaoPerdida(): boolean;
-  recuperar(cpf: string, senha: string): Promise<void>;
-  selecionarEmpresa(documento: string): Promise<EmpresaSelecionada>;
-  lerCompetencia(competencia: string): Promise<LeituraCompetencia>;
-}
+export type { PortalParaExecucao } from './ler-empresa';
 
 export interface NavegadorAberto {
   page: Page;
@@ -131,20 +117,6 @@ export interface ResultadoExecucaoCompetencia {
 function carimbo(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-}
-
-function capturaBase(alvo: AlvoIss, agora: Date): Omit<NovaCapturaIss, 'status'> {
-  return {
-    clienteContabilidadeId: alvo.clienteContabilidadeId,
-    valorServicosPrestados: null,
-    quantidadeNotas: null,
-    situacaoIss: null,
-    competenciaFechada: null,
-    inscricaoMunicipal: null,
-    razaoSocialIss: null,
-    mensagemErro: null,
-    capturadoEm: agora.toISOString(),
-  };
 }
 
 export async function executarCompetencia(opcoes: OpcoesExecucaoCompetencia): Promise<ResultadoExecucaoCompetencia> {
@@ -243,47 +215,16 @@ export async function executarCompetencia(opcoes: OpcoesExecucaoCompetencia): Pr
 
     for (const [i, alvo] of alvos.entries()) {
       diag.log(`(${i + 1}/${alvos.length}) ${alvo.nome} — ${alvo.documento}`);
-      let captura: NovaCapturaIss | null = null;
-      for (let tentativa = 1; tentativa <= 2 && !captura; tentativa += 1) {
-        try {
-          if (portal.sessaoPerdida()) await portal.recuperar(cfg.issCpf, cfg.issSenha);
-          const empresa = await portal.selecionarEmpresa(alvo.documento);
-          const leitura = await portal.lerCompetencia(competencia);
-          const base = {
-            ...capturaBase(alvo, deps.agora()),
-            inscricaoMunicipal: empresa.inscricao,
-            razaoSocialIss: empresa.razaoSocial,
-          };
-          captura =
-            leitura.tipo === 'capturado'
-              ? {
-                  ...base,
-                  status: 'capturado',
-                  valorServicosPrestados: leitura.valor,
-                  quantidadeNotas: leitura.quantidade,
-                  situacaoIss: leitura.situacao || null,
-                  competenciaFechada: leitura.fechada,
-                }
-              : { ...base, status: 'sem_escrituracao' };
-        } catch (e) {
-          if (e instanceof ErroLogin) throw e; // senha errada: parar tudo (não arriscar bloqueio)
-          if (e instanceof ErroEmpresaNaoEncontrada) {
-            captura = { ...capturaBase(alvo, deps.agora()), status: 'nao_encontrado', mensagemErro: e.message };
-            break;
-          }
-          const sessaoCaiu = portal.sessaoPerdida();
-          if (sessaoCaiu && tentativa === 1) {
-            diag.log('  sessão caiu no meio — relogando e tentando esta empresa de novo');
-            await portal.recuperar(cfg.issCpf, cfg.issSenha);
-            continue;
-          }
-          const msg = redigirCpf((e as Error).message, cfg.issCpf).slice(0, 900);
-          if (!(e instanceof ErroComunicadoPendente)) await diag.snapshot(page, `erro-${alvo.documento}`);
-          captura = { ...capturaBase(alvo, deps.agora()), status: 'erro', mensagemErro: msg };
-          await portal.recuperar(cfg.issCpf, cfg.issSenha).catch(() => undefined);
-        }
-      }
-      const c = captura ?? { ...capturaBase(alvo, deps.agora()), status: 'erro' as const, mensagemErro: 'Sem resultado' };
+      const c = await lerEmpresa({
+        portal,
+        alvo,
+        competencia,
+        cpf: cfg.issCpf,
+        senha: cfg.issSenha,
+        agora: deps.agora,
+        log: (m) => diag.log(m),
+        snapshotErro: (documento) => diag.snapshot(page, `erro-${documento}`),
+      });
       resultados.push({ nome: alvo.nome, documento: alvo.documento, captura: c });
       diag.log(
         `  → ${c.status}${c.status === 'capturado' ? ` R$ ${c.valorServicosPrestados?.toFixed(2)} (${c.situacaoIss})` : c.mensagemErro ? `: ${c.mensagemErro}` : ''}`,
