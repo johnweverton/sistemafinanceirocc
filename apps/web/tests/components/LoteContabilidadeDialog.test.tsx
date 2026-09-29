@@ -1049,7 +1049,7 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
     fireEvent.click(botaoBuscarIss());
 
     await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', undefined));
-    expect(await screen.findByText(/Na fila — aguardando o computador do escritório/)).toBeInTheDocument();
+    expect(await screen.findByText(/Na fila — iniciando a busca no ISS/)).toBeInTheDocument();
     expect(botaoBuscarIss()).toBeDisabled();
   });
 
@@ -1103,13 +1103,13 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
     expect(botaoBuscarIss()).toBeEnabled();
   });
 
-  it('pendente há mais de 3 min: avisa que o computador do escritório parece desligado', async () => {
+  it('pendente há mais de 3 min: avisa que a busca parece parada', async () => {
     mockSolicitacaoIss.mockResolvedValue(
       solicitacaoFake({ solicitadoEm: new Date(Date.now() - 10 * 60_000).toISOString() }),
     );
     renderDialog([faixaA, faixaB]);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/computador do escritório com o agente parece desligado/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/A busca no ISS parece parada/);
   });
 
   it('em andamento com heartbeat parado há mais de 3 min também avisa', async () => {
@@ -1122,7 +1122,7 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
       }),
     );
     renderDialog([faixaA, faixaB]);
-    expect(await screen.findByText(/parece desligado/)).toBeInTheDocument();
+    expect(await screen.findByText(/A busca no ISS parece parada/)).toBeInTheDocument();
   });
 
   it('"Cancelar busca" chama o cancelar e o botão some; "Buscar no ISS" volta a valer', async () => {

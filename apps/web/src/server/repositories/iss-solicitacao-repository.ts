@@ -333,3 +333,82 @@ export async function exigirSolicitacaoIssEmAndamento(id: string, competencia?: 
     );
   }
 }
+
+// ------------------------------------------------------------------ busca na nuvem (Vercel)
+// Na nuvem a busca roda em LOTES encadeados. Quem está com o lote fica em `maquina`
+// ('nuvem:<id>'); ao terminar um lote sem acabar a carteira, o lote é LIBERADO
+// (`MAQUINA_NUVEM_LIVRE`) e o próximo pode ser pego na hora. Um lote que morreu no meio (função
+// derrubada) para de renovar o heartbeat — depois de `LEASE_NUVEM_EXPIRADO_MS` outro o retoma.
+// Mesma disciplina de corrida do resto do arquivo: UPDATE condicional aos valores LIDOS.
+
+export const MAQUINA_NUVEM_LIVRE = 'nuvem:livre';
+/** O lote renova o heartbeat a cada ~20 s; 90 s sem renovar = a função caiu. */
+export const LEASE_NUVEM_EXPIRADO_MS = 90_000;
+
+/** O próximo lote pode começar agora? (pendente, lote liberado, ou lote anterior sem sinal de vida) */
+export function loteNuvemDisponivel(s: SolicitacaoIss, agora: Date = new Date()): boolean {
+  if (s.status === 'pendente') return true;
+  if (s.status !== 'em_andamento') return false;
+  if (s.maquina === MAQUINA_NUVEM_LIVRE) return true;
+  const ultimoSinal = Date.parse(s.heartbeatEm ?? s.iniciadoEm ?? s.solicitadoEm);
+  return Number.isNaN(ultimoSinal) || agora.getTime() - ultimoSinal > LEASE_NUVEM_EXPIRADO_MS;
+}
+
+/** Pega o próximo lote para `dono` — a solicitação ativa mais antiga que esteja disponível. */
+export async function reivindicarLoteNuvemIss(dono: string, agora: Date = new Date()): Promise<SolicitacaoIss | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from(TABELA)
+    .select('*')
+    .in('status', [...STATUS_SOLICITACAO_ISS_ATIVOS])
+    .order('solicitado_em', { ascending: true });
+  if (error) throw erroDb('Falha ao buscar solicitações ativas do ISS', error);
+  const candidata = (data as IssSolicitacaoRow[]).find((r) => loteNuvemDisponivel(toSolicitacaoIss(r), agora));
+  if (!candidata) return null;
+
+  let update = db
+    .from(TABELA)
+    .update({
+      status: 'em_andamento',
+      maquina: dono,
+      heartbeat_em: agora.toISOString(),
+      iniciado_em: candidata.iniciado_em ?? agora.toISOString(),
+    })
+    .eq('id', candidata.id)
+    .eq('status', candidata.status);
+  update = candidata.maquina === null ? update.is('maquina', null) : update.eq('maquina', candidata.maquina);
+  update = candidata.heartbeat_em === null ? update.is('heartbeat_em', null) : update.eq('heartbeat_em', candidata.heartbeat_em);
+  const { data: tomada, error: errUpdate } = await update.select('*');
+  if (errUpdate) throw erroDb('Falha ao reivindicar o lote do ISS', errUpdate);
+  const linha = (tomada as IssSolicitacaoRow[] | null)?.[0];
+  return linha ? toSolicitacaoIss(linha) : null;
+}
+
+/**
+ * Sinal de vida do lote (e progresso, quando vem). `false` = o lote não é mais deste dono ou a
+ * solicitação saiu de `em_andamento` (cancelada) — quem chamou deve parar.
+ */
+export async function renovarLoteNuvemIss(
+  id: string,
+  dono: string,
+  extras: { progresso?: { atual: number; total: number }; execucaoId?: string; liberar?: boolean } = {},
+  agora: Date = new Date(),
+): Promise<boolean> {
+  const campos: Record<string, unknown> = { heartbeat_em: agora.toISOString() };
+  if (extras.progresso) {
+    campos.progresso_atual = extras.progresso.atual;
+    campos.progresso_total = extras.progresso.total;
+  }
+  if (extras.execucaoId) campos.execucao_id = extras.execucaoId;
+  if (extras.liberar) campos.maquina = MAQUINA_NUVEM_LIVRE;
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from(TABELA)
+    .update(campos)
+    .eq('id', id)
+    .eq('status', 'em_andamento')
+    .eq('maquina', dono)
+    .select('id');
+  if (error) throw erroDb('Falha ao renovar o lote do ISS', error);
+  return ((data as unknown[] | null)?.length ?? 0) > 0;
+}

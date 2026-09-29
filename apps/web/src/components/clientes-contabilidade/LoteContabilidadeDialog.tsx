@@ -242,7 +242,7 @@ export function LoteContabilidadeDialog({
     mutationFn: (documentos?: string[]) => clientesContabilidadeService.solicitarBuscaIss(competencia, documentos),
     onSuccess: (s) => {
       qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competencia), s);
-      toast('Busca no ISS pedida — o computador do escritório começa em até 1 minuto.', 'success');
+      toast('Busca no ISS pedida — começando agora. Você pode continuar trabalhando.', 'success');
     },
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao pedir a busca no ISS', 'error'),
   });

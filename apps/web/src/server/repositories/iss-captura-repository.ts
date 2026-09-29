@@ -73,7 +73,9 @@ async function validarClientes(ids: string[]): Promise<void> {
  * (capturado com valor 0 a partir da competência do Emissor Nacional). No caso normal — ninguém
  * com zero — não faz consulta nenhuma.
  */
-async function historicoParaR5(input: NovaExecucaoIssInput): Promise<Map<string, number[]>> {
+async function historicoParaR5(
+  input: Pick<NovaExecucaoIssInput, 'competencia' | 'capturas'>,
+): Promise<Map<string, number[]>> {
   const historico = new Map<string, number[]>();
   if (input.competencia < COMPETENCIA_INICIO_EMISSOR_NACIONAL) return historico;
   const ids = input.capturas
@@ -104,6 +106,40 @@ export function totalizarCapturas(capturas: { status: keyof TotaisExecucaoIss }[
   const totais: TotaisExecucaoIss = { capturado: 0, nao_encontrado: 0, sem_escrituracao: 0, erro: 0 };
   for (const c of capturas) totais[c.status] += 1;
   return totais;
+}
+
+type CapturaIssInput = NovaExecucaoIssInput['capturas'][number];
+
+/** Linhas de `iss_capturas` com os alertas (R5) já calculados — gravação normal e busca na nuvem. */
+function linhasDeCapturas(
+  input: { competencia: string; capturas: CapturaIssInput[] },
+  execucaoId: string,
+  historico: Map<string, number[]>,
+) {
+  let comAlerta = 0;
+  const linhas = input.capturas.map((c) => {
+    const alertas = alertasDaCapturaIss(
+      { competencia: input.competencia, status: c.status, valorServicosPrestados: c.valorServicosPrestados },
+      historico.get(c.clienteContabilidadeId) ?? [],
+    );
+    if (alertas.length > 0) comAlerta += 1;
+    return {
+      execucao_id: execucaoId,
+      cliente_contabilidade_id: c.clienteContabilidadeId,
+      competencia: input.competencia,
+      status: c.status,
+      valor_servicos_prestados: c.valorServicosPrestados,
+      quantidade_notas: c.quantidadeNotas,
+      situacao_iss: c.situacaoIss,
+      competencia_fechada: c.competenciaFechada,
+      inscricao_municipal: c.inscricaoMunicipal,
+      razao_social_iss: c.razaoSocialIss,
+      alertas,
+      mensagem_erro: c.mensagemErro,
+      capturado_em: c.capturadoEm,
+    };
+  });
+  return { linhas, comAlerta };
 }
 
 /**
@@ -194,29 +230,7 @@ export async function registrarExecucaoIss(input: NovaExecucaoIssInput): Promise
   }
   const execucaoId = (execucao as { id: string }).id;
 
-  let comAlerta = 0;
-  const linhas = input.capturas.map((c) => {
-    const alertas = alertasDaCapturaIss(
-      { competencia: input.competencia, status: c.status, valorServicosPrestados: c.valorServicosPrestados },
-      historico.get(c.clienteContabilidadeId) ?? [],
-    );
-    if (alertas.length > 0) comAlerta += 1;
-    return {
-      execucao_id: execucaoId,
-      cliente_contabilidade_id: c.clienteContabilidadeId,
-      competencia: input.competencia,
-      status: c.status,
-      valor_servicos_prestados: c.valorServicosPrestados,
-      quantidade_notas: c.quantidadeNotas,
-      situacao_iss: c.situacaoIss,
-      competencia_fechada: c.competenciaFechada,
-      inscricao_municipal: c.inscricaoMunicipal,
-      razao_social_iss: c.razaoSocialIss,
-      alertas,
-      mensagem_erro: c.mensagemErro,
-      capturado_em: c.capturadoEm,
-    };
-  });
+  const { linhas, comAlerta } = linhasDeCapturas(input, execucaoId, historico);
 
   const { error: errCapturas } = await db.from('iss_capturas').insert(linhas);
   if (errCapturas) {
@@ -301,4 +315,81 @@ export async function buscarCapturasIssPorIds(ids: string[]): Promise<CapturaIss
     throw new ApiError(500, 'Falha ao buscar capturas do ISS', 'DB_ERROR', { error: error.message });
   }
   return (data as IssCapturaRow[]).map(toCapturaIss);
+}
+
+// ------------------------------------------------------------------ busca na nuvem (Vercel)
+// A busca da nuvem roda em LOTES (uma função tem no máximo alguns minutos), mas grava UMA execução
+// por solicitação: o primeiro lote cria a execução e os seguintes anexam capturas nela. Assim a
+// faixa-resumo ("última execução": N capturados…) mostra a busca inteira, não só o último lote.
+
+/** Clientes que já têm captura nesta execução — o que a busca na nuvem não precisa ler de novo. */
+export async function clientesLidosNaExecucaoIss(execucaoId: string): Promise<Set<string>> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from('iss_capturas').select('cliente_contabilidade_id').eq('execucao_id', execucaoId);
+  if (error) {
+    throw new ApiError(500, 'Falha ao consultar capturas do agente ISS', 'DB_ERROR', { error: error.message });
+  }
+  return new Set((data as { cliente_contabilidade_id: string }[]).map((r) => r.cliente_contabilidade_id));
+}
+
+/**
+ * Grava as capturas de um lote da nuvem. `execucaoId` null = primeiro lote (cria a execução).
+ * Recalcula os totais a partir do que está gravado, então lote repetido não infla a contagem.
+ */
+export async function anexarCapturasNuvemIss(input: {
+  competencia: string;
+  execucaoId: string | null;
+  iniciadoEm: string;
+  maquina: string;
+  versao: string;
+  capturas: CapturaIssInput[];
+}): Promise<string> {
+  const db = getSupabaseAdmin();
+  await validarClientes(input.capturas.map((c) => c.clienteContabilidadeId));
+  const historico = await historicoParaR5(input);
+
+  let execucaoId = input.execucaoId;
+  let criada = false;
+  if (!execucaoId) {
+    const { data, error } = await db
+      .from('iss_execucoes_agente')
+      .insert({
+        competencia: input.competencia,
+        iniciado_em: input.iniciadoEm,
+        maquina: input.maquina,
+        versao_agente: input.versao,
+        totais: totalizarCapturas([]),
+        ciencias: [],
+      })
+      .select('id')
+      .single();
+    if (error || !data) {
+      throw new ApiError(500, 'Falha ao registrar execução do agente ISS', 'DB_ERROR', { error: error?.message });
+    }
+    execucaoId = (data as { id: string }).id;
+    criada = true;
+  }
+
+  const { linhas } = linhasDeCapturas(input, execucaoId, historico);
+  const { error: errCapturas } = await db.from('iss_capturas').insert(linhas);
+  if (errCapturas) {
+    if (criada) await db.from('iss_execucoes_agente').delete().eq('id', execucaoId);
+    throw new ApiError(500, 'Falha ao registrar capturas do agente ISS', 'DB_ERROR', { error: errCapturas.message });
+  }
+
+  const { data: gravadas, error: errLer } = await db.from('iss_capturas').select('status').eq('execucao_id', execucaoId);
+  if (errLer) {
+    throw new ApiError(500, 'Falha ao totalizar capturas do agente ISS', 'DB_ERROR', { error: errLer.message });
+  }
+  const { error: errTotais } = await db
+    .from('iss_execucoes_agente')
+    .update({
+      totais: totalizarCapturas(gravadas as { status: keyof TotaisExecucaoIss }[]),
+      finalizado_em: new Date().toISOString(),
+    })
+    .eq('id', execucaoId);
+  if (errTotais) {
+    throw new ApiError(500, 'Falha ao atualizar totais da execução do ISS', 'DB_ERROR', { error: errTotais.message });
+  }
+  return execucaoId;
 }
