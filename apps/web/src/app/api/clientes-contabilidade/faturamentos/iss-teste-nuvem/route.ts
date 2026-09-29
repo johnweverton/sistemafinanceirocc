@@ -40,6 +40,10 @@ export const POST = withErrorHandler(async (req) => {
   const log = (msg: string) => passos.push(`[${((Date.now() - inicio) / 1000).toFixed(1)}s] ${msg}`);
   const diag: Diagnostico = { log, reconhecer: false, snapshot: async () => null };
 
+  // @sparticuz/chromium só reconhece Node 20/22 da AWS (e decide NO IMPORT): na Vercel com Node 24
+  // não extrai as libs do Amazon Linux 2023 e o Chromium morre sem libnss3.so. Declara o runtime
+  // antes do import para ele montar /tmp/al2023/lib e o LD_LIBRARY_PATH.
+  if (process.env.VERCEL && !process.env.AWS_LAMBDA_JS_RUNTIME) process.env.AWS_LAMBDA_JS_RUNTIME = 'nodejs22.x';
   const [{ default: chromiumServerless }, { chromium }] = await Promise.all([
     import('@sparticuz/chromium'),
     import('playwright-core'),
