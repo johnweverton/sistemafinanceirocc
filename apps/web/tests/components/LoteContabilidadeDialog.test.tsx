@@ -1041,16 +1041,28 @@ function botaoBuscarIss() {
 const agoraIso = () => new Date().toISOString();
 
 describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', () => {
-  it('sem busca ativa: "Buscar no ISS" habilitado; clicar pede a carteira inteira e mostra "Na fila"', async () => {
+  it('sem busca ativa: "Buscar no ISS" habilitado; clicar pede SÓ os clientes do lote e mostra "Na fila"', async () => {
     mockSolicitarBuscaIss.mockResolvedValue(solicitacaoFake());
-    renderDialog([faixaA, faixaB]);
+    const comDocumento = (c: typeof faixaA, pagadorDocumento: string) =>
+      ({ ...c, cobranca: { ...(c.cobranca ?? {}), pagadorDocumento } }) as typeof faixaA;
+    renderDialog([comDocumento(faixaA, '63.510.691/0001-93'), comDocumento(faixaB, '67643870000150')]);
 
     await waitFor(() => expect(botaoBuscarIss()).toBeEnabled());
     fireEvent.click(botaoBuscarIss());
 
-    await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', undefined));
+    await waitFor(() =>
+      expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', ['63510691000193', '67643870000150']),
+    );
     expect(await screen.findByText(/Na fila — iniciando a busca no ISS/)).toBeInTheDocument();
     expect(botaoBuscarIss()).toBeDisabled();
+  });
+
+  it('nenhum cliente do lote com CPF/CNPJ: não pede a busca (nunca cai na carteira inteira)', async () => {
+    renderDialog([faixaA, faixaB]);
+    await waitFor(() => expect(botaoBuscarIss()).toBeEnabled());
+    fireEvent.click(botaoBuscarIss());
+    expect(await screen.findByText(/Nenhum cliente deste lote tem CPF\/CNPJ/)).toBeInTheDocument();
+    expect(mockSolicitarBuscaIss).not.toHaveBeenCalled();
   });
 
   it('busca ativa: botão desabilitado COM o motivo, indicador "Buscando no ISS… 34/90" e "Cancelar busca"', async () => {
