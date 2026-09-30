@@ -19,6 +19,18 @@ valor **como proposta** no mesmo diálogo — o destino (`clientes_contabilidade
 | G3 | O valor capturado entra direto ou como proposta? | **Proposta para conferência.** O operador confirma no diálogo de lote. Nunca sobrescreve valor já lançado; divergência vira alerta. |
 | G4 | Onde roda? | **Script local no escritório** (CLI), senha só na máquina local. |
 
+### G5 — Qual competência o diálogo de lote lê no ISS (revisado em 2026-09-30)
+
+| # | Pergunta | Decisão |
+|---|----------|---------|
+| G5 | O lote de AAAA-MM busca o faturamento de qual competência no ISS? | **Da própria competência do lote.** Lote de setembro/2026 → lê a escrituração de **09/2026**. |
+
+Na mesma manhã chegou a ser implementado "mês anterior" (commit `7bbf37d`, revertido). A
+coordenadora confirmou que o certo é a mesma competência: o R$ 0,00 que motivou a mudança veio de
+um lote aberto em **outubro** por engano. As emissões de agosto tinham sido lançadas como setembro
+(competência do mês em que o boleto foi emitido, não a de referência), o que fez o sistema sugerir
+outubro como próximo lote.
+
 ## 1. O processo manual, traduzido em passos automatizáveis
 
 | Passo do documento | Tela (URL) | O que o agente faz |
