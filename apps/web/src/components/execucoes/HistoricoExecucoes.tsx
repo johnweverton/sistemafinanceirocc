@@ -17,6 +17,8 @@ function StatusBadge({ status }: { status: StatusExecucao }) {
 
 type FiltroStatus = 'todos' | StatusExecucao;
 type FiltroTipo = 'todos' | 'massa' | 'pontual';
+type Servico = 'cobrancas' | 'contabilidade';
+type FiltroServico = 'todos' | Servico;
 
 const FILTRO_STATUS_OPCOES: { valor: FiltroStatus; label: string }[] = [
   { valor: 'todos', label: 'Todos os status' },
@@ -30,6 +32,17 @@ const FILTRO_TIPO_OPCOES: { valor: FiltroTipo; label: string }[] = [
   { valor: 'massa', label: 'Em massa' },
   { valor: 'pontual', label: 'Pontual' },
 ];
+
+const FILTRO_SERVICO_OPCOES: { valor: FiltroServico; label: string }[] = [
+  { valor: 'todos', label: 'Todos os serviços' },
+  { valor: 'cobrancas', label: 'Cobranças' },
+  { valor: 'contabilidade', label: 'Contabilidade' },
+];
+
+/** Execução de cliente contábil (individual ou em lote) = Contabilidade; o resto (médicos/empresas) = Cobranças. */
+function servicoDaExecucao(e: Execucao): Servico {
+  return e.clienteContabilidadeId || e.clientesContabilidadeIds?.length ? 'contabilidade' : 'cobrancas';
+}
 
 /** Execuções "por médico" (NovaExecucao) sempre disparam com 1 seleção só — sem batch nem lote. */
 function tipoDaExecucao(e: Execucao): 'massa' | 'pontual' {
@@ -46,6 +59,7 @@ export function HistoricoExecucoes() {
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
+  const [filtroServico, setFiltroServico] = useState<FiltroServico>('todos');
   const [filtroCompetencia, setFiltroCompetencia] = useState('');
   const [expandidos, setExpandidos] = useState<Set<string> | null>(null);
 
@@ -65,6 +79,7 @@ export function HistoricoExecucoes() {
     }
     if (filtroStatus !== 'todos' && e.status !== filtroStatus) return false;
     if (filtroTipo !== 'todos' && tipoDaExecucao(e) !== filtroTipo) return false;
+    if (filtroServico !== 'todos' && servicoDaExecucao(e) !== filtroServico) return false;
     if (filtroCompetencia && e.competencia !== filtroCompetencia) return false;
     return true;
   });
@@ -95,7 +110,7 @@ export function HistoricoExecucoes() {
     setExpandidos(proximo);
   }
 
-  const filtroAtivo = Boolean(busca || filtroStatus !== 'todos' || filtroTipo !== 'todos' || filtroCompetencia);
+  const filtroAtivo = Boolean(busca || filtroStatus !== 'todos' || filtroTipo !== 'todos' || filtroServico !== 'todos' || filtroCompetencia);
 
   return (
     <>
@@ -127,6 +142,16 @@ export function HistoricoExecucoes() {
               aria-label="Buscar por competência ou médico"
               className="input max-w-xs"
             />
+            <select
+              value={filtroServico}
+              onChange={(e) => setFiltroServico(e.target.value as FiltroServico)}
+              aria-label="Filtrar por serviço"
+              className="input w-auto"
+            >
+              {FILTRO_SERVICO_OPCOES.map((op) => (
+                <option key={op.valor} value={op.valor}>{op.label}</option>
+              ))}
+            </select>
             <select
               value={filtroStatus}
               onChange={(e) => setFiltroStatus(e.target.value as FiltroStatus)}
@@ -260,6 +285,9 @@ function GrupoCompetencia({
               <tr key={e.id} onClick={() => onAbrir(e.id)} className="cursor-pointer">
                 <td>
                   <span className="badge-slate">{tipoDaExecucao(e) === 'massa' ? 'Em massa' : 'Pontual'}</span>
+                  {servicoDaExecucao(e) === 'contabilidade' && (
+                    <span className="badge-slate ml-1">Contabilidade</span>
+                  )}
                   {tipoDaExecucao(e) === 'pontual' && e.medicoNome && (
                     <span className="block text-2xs text-cc-muted">{e.medicoNome}</span>
                   )}
