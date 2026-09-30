@@ -509,6 +509,15 @@ export function processarMedico(
         // Lote separado não informado (alerta já registrado acima) — nunca chuta valor.
         continue;
       }
+      if (guiasClasse === 0) {
+        // BUG REAL 2026-08-27: `valorDaFaixa` casa `guias <= teto` da primeira faixa, então
+        // 0 guias caía na faixa "até 30" e cobrava o valor cheio dela (faixa fantasma). 0 guias
+        // nesta classe significa SEM produção — pode acontecer quando outro bucket (Outros
+        // Hospitais/Imobilizações/saldo acumulado) sozinho já bate o limiar mínimo de guias e o
+        // médico segue pro cálculo de valor mesmo com esta classe zerada. Nunca chuta: pula a
+        // classe em vez de cobrar uma faixa que não existiu.
+        continue;
+      }
       const atendimentosClasse = ehClasseSecundaria ? atendimentosPorLoteSecundario[classe] : cirurgias;
       // Story 10.7: contrato antigo sem excedente por guia (Dr. Adilson) — mesma tabela/faixas
       // de todo mundo, só capa no teto da última faixa em vez de somar por guia acima dele.

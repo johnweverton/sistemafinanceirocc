@@ -206,6 +206,38 @@ describe('processarMedico — acúmulo abaixo do mínimo de guias (GATE 2026-08-
     });
   });
 
+  it('BUG REAL 2026-08-27: classe principal com 0 guias não pode cobrar a faixa 1 fantasma quando SÓ outro bucket bate o limiar', () => {
+    const medico = medicoBase({ fazOutrosHospitais: true });
+
+    // Saldo retido só em Outros Hospitais (5 guias) — principal sem nenhum saldo.
+    const saldo: SaldoAcumulado = {
+      guiasPrincipal: 0,
+      guiasOutrosHospitais: 5,
+      guiasImobilizacoes: 0,
+      valorBasePercentual: 0,
+    };
+
+    // Este mês: ZERO itens principais e ZERO itens de Outros Hospitais — o limiar só é batido
+    // pelo saldo retido (5 de Outros Hospitais). Antes da correção, `valorDaFaixa` casava
+    // guias=0 com a faixa "até 30" da tabela HAPVIDA_CRED e cobrava R$263,59 sem nenhuma
+    // produção real na classe.
+    const r = processarMedico({
+      medico,
+      itens: [],
+      itensOutrosHospitais: [],
+      competencia: '2026-08',
+      saldoAcumulado: saldo,
+    });
+
+    expect(r.status).toBe('ok');
+    expect(r.guias).toBe(5); // só o total combinado (0 principal + 5 Outros Hospitais)
+    // HAPVIDA_CRED NÃO pode aparecer — 0 guias reais, nenhuma cobrança fantasma.
+    expect(r.subtotais.find((s) => s.classe === 'HAPVIDA_CRED')).toBeUndefined();
+    expect(r.subtotais).toHaveLength(1);
+    expect(r.subtotais[0]).toMatchObject({ classe: 'OUTROS_HOSPITAIS', guias: 5, valor: 172.2 });
+    expect(r.totalValor).toBe(172.2);
+  });
+
   it('sem procedimentos novos mas COM saldo retido → continua acumulado (nunca vira sem_dados)', () => {
     const saldo: SaldoAcumulado = {
       guiasPrincipal: 3,
