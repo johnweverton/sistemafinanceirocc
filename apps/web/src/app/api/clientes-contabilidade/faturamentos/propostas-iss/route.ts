@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import type { PropostasIssResposta } from '@cobranca/shared';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
+import { competenciaFaturamentoIss } from '@/lib/competencia';
 import { requireRole } from '@/server/auth/require-role';
 import {
   buscarUltimaExecucaoIss,
@@ -33,9 +34,14 @@ export const GET = withErrorHandler(async (req) => {
     });
   }
   const { competencia } = query.data;
+  // `competencia` é a do LOTE; a escrituração que serve de base é a do mês anterior
+  // (`competenciaFaturamentoIss`, decisão do dono 2026-09-30). Só as duas consultas do ISS usam a
+  // competência derivada — `lancados` continua sendo o que foi lançado NO LOTE, que é o outro lado
+  // da comparação R4 (proposta do ISS × valor já lançado nesta competência do lote).
+  const competenciaIss = competenciaFaturamentoIss(competencia);
   const [propostas, ultimaExecucao, lancados] = await Promise.all([
-    listarPropostasIssVigentes(competencia),
-    buscarUltimaExecucaoIss(competencia),
+    listarPropostasIssVigentes(competenciaIss),
+    buscarUltimaExecucaoIss(competenciaIss),
     listarFaturamentosDaCompetencia(competencia),
   ]);
   const corpo: PropostasIssResposta = { competencia, propostas, ultimaExecucao, lancados };

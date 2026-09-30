@@ -8,6 +8,7 @@
 import type { CapturaIss, ClienteContabilidadeFaturamento, OrigemFaturamento } from '@cobranca/shared';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { ApiError } from '@/lib/api-error';
+import { competenciaFaturamentoIss } from '@/lib/competencia';
 import {
   toClienteContabilidadeFaturamento,
   type ClienteContabilidadeFaturamentoRow,
@@ -64,7 +65,13 @@ export interface LancamentoFaturamentoLote {
   issCapturaId?: string | null;
 }
 
-/** Captura que legitima `origem = 'iss_fortaleza'` para ESTE lançamento (mesmo cliente, mês e valor). */
+/**
+ * Captura que legitima `origem = 'iss_fortaleza'` para ESTE lançamento (mesmo cliente, mês e
+ * valor). A competência conferida é a da ESCRITURAÇÃO que serve de base ao lote — o mês anterior
+ * (`competenciaFaturamentoIss`), não a do lote: a partir de 2026-09-30 o lote de outubro se apoia
+ * no faturamento de setembro. Comparar com a competência do lote faria toda captura legítima
+ * falhar aqui e o lançamento sair `manual`, perdendo o selo de origem sem nenhum aviso.
+ */
 function capturaConfere(
   captura: CapturaIss | undefined,
   competencia: string,
@@ -74,7 +81,7 @@ function capturaConfere(
     !!captura &&
     captura.status === 'capturado' &&
     captura.clienteContabilidadeId === l.clienteContabilidadeId &&
-    captura.competencia === competencia &&
+    captura.competencia === competenciaFaturamentoIss(competencia) &&
     captura.valorServicosPrestados !== null &&
     Math.round(captura.valorServicosPrestados * 100) === Math.round(l.faturamento * 100)
   );

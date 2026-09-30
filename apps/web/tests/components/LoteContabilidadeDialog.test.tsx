@@ -20,7 +20,9 @@ import { ToastProvider } from '../../src/components/ui/Toast';
 import { ApiClientError } from '../../src/lib/api-client';
 
 // Competência inicial fixa — senão o teste dependeria do mês em que roda.
-vi.mock('../../src/lib/competencia', () => ({
+vi.mock('../../src/lib/competencia', async (importOriginal) => ({
+  // `competenciaAtual`/`competenciaAnterior` leem o relógio — fixados para o teste ser estável.
+  ...(await importOriginal<typeof import('../../src/lib/competencia')>()),
   competenciaAtual: () => '2026-06',
   competenciaAnterior: () => '2026-05',
 }));
@@ -980,7 +982,12 @@ describe('LoteContabilidadeDialog — propostas do ISS (Story 13.3)', () => {
   it('agente que ainda não rodou → aviso neutro, passo 1 igual ao de antes', async () => {
     renderDialog([faixaA, faixaB]);
 
-    await waitFor(() => expect(screen.getByText(/O agente do ISS ainda não rodou/)).toBeInTheDocument());
+    // O aviso nomeia a competência LIDA no ISS (2026-05, mês anterior ao lote 2026-06) — o
+    // operador precisa saber de qual mês é o faturamento que ele vai conferir.
+    await waitFor(() =>
+      expect(screen.getByText(/O agente do ISS ainda não leu o faturamento de/)).toBeInTheDocument(),
+    );
+    expect(screen.getByText('2026-05')).toBeInTheDocument();
     screen.getAllByRole('spinbutton').forEach((campo) => expect(campo).toHaveValue(null));
   });
 
@@ -1051,7 +1058,8 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
     fireEvent.click(botaoBuscarIss());
 
     await waitFor(() =>
-      expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', ['63510691000193', '67643870000150']),
+      // Lote 2026-06 → o ISS é lido em 2026-05, o mês anterior (`competenciaFaturamentoIss`).
+      expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-05', ['63510691000193', '67643870000150']),
     );
     expect(await screen.findByText(/Na fila — iniciando a busca no ISS/)).toBeInTheDocument();
     expect(botaoBuscarIss()).toBeDisabled();
@@ -1073,8 +1081,8 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
 
     expect(await screen.findByText('Buscando no ISS… 34/90')).toBeInTheDocument();
     expect(botaoBuscarIss()).toBeDisabled();
-    expect(botaoBuscarIss()).toHaveAttribute('title', 'Já existe uma busca no ISS em andamento para 2026-06');
-    expect(screen.getByText(/Já existe uma busca no ISS em andamento para 2026-06 — os campos/)).toBeInTheDocument();
+    expect(botaoBuscarIss()).toHaveAttribute('title', 'Já existe uma busca no ISS em andamento para 2026-05');
+    expect(screen.getByText(/Já existe uma busca no ISS em andamento para 2026-05 — os campos/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancelar busca' })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument(); // agente vivo: sem aviso
   });
@@ -1159,7 +1167,7 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
 
     fireEvent.click(await screen.findByRole('button', { name: /Tentar de novo no ISS: Padaria Bom Pão Ltda/ }));
 
-    await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', ['08293377000198']));
+    await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-05', ['08293377000198']));
     expect(await screen.findByText(/Na fila \(1 empresa\)/)).toBeInTheDocument();
   });
 
@@ -1201,10 +1209,12 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
     await waitFor(() => expect(botaoLancar()).toBeEnabled());
   });
 
-  it('trocar a competência consulta a busca da competência nova', async () => {
+  it('trocar a competência consulta a busca do mês anterior à competência nova', async () => {
     renderDialog([faixaA, faixaB]);
-    await waitFor(() => expect(mockSolicitacaoIss).toHaveBeenCalledWith('2026-06'));
-    fireEvent.change(screen.getByLabelText(/Competência/i), { target: { value: '2026-05' } });
     await waitFor(() => expect(mockSolicitacaoIss).toHaveBeenCalledWith('2026-05'));
+    fireEvent.change(screen.getByLabelText(/Competência/i), { target: { value: '2026-03' } });
+    await waitFor(() => expect(mockSolicitacaoIss).toHaveBeenCalledWith('2026-02'));
+    // O lote nunca é consultado no ISS: seria o mês que ainda não tem faturamento.
+    expect(mockSolicitacaoIss).not.toHaveBeenCalledWith('2026-03');
   });
 });

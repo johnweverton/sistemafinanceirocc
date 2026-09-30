@@ -118,10 +118,27 @@ export class PortalIss {
     }
   }
 
+  private modalAutomaticoAguardado = false;
+
   private async abrirModalInscricao(): Promise<void> {
     const tabela = this.page.locator(S.inscricao.tabela);
     if (await visivel(tabela)) return; // logo após o login o portal já abre o modal sozinho
-    await this.page.locator(S.cabecalho.botaoTrocarInscricao).first().click();
+    if (!this.modalAutomaticoAguardado) {
+      // ...mas ele chega com atraso (AJAX): clicar em "Alterar Inscrição" antes disso é bloqueado pela
+      // máscara do modal que abre por cima. Só a primeira empresa do login espera por ele.
+      this.modalAutomaticoAguardado = true;
+      const abriuSozinho = await tabela.waitFor({ state: 'visible', timeout: 8_000 }).then(() => true, () => false);
+      if (abriuSozinho) {
+        await assentar(this.page);
+        return;
+      }
+    }
+    try {
+      await this.page.locator(S.cabecalho.botaoTrocarInscricao).first().click({ timeout: 10_000 });
+    } catch (erro) {
+      if (await visivel(tabela)) return; // o modal abriu por cima durante o clique
+      throw erro;
+    }
     await tabela.waitFor({ state: 'visible', timeout: TIMEOUT_TELA });
     await assentar(this.page);
   }
