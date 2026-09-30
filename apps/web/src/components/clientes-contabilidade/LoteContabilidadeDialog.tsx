@@ -44,7 +44,7 @@ import {
 import { ProgressoExecucao } from '@/components/execucoes/ProgressoExecucao';
 import { cicloAdicionalVencendoNaCompetencia } from '@/lib/adicional-semestral';
 import { brl } from '@/lib/formato';
-import { competenciaAtual } from '@/lib/competencia';
+import { competenciaAtual, competenciaFaturamentoIss } from '@/lib/competencia';
 
 /**
  * Story 12.5 (AC 5): rastro do cálculo em andamento. Fechar o diálogo — ou recarregar a página
@@ -110,6 +110,11 @@ export function LoteContabilidadeDialog({
   const qc = useQueryClient();
   const { toast } = useToast();
   const [competencia, setCompetencia] = useState(competenciaInicial ?? competenciaAtual());
+  // Competência da ESCRITURAÇÃO no ISS que embasa este lote: o mês anterior (decisão do dono,
+  // 2026-09-30 — o lote de outubro usa o faturamento de setembro, porque outubro ainda não tem
+  // faturamento quando o boleto é emitido). Tudo que fala com o ISS (pedido de busca, polling,
+  // painel) usa esta; o lote, o lançamento e o boleto seguem em `competencia`.
+  const competenciaIss = competenciaFaturamentoIss(competencia);
   const [faturamentos, setFaturamentos] = useState<Record<string, string>>({});
   const [faturamentoLancado, setFaturamentoLancado] = useState(false);
   const [execucaoId, setExecucaoId] = useState<string | null>(null);
@@ -203,9 +208,9 @@ export function LoteContabilidadeDialog({
   // concluir/falhar/cancelar. Falha desta consulta (ex.: migration 0062 ainda não aplicada) não
   // bloqueia nada: o painel vira um aviso e o passo 1 segue à mão, como na Story 13.3.
   const solicitacaoQ = useQuery({
-    queryKey: clienteContabilidadeQueryKeys.solicitacaoIss(competencia),
-    queryFn: () => clientesContabilidadeService.solicitacaoIss(competencia),
-    enabled: /^\d{4}-\d{2}$/.test(competencia),
+    queryKey: clienteContabilidadeQueryKeys.solicitacaoIss(competenciaIss),
+    queryFn: () => clientesContabilidadeService.solicitacaoIss(competenciaIss),
+    enabled: /^\d{4}-\d{2}$/.test(competenciaIss),
     staleTime: 0,
     retry: 1,
     refetchInterval: (q) => (solicitacaoAtiva(q.state.data) ? INTERVALO_POLLING_SOLICITACAO_MS : false),
@@ -239,10 +244,10 @@ export function LoteContabilidadeDialog({
   }, [solicitacaoIssAtiva]);
 
   const pedirBuscaIss = useMutation({
-    mutationFn: (documentos?: string[]) => clientesContabilidadeService.solicitarBuscaIss(competencia, documentos),
+    mutationFn: (documentos?: string[]) => clientesContabilidadeService.solicitarBuscaIss(competenciaIss, documentos),
     onSuccess: (s) => {
-      qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competencia), s);
-      toast('Busca no ISS pedida — começando agora. Você pode continuar trabalhando.', 'success');
+      qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competenciaIss), s);
+      toast(`Busca no ISS pedida (faturamento de ${competenciaIss}) — começando agora. Você pode continuar trabalhando.`, 'success');
     },
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao pedir a busca no ISS', 'error'),
   });
@@ -250,12 +255,12 @@ export function LoteContabilidadeDialog({
   const cancelarBuscaIss = useMutation({
     mutationFn: (id: string) => clientesContabilidadeService.cancelarSolicitacaoIss(id),
     onSuccess: (s) => {
-      qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competencia), s);
+      qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competenciaIss), s);
       toast('Busca no ISS cancelada.', 'info');
     },
     onError: (e) => {
       // 422 = já tinha terminado: a tela só estava atrasada em relação ao agente.
-      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.solicitacaoIss(competencia) });
+      void qc.invalidateQueries({ queryKey: clienteContabilidadeQueryKeys.solicitacaoIss(competenciaIss) });
       toast(e instanceof ApiClientError ? e.message : 'Erro ao cancelar a busca no ISS', 'error');
     },
   });
@@ -651,7 +656,7 @@ export function LoteContabilidadeDialog({
             </p>
             {/* Story 13.5: pedir a busca no ISS pelo sistema e acompanhar o agente do escritório. */}
             <SolicitacaoIssPainel
-              competencia={competencia}
+              competencia={competenciaIss}
               solicitacao={solicitacaoQ.data}
               indisponivel={solicitacaoQ.isError}
               agora={agora}
@@ -674,6 +679,7 @@ export function LoteContabilidadeDialog({
               propostasQ.isSuccess && (
                 <ResumoCapturaIss
                   ultimaExecucao={propostasQ.data.ultimaExecucao}
+                  competenciaIss={competenciaIss}
                   manuais={alvosFaturamento
                     .filter((c) => {
                       const t = estadoIssPorCliente(c.id).tipo;
@@ -714,7 +720,7 @@ export function LoteContabilidadeDialog({
                             disabled={solicitacaoIssAtiva || pedirBuscaIss.isPending}
                             title={
                               solicitacaoIssAtiva
-                                ? `Já existe uma busca no ISS em andamento para ${competencia}`
+                                ? `Já existe uma busca no ISS em andamento para ${competenciaIss}`
                                 : `Busca de novo no ISS só ${c.nome}`
                             }
                             aria-label={`Tentar de novo no ISS: ${c.nome}`}

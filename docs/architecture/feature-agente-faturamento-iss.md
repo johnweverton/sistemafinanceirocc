@@ -19,6 +19,33 @@ valor **como proposta** no mesmo diálogo — o destino (`clientes_contabilidade
 | G3 | O valor capturado entra direto ou como proposta? | **Proposta para conferência.** O operador confirma no diálogo de lote. Nunca sobrescreve valor já lançado; divergência vira alerta. |
 | G4 | Onde roda? | **Script local no escritório** (CLI), senha só na máquina local. |
 
+### G5 — Qual competência o diálogo de lote lê no ISS (2026-09-30)
+
+| # | Pergunta | Decisão |
+|---|----------|---------|
+| G5 | O lote de AAAA-MM busca o faturamento de qual competência no ISS? | **Do mês anterior.** Lote de outubro/2026 → lê a escrituração de **09/2026**. |
+
+**Por quê.** O lote é gerado na virada do mês e o boleto vence no dia fixo seguinte
+(`gateway/vencimento.ts`), então a competência do próprio lote ainda não tem faturamento nenhum
+quando o operador precisa do valor. Antes desta decisão o diálogo mandava a competência do lote
+direto para o agente: em 30/09/2026 ele leu 10/2026 no portal e trouxe R$ 0,00 legítimo — e 0 cai
+na faixa barata do honorário (R$ 250,00 em vez de R$ 480,56) sem disparar nenhum alerta, porque a
+guarda R5 só vale de 2026-11 em diante.
+
+**Não confundir com escrituração aberta.** Verificado no portal real em 2026-09-30: competência
+aberta devolve o valor normalmente — 09/2026 estava "Aberta - Retificadora(1)" e o somatório de
+Serviços Prestados trouxe R$ 18.782,92 (contra R$ 23.202,42 de 08/2026, "Fechada"). Aberta só
+implica o aviso R2 ("o valor pode mudar"), nunca ausência de valor.
+
+**Onde a regra mora.** `competenciaFaturamentoIss` (`apps/web/src/lib/competencia.ts`), uma função
+pura usada nos três pontos que falam com o ISS: o diálogo (pedido de busca, polling e painel), a
+rota `propostas-iss` (propostas e última execução — `lancados` continua na competência do lote, que
+é o outro lado da comparação R4) e `capturaConfere` no repositório de faturamento, que conferia a
+competência do lote e faria toda captura legítima cair para `origem = 'manual'`.
+
+O CLI do agente não mudou: `--competencia` continua explícito e o padrão continua sendo o mês
+anterior ao da execução (`args.ts`).
+
 ## 1. O processo manual, traduzido em passos automatizáveis
 
 | Passo do documento | Tela (URL) | O que o agente faz |

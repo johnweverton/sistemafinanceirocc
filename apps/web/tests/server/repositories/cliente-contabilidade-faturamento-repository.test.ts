@@ -220,10 +220,12 @@ describe('buscarFaturamento', () => {
 // Story 13.3 (decisão G3): a captura do ISS é PROPOSTA; o lançamento é do operador. `origem` só
 // vira `iss_fortaleza` quando o servidor confirma que o valor aceito é o da captura.
 describe('lancarFaturamentoLote — origem do lançamento (Story 13.3)', () => {
+  // A captura que legitima o lançamento do lote 2026-08 é a da escrituração de 2026-07 — o mês
+  // ANTERIOR (decisão do dono 2026-09-30). Ver `competenciaFaturamentoIss`.
   const captura = (over: Record<string, unknown> = {}) => ({
     id: 'cap-1',
     clienteContabilidadeId: 'cc-1',
-    competencia: '2026-08',
+    competencia: '2026-07',
     status: 'capturado',
     valorServicosPrestados: 34375.07,
     ...over,
@@ -235,7 +237,7 @@ describe('lancarFaturamentoLote — origem do lançamento (Story 13.3)', () => {
     expect(mockBuscarCapturas).toHaveBeenCalledWith([]);
   });
 
-  it('captura confere (cliente, mês, status e valor) → origem iss_fortaleza + iss_captura_id', async () => {
+  it('captura do mês anterior confere (cliente, mês, status e valor) → origem iss_fortaleza', async () => {
     mockBuscarCapturas.mockResolvedValue([captura()]);
     await lancarFaturamentoLote(
       '2026-08',
@@ -252,7 +254,10 @@ describe('lancarFaturamentoLote — origem do lançamento (Story 13.3)', () => {
   it.each([
     ['valor diferente do da captura', { faturamento: 34375.08 }, {}],
     ['captura de outro cliente', {}, { clienteContabilidadeId: 'cc-2' }],
-    ['captura de outra competência', {}, { competencia: '2026-07' }],
+    ['captura de outra competência', {}, { competencia: '2026-05' }],
+    // Regressão: antes de 2026-09-30 a conferência comparava com a competência do LOTE. Se voltar
+    // a comparar assim, este caso passa a valer e o de cima (2026-07) quebra.
+    ['captura da competência do próprio lote, não do mês anterior', {}, { competencia: '2026-08' }],
     ['captura que não é `capturado`', {}, { status: 'erro', valorServicosPrestados: null }],
   ])('%s → o lançamento acontece, mas como manual', async (_nome, lancOver, capOver) => {
     mockBuscarCapturas.mockResolvedValue([captura(capOver)]);

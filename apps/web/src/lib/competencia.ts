@@ -31,3 +31,28 @@ export function competenciaAnterior(referencia: Date = new Date()): string {
   const anoAjustado = mes0 === 0 ? ano - 1 : ano;
   return `${anoAjustado}-${String(anterior0 + 1).padStart(2, '0')}`;
 }
+
+/**
+ * Competência da ESCRITURAÇÃO no ISS que serve de base para o lote de `competenciaLote`: o mês
+ * imediatamente anterior.
+ *
+ * Por que não é a própria competência do lote (decisão do dono, 2026-09-30): o lote de outubro é
+ * gerado na virada do mês e o boleto vence no dia fixo seguinte (`gateway/vencimento.ts`), então
+ * outubro ainda não tem faturamento nenhum quando o operador precisa do valor — buscar outubro no
+ * portal devolve R$ 0,00 legítimo e 0 cai na faixa barata. A base é setembro, o mês que acabou.
+ *
+ * Isto NÃO tem a ver com a escrituração estar aberta ou fechada: verificado no portal real em
+ * 2026-09-30, competência aberta devolve o valor normalmente (09/2026 "Aberta - Retificadora(1)"
+ * trouxe R$ 18.782,92). Competência aberta só ganha o aviso "o valor pode mudar" (R2).
+ *
+ * Aritmética em string, sem `Date`, pelo mesmo motivo do cabeçalho deste arquivo (fuso).
+ * `competenciaLote` já vem validada como AAAA-MM pelos chamadores (schema Zod na rota, regex na
+ * tela); formato inesperado devolve a entrada intacta em vez de inventar um mês.
+ */
+export function competenciaFaturamentoIss(competenciaLote: string): string {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(competenciaLote);
+  if (!m) return competenciaLote;
+  const ano = Number(m[1]);
+  const mes = Number(m[2]);
+  return mes === 1 ? `${ano - 1}-12` : `${ano}-${String(mes - 1).padStart(2, '0')}`;
+}
