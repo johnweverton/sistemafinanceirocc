@@ -14,6 +14,11 @@ import { useSidebar } from '@/components/layout/SidebarContext';
 // feedback do dono, 2026-07-30).
 const NAV_TOPO = [
   { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
+  // Emissão saiu da seção "Cobrança Médica" e virou dois itens avulsos (reorganização UX
+  // 2026-09-30): o menu leva direto para emitir, e o histórico ganhou tela própria. O histórico
+  // lista as duas verticais (filtro de serviço), por isso fica fora das seções, como Recebíveis.
+  { href: '/emissao', label: 'Emitir boletos', icon: ExecucoesIcon },
+  { href: '/historico-emissoes', label: 'Histórico de emissões', icon: HistoricoIcon },
   { href: '/relatorios', label: 'Relatórios', icon: RelatoriosIcon },
   // Recebíveis saiu da seção "Cobrança Médica" (feedback do dono, 2026-09-01): desde a
   // migration 0050 a tela lista boletos das duas verticais (médica e contabilidade), então
@@ -27,9 +32,6 @@ const NAV_SECOES = [
     itens: [
       { href: '/medicos', label: 'Médicos', icon: MedicosIcon },
       { href: '/empresas', label: 'Empresas', icon: EmpresasIcon },
-      // Rótulo visível renomeado de "Execuções" para "Emissão" (feedback do dono, 2026-07-30) —
-      // a rota /execucoes e os nomes internos (execucaoId, NovaExecucao...) não mudam.
-      { href: '/execucoes', label: 'Emissão', icon: ExecucoesIcon },
     ],
   },
   {
@@ -315,6 +317,16 @@ function ExecucoesIcon({ className = '' }: { className?: string }) {
   return (
     <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+}
+
+function HistoricoIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l3 2" />
     </svg>
   );
 }

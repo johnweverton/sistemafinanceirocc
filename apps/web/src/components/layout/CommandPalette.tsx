@@ -72,8 +72,8 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(() => {
     const nav: Item[] = [
       { id: 'nav-medicos', label: 'Médicos', hint: 'Ver lista', group: 'Navegação', href: '/medicos' },
-      { id: 'nav-execucoes', label: 'Emissão', hint: 'Ver histórico', group: 'Navegação', href: '/execucoes' },
-      { id: 'nav-nova', label: 'Nova emissão', hint: 'Disparar competência', group: 'Navegação', href: '/execucoes/nova' },
+      { id: 'nav-nova', label: 'Emitir boletos', hint: 'Disparar competência', group: 'Navegação', href: '/emissao' },
+      { id: 'nav-execucoes', label: 'Histórico de emissões', hint: 'Ver emissões anteriores', group: 'Navegação', href: '/historico-emissoes' },
     ];
     const med: Item[] = (medicos ?? []).map((m) => ({
       id: `med-${m.id}`,
@@ -87,7 +87,7 @@ export function CommandPalette() {
       label: e.competencia,
       hint: e.status,
       group: 'Emissão',
-      href: `/execucoes/${e.id}`,
+      href: `/emissoes/${e.id}`,
     }));
     return [...nav, ...med, ...exe];
   }, [medicos, execucoes]);

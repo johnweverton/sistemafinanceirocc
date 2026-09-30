@@ -31,3 +31,19 @@ export function competenciaAnterior(referencia: Date = new Date()): string {
   const anoAjustado = mes0 === 0 ? ano - 1 : ano;
   return `${anoAjustado}-${String(anterior0 + 1).padStart(2, '0')}`;
 }
+
+const MESES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+/**
+ * Competência por extenso para a tela: `'2026-08'` → `'Agosto de 2026'`. Formato inesperado
+ * (ex.: execução de teste com competência livre) devolve a entrada intacta em vez de inventar
+ * um mês.
+ */
+export function competenciaPorExtenso(competencia: string): string {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(competencia);
+  if (!m) return competencia;
+  return `${MESES[Number(m[2]) - 1]} de ${m[1]}`;
+}

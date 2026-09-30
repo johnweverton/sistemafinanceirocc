@@ -1,5 +1,6 @@
 'use client';
 import { useState, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { useMutation, useQueryClient, useQuery, useQueries } from '@tanstack/react-query';
 import { ApiClientError } from '@/lib/api-client';
 import {
@@ -935,7 +936,17 @@ export function NovaExecucao() {
   return (
     <section className="space-y-6">
       <div className="page-header">
-        <h1 className="page-title">Nova emissão</h1>
+        <h1 className="page-title">Emitir boletos</h1>
+        {/* Contabilidade continua emitindo pelo lote em Clientes Contábeis (decisão do dono,
+            2026-09-30) — aqui fica só o atalho, para quem chegou pelo menu de emissão. */}
+        <div className="flex items-center gap-4">
+          <Link href="/clientes-contabilidade" className="link-action">
+            Emitir contabilidade →
+          </Link>
+          <Link href="/historico-emissoes" className="link-action">
+            Histórico de emissões →
+          </Link>
+        </div>
       </div>
 
       <div className="inline-flex rounded-lg border border-cc-hairline bg-cc-surface-2 p-1">

@@ -39,12 +39,21 @@ describe('Sidebar — agrupamento por seção (2026-07-24)', () => {
     expect(screen.getByText('Contabilidade')).toBeInTheDocument();
   });
 
-  it('Médicos/Empresas/Emissão ficam sob "Cobrança Médica"', () => {
+  it('Médicos/Empresas ficam sob "Cobrança Médica"', () => {
     renderSidebar();
     const secao = screen.getByText('Cobrança Médica').parentElement!;
-    for (const label of ['Médicos', 'Empresas', 'Emissão']) {
+    for (const label of ['Médicos', 'Empresas']) {
       expect(secao).toHaveTextContent(label);
     }
+  });
+
+  it('Emitir boletos e Histórico de emissões ficam avulsos (reorganização UX 2026-09-30)', () => {
+    renderSidebar();
+    expect(screen.getByRole('link', { name: /Emitir boletos/i })).toHaveAttribute('href', '/emissao');
+    expect(screen.getByRole('link', { name: /Histórico de emissões/i })).toHaveAttribute('href', '/historico-emissoes');
+    const secaoCobranca = screen.getByText('Cobrança Médica').parentElement!;
+    expect(secaoCobranca).not.toHaveTextContent('Emitir boletos');
+    expect(secaoCobranca).not.toHaveTextContent('Histórico de emissões');
   });
 
   it('Recebíveis fica avulso (fora das seções, feedback do dono 2026-09-01: lista as duas verticais)', () => {

@@ -1,4 +1,5 @@
-// Teste da reforma de HistoricoExecucoes.tsx: busca, filtros e agrupamento por competência.
+// Teste do histórico de emissões (reorganização UX 2026-09-30): mês por extenso, resumo do mês,
+// busca por nome/mês e filtro de serviço.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -37,6 +38,12 @@ const execucoes = [
     medicoNome: 'Dr. Beta',
   },
   {
+    id: 'e4', competencia: '2026-06', iniciadoPor: 'u1', iniciadoEm: '2026-06-20T10:00:00Z',
+    finalizadoEm: '2026-06-20T10:01:00Z', status: 'concluido', progresso: 100,
+    totalMedicos: 3, totalOk: 3, totalAlerta: 0, totalSemDados: 0, totalGeralValor: 1500,
+    clientesContabilidadeIds: ['c1', 'c2', 'c3'],
+  },
+  {
     id: 'e3', competencia: '2026-05', iniciadoPor: 'u1', iniciadoEm: '2026-05-01T10:00:00Z',
     finalizadoEm: null, status: 'erro', progresso: 40,
     totalMedicos: 118, totalOk: null, totalAlerta: null, totalSemDados: null, totalGeralValor: null,
@@ -49,83 +56,78 @@ describe('HistoricoExecucoes', () => {
     mockListar.mockResolvedValue(execucoes);
   });
 
-  it('agrupa por competência e expande o grupo mais recente por padrão', async () => {
+  it('agrupa por mês por extenso, com resumo, e expande o mês mais recente', async () => {
     renderComProviders();
-    const grupoJunho = await screen.findByRole('button', { name: /2026-06/ });
-    expect(within(grupoJunho).getByText('2 execuções')).toBeInTheDocument();
-    // Grupo mais recente (2026-06) já expandido: as 2 execuções aparecem na tabela (dentro do card).
+    const grupoJunho = await screen.findByRole('button', { name: /Junho de 2026/ });
+    expect(within(grupoJunho).getByText('3 emissões')).toBeInTheDocument();
+    expect(within(grupoJunho).getByText(/2 cobranças médicas · 1 de contabilidade/)).toBeInTheDocument();
     const cardJunho = grupoJunho.closest('div.card') as HTMLElement;
-    expect(within(cardJunho).getByText('Em massa')).toBeInTheDocument();
-    expect(within(cardJunho).getByText('Pontual')).toBeInTheDocument();
-    // Grupo mais antigo (2026-05) começa colapsado — sua tabela não é renderizada.
-    const grupoMaio = screen.getByRole('button', { name: /2026-05/ });
+    expect(within(cardJunho).getByText('Lote do mês')).toBeInTheDocument();
+    expect(within(cardJunho).getByText('Dr. Beta')).toBeInTheDocument();
+    expect(within(cardJunho).getByText('Lote de contabilidade')).toBeInTheDocument();
+    expect(within(cardJunho).getByText('100 ok · 15 a revisar · 5 sem produção')).toBeInTheDocument();
+    // Mês mais antigo começa colapsado — a tabela não é renderizada.
+    const grupoMaio = screen.getByRole('button', { name: /Maio de 2026/ });
     const cardMaio = grupoMaio.closest('div.card') as HTMLElement;
     expect(within(cardMaio).queryByRole('table')).not.toBeInTheDocument();
   });
 
-  it('expande um grupo colapsado ao clicar no cabeçalho', async () => {
+  it('sinaliza no resumo o mês que tem emissão com erro', async () => {
     renderComProviders();
-    const grupoMaio = await screen.findByRole('button', { name: /2026-05/ });
+    const grupoMaio = await screen.findByRole('button', { name: /Maio de 2026/ });
+    expect(within(grupoMaio).getByText('1 com erro')).toBeInTheDocument();
     fireEvent.click(grupoMaio);
     const cardMaio = grupoMaio.closest('div.card') as HTMLElement;
     await waitFor(() => expect(within(cardMaio).getByText('Erro')).toBeInTheDocument());
   });
 
-  it('filtra por tipo pontual, deixando só a execução avulsa', async () => {
+  it('filtro de serviço Contabilidade deixa só as emissões contábeis', async () => {
     renderComProviders();
-    await screen.findByRole('button', { name: /2026-06/ });
+    await screen.findByRole('button', { name: /Junho de 2026/ });
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrar por tipo' }), {
-      target: { value: 'pontual' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Contabilidade' }));
 
-    const grupoJunho = await screen.findByRole('button', { name: /2026-06.*1 execução/ });
-    expect(within(grupoJunho).getByText('1 execução')).toBeInTheDocument();
+    const grupoJunho = await screen.findByRole('button', { name: /Junho de 2026.*1 emissão/ });
     const cardJunho = grupoJunho.closest('div.card') as HTMLElement;
-    expect(within(cardJunho).getByText('Pontual')).toBeInTheDocument();
-    expect(within(cardJunho).queryByText('Em massa')).not.toBeInTheDocument();
-    // O grupo de maio (só execução em massa) some da lista.
-    expect(screen.queryByRole('button', { name: /2026-05/ })).not.toBeInTheDocument();
+    expect(within(cardJunho).getByText('Lote de contabilidade')).toBeInTheDocument();
+    expect(within(cardJunho).queryByText('Lote do mês')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Maio de 2026/ })).not.toBeInTheDocument();
   });
 
-  it('busca por competência filtra os grupos exibidos', async () => {
+  it('busca pelo nome do mês filtra os grupos', async () => {
     renderComProviders();
-    await screen.findByRole('button', { name: /2026-05/ });
+    await screen.findByRole('button', { name: /Maio de 2026/ });
 
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por competência ou médico' }), {
-      target: { value: '2026-06' },
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar médico, cliente ou mês' }), {
+      target: { value: 'junho' },
     });
 
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /2026-05/ })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('button', { name: /Maio de 2026/ })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole('button', { name: /2026-06/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Junho de 2026/ })).toBeInTheDocument();
   });
 
-  it('busca por nome de médico filtra corretamente uma execução pontual', async () => {
+  it('busca por nome de médico deixa só a emissão individual dele', async () => {
     renderComProviders();
-    await screen.findByRole('button', { name: /2026-05/ });
+    await screen.findByRole('button', { name: /Maio de 2026/ });
 
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por competência ou médico' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar médico, cliente ou mês' }), {
       target: { value: 'beta' },
     });
 
-    // Só o grupo de junho sobrevive (contém a execução pontual "Dr. Beta"); maio some.
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /2026-05/ })).not.toBeInTheDocument(),
-    );
-    const grupoJunho = await screen.findByRole('button', { name: /2026-06.*1 execução/ });
+    const grupoJunho = await screen.findByRole('button', { name: /Junho de 2026.*1 emissão/ });
     const cardJunho = grupoJunho.closest('div.card') as HTMLElement;
-    expect(within(cardJunho).getByText('Pontual')).toBeInTheDocument();
     expect(within(cardJunho).getByText('Dr. Beta')).toBeInTheDocument();
-    expect(within(cardJunho).queryByText('Em massa')).not.toBeInTheDocument();
+    expect(within(cardJunho).queryByText('Lote do mês')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Maio de 2026/ })).not.toBeInTheDocument();
   });
 
-  it('mostra empty state quando não há execuções', async () => {
+  it('mostra empty state quando não há emissões', async () => {
     mockListar.mockResolvedValue([]);
     renderComProviders();
     await waitFor(() =>
-      expect(screen.getByText('Nenhuma execução registrada ainda')).toBeInTheDocument(),
+      expect(screen.getByText('Nenhuma emissão registrada ainda')).toBeInTheDocument(),
     );
   });
 });

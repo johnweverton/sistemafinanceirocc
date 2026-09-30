@@ -1,5 +1,5 @@
 import { NovaExecucao } from '@/components/execucoes/NovaExecucao';
 
-export default function NovaExecucaoPage() {
+export default function EmissaoPage() {
   return <NovaExecucao />;
 }
