@@ -7,7 +7,11 @@
 //   GET  ?competencia=AAAA-MM          → a ativa, senão a mais recente, senão `null`.
 //
 // Sessão de OPERADOR, mesma guarda de propostas-iss/route.ts — o token do agente só vale em
-// /api/integracoes/iss/*. Nada aqui toca na senha do ISS (G4): quem executa é o agente local.
+// /api/integracoes/iss/*.
+//
+// Busca pela NUVEM (server/iss-nuvem): com ISS_CPF/ISS_SENHA na Vercel, criar a solicitação já
+// dispara o primeiro lote, e o GET (polling de 5 s da tela) dispara o próximo se o lote anterior
+// foi liberado ou parou de dar sinal de vida — rede de segurança do encadeamento entre lotes.
 import { z } from 'zod';
 import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireRole } from '@/server/auth/require-role';
@@ -16,8 +20,13 @@ import {
   criarSolicitacaoIss,
 } from '@/server/repositories/iss-solicitacao-repository';
 import { novaSolicitacaoIssSchema } from '@/server/validation/iss-solicitacao-schema';
+import { agendarLoteNuvemIss } from '@/server/iss-nuvem/executar-lote-nuvem';
+import { loteNuvemDisponivel } from '@/server/repositories/iss-solicitacao-repository';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const preferredRegion = 'gru1';
+export const maxDuration = 300;
 
 const querySchema = z.object({
   competencia: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Formato esperado: AAAA-MM'),
@@ -40,6 +49,7 @@ export const POST = withErrorHandler(async (req) => {
     documentos: parsed.data.documentos ?? null,
     solicitadoPor: sessao.userId,
   });
+  agendarLoteNuvemIss();
   return Response.json(solicitacao, { status: criada ? 201 : 200 });
 });
 
@@ -52,5 +62,7 @@ export const GET = withErrorHandler(async (req) => {
       issues: query.error.issues,
     });
   }
-  return Response.json(await buscarSolicitacaoIssDaCompetencia(query.data.competencia));
+  const solicitacao = await buscarSolicitacaoIssDaCompetencia(query.data.competencia);
+  if (solicitacao && loteNuvemDisponivel(solicitacao)) agendarLoteNuvemIss();
+  return Response.json(solicitacao);
 });

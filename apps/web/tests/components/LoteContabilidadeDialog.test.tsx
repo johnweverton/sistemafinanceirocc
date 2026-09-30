@@ -1041,16 +1041,28 @@ function botaoBuscarIss() {
 const agoraIso = () => new Date().toISOString();
 
 describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', () => {
-  it('sem busca ativa: "Buscar no ISS" habilitado; clicar pede a carteira inteira e mostra "Na fila"', async () => {
+  it('sem busca ativa: "Buscar no ISS" habilitado; clicar pede SÓ os clientes do lote e mostra "Na fila"', async () => {
     mockSolicitarBuscaIss.mockResolvedValue(solicitacaoFake());
-    renderDialog([faixaA, faixaB]);
+    const comDocumento = (c: typeof faixaA, pagadorDocumento: string) =>
+      ({ ...c, cobranca: { ...(c.cobranca ?? {}), pagadorDocumento } }) as typeof faixaA;
+    renderDialog([comDocumento(faixaA, '63.510.691/0001-93'), comDocumento(faixaB, '67643870000150')]);
 
     await waitFor(() => expect(botaoBuscarIss()).toBeEnabled());
     fireEvent.click(botaoBuscarIss());
 
-    await waitFor(() => expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', undefined));
-    expect(await screen.findByText(/Na fila — aguardando o computador do escritório/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mockSolicitarBuscaIss).toHaveBeenCalledWith('2026-06', ['63510691000193', '67643870000150']),
+    );
+    expect(await screen.findByText(/Na fila — iniciando a busca no ISS/)).toBeInTheDocument();
     expect(botaoBuscarIss()).toBeDisabled();
+  });
+
+  it('nenhum cliente do lote com CPF/CNPJ: não pede a busca (nunca cai na carteira inteira)', async () => {
+    renderDialog([faixaA, faixaB]);
+    await waitFor(() => expect(botaoBuscarIss()).toBeEnabled());
+    fireEvent.click(botaoBuscarIss());
+    expect(await screen.findByText(/Nenhum cliente deste lote tem CPF\/CNPJ/)).toBeInTheDocument();
+    expect(mockSolicitarBuscaIss).not.toHaveBeenCalled();
   });
 
   it('busca ativa: botão desabilitado COM o motivo, indicador "Buscando no ISS… 34/90" e "Cancelar busca"', async () => {
@@ -1103,13 +1115,13 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
     expect(botaoBuscarIss()).toBeEnabled();
   });
 
-  it('pendente há mais de 3 min: avisa que o computador do escritório parece desligado', async () => {
+  it('pendente há mais de 3 min: avisa que a busca parece parada', async () => {
     mockSolicitacaoIss.mockResolvedValue(
       solicitacaoFake({ solicitadoEm: new Date(Date.now() - 10 * 60_000).toISOString() }),
     );
     renderDialog([faixaA, faixaB]);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/computador do escritório com o agente parece desligado/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/A busca no ISS parece parada/);
   });
 
   it('em andamento com heartbeat parado há mais de 3 min também avisa', async () => {
@@ -1122,7 +1134,7 @@ describe('LoteContabilidadeDialog — busca no ISS pelo sistema (Story 13.5)', (
       }),
     );
     renderDialog([faixaA, faixaB]);
-    expect(await screen.findByText(/parece desligado/)).toBeInTheDocument();
+    expect(await screen.findByText(/A busca no ISS parece parada/)).toBeInTheDocument();
   });
 
   it('"Cancelar busca" chama o cancelar e o botão some; "Buscar no ISS" volta a valer', async () => {

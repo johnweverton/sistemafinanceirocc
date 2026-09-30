@@ -4,7 +4,7 @@
 import type { SolicitacaoIss } from '@cobranca/shared';
 import type { EstadoPropostaIss } from './proposta-iss';
 
-/** Sem sinal do agente por mais que isto ⇒ o computador do escritório parece desligado (AC 22). */
+/** Sem sinal da busca por mais que isto ⇒ ela parece parada (AC 22). */
 export const LIMITE_AGENTE_PARADO_MS = 3 * 60_000;
 
 /** Intervalo do polling enquanto a solicitação está ativa (AC 20). */
@@ -48,7 +48,7 @@ export function textoSolicitacaoIss(s: SolicitacaoIss): { texto: string; tom: To
   switch (s.status) {
     case 'pendente':
       return {
-        texto: `Na fila${escopo(s)} — aguardando o computador do escritório começar a busca no ISS…`,
+        texto: `Na fila${escopo(s)} — iniciando a busca no ISS…`,
         tom: 'andamento',
       };
     case 'em_andamento': {

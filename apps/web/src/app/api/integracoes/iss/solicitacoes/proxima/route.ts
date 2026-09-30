@@ -9,6 +9,7 @@ import { withErrorHandler, ApiError } from '@/lib/api-error';
 import { requireAgenteIssToken } from '@/server/auth/require-agente-token';
 import { reivindicarProximaSolicitacaoIss } from '@/server/repositories/iss-solicitacao-repository';
 import { reivindicarSolicitacaoIssSchema } from '@/server/validation/iss-solicitacao-schema';
+import { buscaIssNaNuvemHabilitada } from '@/server/iss-nuvem/executar-lote-nuvem';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,8 @@ export const GET = withErrorHandler(async (req) => {
   if (!parsed.success) {
     throw new ApiError(422, 'Parâmetro maquina inválido', 'VALIDATION', { issues: parsed.error.issues });
   }
+  // Busca pela nuvem ligada (ISS_CPF/ISS_SENHA na Vercel): o agente local não disputa os pedidos.
+  if (buscaIssNaNuvemHabilitada()) return new Response(null, { status: 204 });
   const solicitacao = await reivindicarProximaSolicitacaoIss(parsed.data.maquina || null);
   if (!solicitacao) return new Response(null, { status: 204 });
   return Response.json(solicitacao);

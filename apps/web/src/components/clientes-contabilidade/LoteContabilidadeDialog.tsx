@@ -242,7 +242,7 @@ export function LoteContabilidadeDialog({
     mutationFn: (documentos?: string[]) => clientesContabilidadeService.solicitarBuscaIss(competencia, documentos),
     onSuccess: (s) => {
       qc.setQueryData(clienteContabilidadeQueryKeys.solicitacaoIss(competencia), s);
-      toast('Busca no ISS pedida — o computador do escritório começa em até 1 minuto.', 'success');
+      toast('Busca no ISS pedida — começando agora. Você pode continuar trabalhando.', 'success');
     },
     onError: (e) => toast(e instanceof ApiClientError ? e.message : 'Erro ao pedir a busca no ISS', 'error'),
   });
@@ -285,6 +285,17 @@ export function LoteContabilidadeDialog({
     [faixaFaturamento, pendentesRetry],
   );
   const precisaFaturamento = alvosFaturamento.length > 0 && !faturamentoLancado;
+  // "Buscar no ISS" lê só os clientes deste lote (os selecionados), nunca a carteira inteira.
+  const documentosBuscaIss = useMemo(
+    () => [
+      ...new Set(
+        alvosFaturamento
+          .map((c) => documentoParaBuscaIss(c.cobranca?.pagadorDocumento))
+          .filter((d): d is string => !!d),
+      ),
+    ],
+    [alvosFaturamento],
+  );
 
   /**
    * Composição do lote (AC 1, gaps G-11/G-12). Todos os números saem de dado real — a partição
@@ -646,7 +657,11 @@ export function LoteContabilidadeDialog({
               agora={agora}
               pedindo={pedirBuscaIss.isPending}
               cancelando={cancelarBuscaIss.isPending}
-              onBuscar={() => pedirBuscaIss.mutate(undefined)}
+              onBuscar={() =>
+                documentosBuscaIss.length > 0
+                  ? pedirBuscaIss.mutate(documentosBuscaIss)
+                  : toast('Nenhum cliente deste lote tem CPF/CNPJ no cadastro para buscar no ISS.', 'error')
+              }
               onCancelar={(id) => cancelarBuscaIss.mutate(id)}
             />
             {/* Story 13.3: faixa-resumo do agente do ISS. Falha da consulta é só um aviso — o passo 1

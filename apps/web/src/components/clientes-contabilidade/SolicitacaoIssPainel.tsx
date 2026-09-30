@@ -43,8 +43,7 @@ export function SolicitacaoIssPainel({
   if (indisponivel) {
     return (
       <p className="text-xs text-cc-muted">
-        Não foi possível verificar as buscas no ISS pelo sistema — digite os valores ou rode o agente no
-        computador do escritório.
+        Não foi possível verificar as buscas no ISS pelo sistema — digite os valores normalmente.
       </p>
     );
   }
@@ -66,7 +65,7 @@ export function SolicitacaoIssPainel({
           type="button"
           onClick={onBuscar}
           disabled={!!motivoDesabilitado || pedindo}
-          title={motivoDesabilitado ?? `Pede ao computador do escritório que leia o faturamento de ${competencia} no ISS`}
+          title={motivoDesabilitado ?? `Lê o faturamento de ${competencia} no portal do ISS`}
           className="btn-secondary btn btn-sm"
         >
           {pedindo ? 'Pedindo…' : 'Buscar no ISS'}
@@ -104,8 +103,8 @@ export function SolicitacaoIssPainel({
       )}
       {desligado && (
         <p role="alert" className="alert-warning text-xs">
-          O computador do escritório com o agente parece desligado — a busca não anda há mais de 3 minutos.
-          Confira se ele está ligado, com a tarefa agendada instalada (ou o agente em modo vigiar).
+          A busca no ISS parece parada — não anda há mais de 3 minutos. Deixe esta tela aberta por mais
+          alguns minutos (ela retoma sozinha); se continuar, cancele e peça de novo.
         </p>
       )}
     </div>
