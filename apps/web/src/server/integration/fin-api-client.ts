@@ -14,6 +14,7 @@
 //   - 'http' : API real com header x-api-key
 // Isto NÃO é o Engine — pode fazer I/O. Padrões de resiliência herdados do client
 // anterior (calibrados): timeout 30s, retry ×3 com backoff SÓ para 5xx/rede.
+import { createHash } from 'node:crypto';
 import type { ClienteExterno, ProducaoExterna, LoteExterna, ItemProducao } from '@cobranca/shared';
 import { getServerEnv } from '@/lib/env';
 import { ApiError } from '@/lib/api-error';
@@ -112,6 +113,20 @@ function montarUrl(base: string, path: string, params: Record<string, string>): 
 }
 
 /**
+ * Loga um hash + tamanho do corpo cru recebido da API do sistema web (achado real 2026-08-27:
+ * duas chamadas pra `/api/fin-itens?producaoId=3038` com ~3min de intervalo, mesmo médico/
+ * competência, devolveram itens agrupando diferente por data — 70 vs. 157 guias no motor —
+ * sem nenhuma mudança de seleção/concorrência do nosso lado. Sem log do payload bruto, não dava
+ * pra provar se a origem serviu dado diferente ou se o bug era nosso). Log estruturado (não
+ * persiste no banco) — grep pelos logs da invocação por `hash`/`path`/`params` pra comparar duas
+ * chamadas do mesmo id quando a contagem de um médico parecer suspeita.
+ */
+function logPayload(path: string, params: Record<string, string>, json: unknown[]): void {
+  const hash = createHash('sha256').update(JSON.stringify(json)).digest('hex').slice(0, 16);
+  console.log('[fin-api] payload recebido', { path, params, itens: json.length, hash });
+}
+
+/**
  * GET autenticado que devolve um array cru. Erros:
  *   401 → FIN_API_401 (sem retry) · 4xx (exceto 401/429) → FIN_API_CLIENT (sem retry)
  *   corpo não-array → FIN_API_FORMATO (sem retry) · 429/5xx/rede → retry ×3 → FIN_API_RETRY
@@ -161,6 +176,7 @@ async function fetchArray(
       if (!Array.isArray(json)) {
         throw new ApiError(502, 'Resposta da API do sistema web não é um array', 'FIN_API_FORMATO');
       }
+      logPayload(path, params, json);
       return json as Record<string, unknown>[];
     } catch (e) {
       ultimoErro = e;

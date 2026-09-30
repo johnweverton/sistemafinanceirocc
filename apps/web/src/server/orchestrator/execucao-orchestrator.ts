@@ -24,7 +24,7 @@ import type {
   SaldoAcumulado,
 } from '@cobranca/shared';
 import { LOTE_CONTABILIDADE_MAX_CLIENTES } from '@cobranca/shared';
-import { processarMedico } from '@/server/engine';
+import { processarMedico, usaRegra3x1 } from '@/server/engine';
 import { processarEmpresa, type ProducaoMedico } from '@/server/engine/processar-empresa';
 import { aplicarRegraPreco } from '@/server/engine/regra-preco';
 import { buscarItens, buscarItensPorLote } from '@/server/integration/fin-api-client';
@@ -332,6 +332,99 @@ export async function buscarItensDeVariosLotes(
   return porLote.flat();
 }
 
+/** Nº máximo de leituras tentadas até achar 2 CONSECUTIVAS iguais (1ª leitura + até 3 releituras). */
+const MAX_TENTATIVAS_ESTABILIZACAO = 4;
+
+/** Pausa entre releituras de estabilização — dá tempo de a origem "assentar" (réplica/cache
+ *  desincronizados) em vez de bater 2x seguidas na mesma resposta transitória. Só entra a partir
+ *  da 3ª leitura (as 2 primeiras seguem sem pausa — é o caminho comum, sem instabilidade). */
+const PAUSA_ESTABILIZACAO_MS = 500;
+
+function esperar(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Sinaliza que a API do sistema web NUNCA estabilizou (achado real 2026-08-27, Dr. Pedro
+ * Barreira Cabral — mesma seleção, sem concorrência, mesma competência JULHO/2026: uma leitura
+ * às 18:40 e outra às 18:43 geraram 70 e 157 guias respectivamente no mesmo motor de contagem,
+ * o que só é possível se o `data` de algum item tiver vindo diferente entre as duas chamadas)
+ * mesmo depois de `MAX_TENTATIVAS_ESTABILIZACAO` leituras — só chega aqui quando a origem está
+ * genuinamente instável por tempo suficiente pra não dar pra confiar em nenhuma leitura
+ * (`buscarComVerificacaoInstabilidade` já tentou obter 2 leituras CONSECUTIVAS iguais antes de
+ * desistir). `processarUmMedico` trata isto como falha de infraestrutura (mesmo `catch` de erro
+ * de rede) — nunca chuta qual das leituras é a "certa".
+ */
+class InstabilidadeOrigemError extends Error {
+  constructor(campo: string) {
+    super(
+      `A API do sistema web não estabilizou pra "${campo}" depois de ${MAX_TENTATIVAS_ESTABILIZACAO} ` +
+        'leituras — possível inconsistência persistente da origem, não é seguro calcular. Tentar novamente.',
+    );
+    this.name = 'InstabilidadeOrigemError';
+  }
+}
+
+/**
+ * Assinatura estável (ordem-independente) de uma lista de itens, SÓ dos campos que
+ * `contarGuiasProducao`/`consolidarProducao` realmente usam: `data` e `atendimentoExternoId`
+ * (agrupamento), `codigoProcedimento` (exceção urologista), `descricaoProcedimento` (exceção
+ * ginecologista) e `viaAcesso` (separa o ramo via-acesso do normal). `pacienteNome` entra como
+ * parte da chave de agrupamento (`chaveAgrupamento3x1`/fallback), mas NUNCA `statusOrigem` — BUG
+ * REAL encontrado em auto-revisão (2026-08-27), antes de ir pra produção: o status de uma guia
+ * pode ser atualizado entre duas leituras (ex.: glosa processada) sem nenhum efeito na contagem
+ * (`statusOrigem` "NUNCA filtra contagem", ver `toItemProducao`) — incluí-lo aqui gerava alerta
+ * falso pra um caso legítimo e comum, exatamente o tipo de ruído que motivou este teste. `tipoAto`
+ * e os valores monetários também ficam de fora pelo mesmo motivo: não entram em `contarGuiasProducao`.
+ */
+function assinaturaItens(itens: ItemProducao[]): string {
+  return itens
+    .map(
+      (i) =>
+        `${i.data}|${i.pacienteNome}|${i.atendimentoExternoId ?? ''}|${i.codigoProcedimento}|` +
+        `${i.descricaoProcedimento ?? ''}|${i.viaAcesso}`,
+    )
+    .sort()
+    .join('\n');
+}
+
+/**
+ * Estabilização pras 5 especialidades que agrupam guias por data (`usaRegra3x1` — pediatra/
+ * urologista/ginecologista/ortopedista/angiologista, achado real 2026-08-27): em vez de desistir
+ * na 1ª divergência, RELÊ até encontrar 2 leituras CONSECUTIVAS iguais — feedback do dono
+ * (2026-08-27): "eu quero que a contagem venha corretamente e não que gere alerta". Se a origem
+ * estabiliza em qualquer ponto dentro de `MAX_TENTATIVAS_ESTABILIZACAO`, usa esse valor (a
+ * execução conclui normalmente, sem alerta nenhum) — só desiste e gera alerta se a origem
+ * continuar mudando a cada leitura até esgotar as tentativas (instabilidade persistente demais
+ * pra confiar em qualquer leitura). Caminho comum (2 leituras já batem de cara) custa exatamente
+ * o mesmo de antes: 2 chamadas, sem pausa. Só as especialidades 3x1 pagam o custo de mais de 1
+ * chamada — as demais contam 1 guia por item, imunes a essa classe de instabilidade da origem
+ * (grupo/data não muda o resultado). `campo` é só pro texto do alerta, identifica qual lote
+ * (produção principal, Outros Hospitais, Imobilizações, Angiografia) gerou a divergência.
+ */
+async function buscarComVerificacaoInstabilidade(
+  especialidade: string | null | undefined,
+  campo: string,
+  buscar: () => Promise<ItemProducao[]>,
+): Promise<ItemProducao[]> {
+  let leituraAnterior = await buscar();
+  if (!usaRegra3x1(especialidade)) return leituraAnterior;
+  let assinaturaAnterior = assinaturaItens(leituraAnterior);
+
+  for (let tentativa = 2; tentativa <= MAX_TENTATIVAS_ESTABILIZACAO; tentativa++) {
+    if (tentativa >= 3) await esperar(PAUSA_ESTABILIZACAO_MS);
+    const leituraAtual = await buscar();
+    const assinaturaAtual = assinaturaItens(leituraAtual);
+    if (assinaturaAtual === assinaturaAnterior) {
+      return leituraAtual; // 2 leituras seguidas concordam → estabilizou, usa esse valor
+    }
+    leituraAnterior = leituraAtual;
+    assinaturaAnterior = assinaturaAtual;
+  }
+
+  throw new InstabilidadeOrigemError(campo);
+}
+
 /**
  * Lógica pura de divisão em lotes: quantos lotes para um total dado um tamanho de lote.
  * Exportada para teste unitário direto (sem I/O).
@@ -617,11 +710,16 @@ async function processarUmMedico(
     // SOMA dos demais sub-lotes (`producaoGuiasLoteExternaIds`, computado no cliente) — nunca os
     // dois juntos, senão o sub-lote de consulta seria contado 2x (uma vez como guia dentro do
     // pacote completo, uma vez como consulta). `buscarItensDeVariosLotes` decide undefined vs [].
-    const itensDeGuiasPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoGuiasLoteExternaIds);
-    // Angiologista não tem lote principal (GATE 2026-08-07) — producaoExternaId fica null pra
-    // ele, `itens` fica vazio (o Engine desvia pro caminho de Cateter/Fístula/Angiografia).
-    const itens =
-      itensDeGuiasPorLote ?? (selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : []);
+    // Achado real 2026-08-27: as 5 especialidades 3x1 (`usaRegra3x1`) tiveram um caso confirmado
+    // de duas leituras seguidas da MESMA produção (mesma seleção, sem concorrência) devolvendo
+    // itens diferentes — ver `buscarComVerificacaoInstabilidade`. Só essas especialidades pagam
+    // o custo de buscar 2x; as demais seguem com 1 chamada só, como sempre.
+    const itens = await buscarComVerificacaoInstabilidade(medico.especialidade, 'produção principal', async () => {
+      const porLote = await buscarItensDeVariosLotes(deps, selecao.producaoGuiasLoteExternaIds);
+      // Angiologista não tem lote principal (GATE 2026-08-07) — producaoExternaId fica null pra
+      // ele, `itens` fica vazio (o Engine desvia pro caminho de Cateter/Fístula/Angiografia).
+      return porLote ?? (selecao.producaoExternaId ? await deps.buscarItens(selecao.producaoExternaId) : []);
+    });
     // Story 10.2: lote separado de consultas ambulatoriais (pediatria) — opcional, produção
     // distinta da de guias. NUNCA reaproveita `itens` (anti-dupla-contagem). Achado 2026-08-21:
     // sub-lote(s) de consulta (`producaoConsultasLoteExternaIds`) têm prioridade sobre a produção
@@ -636,16 +734,30 @@ async function processarUmMedico(
     // classes; ver processar-medico.ts). `undefined` quando o operador não selecionou o lote
     // nesta execução — o Engine gera alerta em vez de chutar.
     const itensOutrosHospitais = selecao.producaoOutrosHospitaisExternaId
-      ? await deps.buscarItens(selecao.producaoOutrosHospitaisExternaId)
+      ? await buscarComVerificacaoInstabilidade(medico.especialidade, 'Outros Hospitais', () =>
+          deps.buscarItens(selecao.producaoOutrosHospitaisExternaId!),
+        )
       : undefined;
     // Achado 2026-08-25 (migration 0059: virou ARRAY): sub-lote(s) de Imobilizações
     // (`producaoImobilizacoesLoteExternaIds`) têm prioridade sobre a produção flat — mesmo padrão
     // de itensConsultasPorLote acima. Médico VH pode ter vários sub-lotes de Imobilizações no mês
     // (um por dia/período) — todos somados, mesmo mecanismo de itensCateter/itensFistula abaixo.
-    const itensImobilizacoesPorLote = await buscarItensDeVariosLotes(deps, selecao.producaoImobilizacoesLoteExternaIds);
+    // Mesma verificação de instabilidade das demais classes 3x1 (achado 2026-08-27): só paga o
+    // custo de 2ª leitura quando `medico.especialidade` está em `usaRegra3x1`.
+    const itensImobilizacoesPorLote =
+      selecao.producaoImobilizacoesLoteExternaIds && selecao.producaoImobilizacoesLoteExternaIds.length > 0
+        ? await buscarComVerificacaoInstabilidade(medico.especialidade, 'Imobilizações', async () => {
+            const r = await buscarItensDeVariosLotes(deps, selecao.producaoImobilizacoesLoteExternaIds);
+            return r ?? [];
+          })
+        : undefined;
     const itensImobilizacoes =
       itensImobilizacoesPorLote ??
-      (selecao.producaoImobilizacoesExternaId ? await deps.buscarItens(selecao.producaoImobilizacoesExternaId) : undefined);
+      (selecao.producaoImobilizacoesExternaId
+        ? await buscarComVerificacaoInstabilidade(medico.especialidade, 'Imobilizações', () =>
+            deps.buscarItens(selecao.producaoImobilizacoesExternaId!),
+          )
+        : undefined);
     // GATE 2026-08-07: lotes de Cateter/Fístula/Angiografia (médico Angiologista, sem lote
     // principal) — mesmo padrão de nunca-chuta de Outros Hospitais/Imobilizações acima. Esses
     // ids vêm de `listarLotes` (fin-lotes), NÃO de fin-producoes — busca via `buscarItensPorLote`
@@ -654,7 +766,15 @@ async function processarUmMedico(
     // (1Q/2Q) como sub-lotes separados — busca TODOS os selecionados e soma os itens.
     const itensCateter = await buscarItensDeVariosLotes(deps, selecao.producaoCateterExternaIds);
     const itensFistula = await buscarItensDeVariosLotes(deps, selecao.producaoFistulaExternaIds);
-    const itensAngiografia = await buscarItensDeVariosLotes(deps, selecao.producaoAngiografiaExternaIds);
+    // Angiografia usa o mesmo teto(n/3) das demais especialidades 3x1 — Angiologista está sempre
+    // em `usaRegra3x1`, então este lote sempre paga a 2ª leitura de verificação.
+    const itensAngiografia =
+      selecao.producaoAngiografiaExternaIds && selecao.producaoAngiografiaExternaIds.length > 0
+        ? await buscarComVerificacaoInstabilidade(medico.especialidade, 'Angiografia', async () => {
+            const r = await buscarItensDeVariosLotes(deps, selecao.producaoAngiografiaExternaIds);
+            return r ?? [];
+          })
+        : undefined;
     // GATE 2026-08-12: Carta de Rede não busca itens da API — a contagem não tem regra fixa
     // (depende do procedimento realizado no mês), então o operador informa o número diretamente
     // (`carta_rede_guias`). `producaoCartaRedeExternaId` é só referência/auditoria, nunca lido aqui.
