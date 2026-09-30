@@ -74,13 +74,38 @@ describe('resolverGuiasManuais', () => {
     expect(r.linhas[0]?.nomePlanilha).toBe('nome digitado errado');
   });
 
-  it('CPF não encontrado no cadastro → erro de linha explícito (nunca ignora)', () => {
-    const r = resolverGuiasManuais([linha({ cpf: '00000000191' })], cadastro, '2026-06');
+  it('CPF não encontrado no cadastro (e nome também não casa) → erro de linha explícito (nunca ignora)', () => {
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '00000000191', nome: 'Nome Que Não Está No Cadastro' })],
+      cadastro,
+      '2026-06',
+    );
 
     expect(r.linhas).toEqual([]);
     expect(r.erros).toHaveLength(1);
     expect(r.erros[0]).toMatchObject({ linha: 2, chave: '00000000191' });
     expect(r.erros[0]?.erro).toContain('não encontrado no cadastro');
+  });
+
+  it('CPF não encontrado mas nome casa com exatamente 1 médico → resolve por nome com aviso explícito', () => {
+    const r = resolverGuiasManuais([linha({ cpf: '00000000191' })], cadastro, '2026-06');
+
+    expect(r.erros).toEqual([]);
+    expect(r.linhas).toHaveLength(1);
+    expect(r.linhas[0]?.medicoId).toBe('med-1');
+    expect(r.linhas[0]?.nomePlanilha).toContain('casado por NOME');
+  });
+
+  it('CPF não encontrado e nome casa com mais de 1 médico (homônimos) → erro de linha (ambíguo)', () => {
+    const homonimo = medicoFake({ id: 'med-homonimo', nome: 'Dr. Fulano de Tal', cpf: '52998224725' });
+    const r = resolverGuiasManuais(
+      [linha({ cpf: '00000000191' })],
+      [...cadastro, homonimo],
+      '2026-06',
+    );
+
+    expect(r.linhas).toEqual([]);
+    expect(r.erros[0]?.erro).toContain('casou com 2 médicos');
   });
 
   it('CPF duplicado na planilha → TODAS as ocorrências viram erro (não escolhe uma)', () => {
@@ -103,8 +128,18 @@ describe('resolverGuiasManuais', () => {
   });
 
   it('competência em formato inválido → erro de linha', () => {
-    const r = resolverGuiasManuais([linha({ competencia: '06/2026' })], cadastro, '2026-06');
+    const r = resolverGuiasManuais([linha({ competencia: '2026/06' })], cadastro, '2026-06');
     expect(r.erros[0]?.erro).toContain('AAAA-MM');
+  });
+
+  it('competência em DD/MM/AAAA ou MM/AAAA → normaliza para AAAA-MM antes de comparar', () => {
+    const porExtenso = resolverGuiasManuais([linha({ competencia: '01/06/2026' })], cadastro, '2026-06');
+    expect(porExtenso.erros).toEqual([]);
+    expect(porExtenso.linhas[0]?.competencia).toBe('2026-06');
+
+    const mesAno = resolverGuiasManuais([linha({ competencia: '06/2026' })], cadastro, '2026-06');
+    expect(mesAno.erros).toEqual([]);
+    expect(mesAno.linhas[0]?.competencia).toBe('2026-06');
   });
 
   it('total de guias ausente, não inteiro ou negativo → erro de linha', () => {
