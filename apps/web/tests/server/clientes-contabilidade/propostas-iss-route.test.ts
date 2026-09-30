@@ -37,15 +37,12 @@ beforeEach(() => {
 });
 
 describe('GET /api/clientes-contabilidade/faturamentos/propostas-iss', () => {
-  // A competência do ISS é a do MÊS ANTERIOR ao lote (decisão do dono 2026-09-30): o lote de
-  // outubro se apoia no faturamento de setembro. `lancados` é o único que fica na do lote — é o
-  // outro lado da comparação R4 (proposta do ISS × valor já lançado NESTE lote).
-  it('lê o ISS do mês anterior e os lançados da competência do lote', async () => {
+  it('junta propostas vigentes, última execução e lançados da competência', async () => {
     const proposta = { id: 'cap-1', clienteContabilidadeId: 'cc-1', status: 'capturado' };
     const execucao = {
       id: 'exec-1',
-      competencia: '2026-09',
-      iniciadoEm: '2026-09-30T13:40:00Z',
+      competencia: '2026-08',
+      iniciadoEm: '2026-09-21T13:40:00Z',
       finalizadoEm: null,
       totais: { capturado: 1, nao_encontrado: 0, sem_escrituracao: 0, erro: 0 },
     };
@@ -53,14 +50,14 @@ describe('GET /api/clientes-contabilidade/faturamentos/propostas-iss', () => {
     mockUltimaExecucao.mockResolvedValue(execucao);
     mockLancados.mockResolvedValue([{ clienteContabilidadeId: 'cc-2', faturamento: 5000 }]);
 
-    const res = await reqGet('?competencia=2026-10');
+    const res = await reqGet('?competencia=2026-08');
 
     expect(res.status).toBe(200);
-    expect(mockVigentes).toHaveBeenCalledWith('2026-09');
-    expect(mockUltimaExecucao).toHaveBeenCalledWith('2026-09');
-    expect(mockLancados).toHaveBeenCalledWith('2026-10');
+    expect(mockVigentes).toHaveBeenCalledWith('2026-08');
+    expect(mockUltimaExecucao).toHaveBeenCalledWith('2026-08');
+    expect(mockLancados).toHaveBeenCalledWith('2026-08');
     expect(await res.json()).toEqual({
-      competencia: '2026-10',
+      competencia: '2026-08',
       propostas: [proposta],
       ultimaExecucao: execucao,
       lancados: [{ clienteContabilidadeId: 'cc-2', faturamento: 5000 }],
@@ -70,13 +67,6 @@ describe('GET /api/clientes-contabilidade/faturamentos/propostas-iss', () => {
   it('competência sem execução do agente → propostas vazias e ultimaExecucao null', async () => {
     const body = await (await reqGet('?competencia=2026-08')).json();
     expect(body).toMatchObject({ propostas: [], ultimaExecucao: null, lancados: [] });
-  });
-
-  it('janeiro busca o ISS em dezembro do ano anterior (virada de ano)', async () => {
-    await reqGet('?competencia=2026-01');
-    expect(mockVigentes).toHaveBeenCalledWith('2025-12');
-    expect(mockUltimaExecucao).toHaveBeenCalledWith('2025-12');
-    expect(mockLancados).toHaveBeenCalledWith('2026-01');
   });
 
   it.each(['', '?competencia=2026-13', '?competencia=agosto'])('competência inválida (%s) → 400', async (qs) => {

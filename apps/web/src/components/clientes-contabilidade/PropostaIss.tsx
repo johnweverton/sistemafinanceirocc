@@ -46,34 +46,22 @@ export function SeloPropostaIss({ estado }: { estado: EstadoPropostaIss }) {
 
 export function ResumoCapturaIss({
   ultimaExecucao,
-  competenciaIss,
   manuais,
 }: {
   ultimaExecucao: UltimaExecucaoIss | null;
-  /**
-   * Competência da escrituração lida no ISS (o mês anterior ao do lote). Fica VISÍVEL, não só no
-   * `title`: o operador confere o valor na tela antes de lançar, e sem o mês de origem ele não tem
-   * como saber que o número do lote de outubro é o faturamento de setembro.
-   */
-  competenciaIss: string;
   /** Nomes de quem o agente não entregou valor e precisa de digitação manual. */
   manuais: string[];
 }) {
   if (!ultimaExecucao) {
     return (
       <p className="text-xs text-cc-muted">
-        O agente do ISS ainda não leu o faturamento de <span className="tabular">{competenciaIss}</span> —
-        digite os valores.
+        O agente do ISS ainda não rodou para esta competência — digite os valores.
       </p>
     );
   }
   const t = ultimaExecucao.totais;
   return (
     <div className="text-xs text-cc-ink-2">
-      <p>
-        Faturamento lido no ISS da competência <strong className="tabular">{competenciaIss}</strong> (mês
-        anterior ao do lote).
-      </p>
       <p>
         Última captura do ISS: <span className="tabular">{dataHora(ultimaExecucao.iniciadoEm)}</span> —{' '}
         <span className="tabular">{t.capturado}</span> capturado{t.capturado !== 1 ? 's' : ''} ·{' '}
