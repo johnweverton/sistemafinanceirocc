@@ -240,6 +240,60 @@ No fim, um `POST execucoes` com tudo. Se o POST falhar, o JSON fica salvo em
 | Login passar a exigir MFA/captcha | Hoje não exige (imagem 2). Se passar a exigir: `--headed` + o operador resolve e o agente continua (human-in-the-loop, mesmo padrão do ARCUS D8) |
 | Escrituração deixar de refletir o Emissor Nacional | Dono confirmou com a SEFIN (G1); R5 detecta automaticamente se acontecer |
 | Ler valor da empresa errada | R1 (dupla verificação de inscrição + competência) |
+| Instância da Vercel sem recursos no meio da carteira | Teto de invocação, varredura de `/tmp` e adiamento do lote — ver 8.1 |
+
+### 8.1 — Incidente 2026-10-01: `ERR_INSUFFICIENT_RESOURCES` na busca pela nuvem
+
+**O que aconteceu.** Busca de 32 empresas (competência 2026-09) começou 10:05 e leu 27 em quatro
+lotes encadeados. No quinto lote o `page.goto` do login devolveu
+`net::ERR_INSUFFICIENT_RESOURCES`; a solicitação foi encerrada como `falhou` e as 5 últimas
+ficaram sem leitura. A tentativa seguinte (10:16) morreu com o mesmo erro em 1,3 s — rápido demais
+para ser o portal: o que acabou foram os recursos da instância reaproveitada pela Vercel (memória
+e/ou os 512 MB de `/tmp`, onde moram o Chromium extraído, o perfil e o cache do navegador).
+
+**Por que a instância chegou nesse estado.** Cada lote sobe um Chromium na mesma instância morna.
+Um lote podia começar a última empresa faltando 150 s para o `maxDuration` de 300 s, e uma empresa
+sozinha passa disso quando encosta nos timeouts do portal (60 s na troca de inscrição + 90 s na
+visualização, duas vezes se a sessão cai — foi o caso das duas "Troca de inscrição não concluiu"
+dessa rodada). Função derrubada no meio não roda o `finally`: o Chromium fica vivo e o perfil fica
+em `/tmp` para o próximo lote.
+
+**Três defesas (em `server/iss-nuvem/executar-lote-nuvem.ts`).**
+
+1. `TETO_INVOCACAO_MS` (240 s, com os 60 s restantes reservados para fechar o navegador, gravar as
+   capturas e disparar o próximo lote): toda leitura corre contra o relógio da invocação. Estourou, o lote
+   encerra sozinho e grava o que leu — a função nunca mais é derrubada no meio. Empresa que
+   estourou tendo o lote inteiro pela frente vira captura `erro` (é ela que está travando); as
+   outras ficam para o lote seguinte, com a janela inteira.
+2. Antes de abrir o navegador, varre o `/tmp` e apaga perfil de navegador mais velho que 10 min
+   (> `maxDuration`, então nunca é de lote vivo). O fechamento também passou a ter prazo de 10 s,
+   com registro no log de quanto sobrou de `/tmp` e de memória antes e depois.
+3. Erro de infraestrutura **adia** o lote em vez de matar a solicitação: não renova o lease, e em
+   ~90 s outra invocação retoma de onde parou. Vale no login e também no meio do laço — ali
+   `lerEmpresa` transforma qualquer falha em captura `erro`, e captura gravada conta como lida,
+   então sem reconhecer a assinatura (`ERRO_DE_INFRA`) a carteira inteira virava `erro` em poucos
+   segundos quando o recurso acabava depois do login. Antes de adiar, o que já foi lido é gravado
+   **com o `execucaoId` registrado na solicitação** — senão o lote seguinte releria tudo numa
+   execução nova. Só senha recusada (`ErroLogin`) encerra na hora.
+
+**Dois limites conhecidos deste desenho** (nenhum dos dois é regressão — antes a solicitação
+simplesmente morria):
+
+- *O teto de adiamento mede idade, não insistência.* `reivindicarLoteNuvemIss` preserva
+  `iniciado_em` a cada lote, então `TETO_ADIAMENTO_MS` (1 h) é a idade da solicitação aberta, não
+  o tempo tentando. Contar adiamentos de verdade pede coluna nova em `iss_solicitacoes` — vale a
+  pena se o adiamento passar a ser comum.
+- *Ninguém retoma sozinho com a tela fechada.* Depois de um `adiada`, quem dispara o próximo lote
+  é o polling de 5 s da tela (`iss-solicitacoes` GET) ou o operador clicando "Buscar no ISS" de
+  novo (o POST é idempotente e retoma a solicitação ativa). Não há cron para isso — o plano da
+  Vercel limita os crons existentes a execução diária. Com a tela aberta, que é o uso normal, a
+  retomada acontece em ~90 s e o painel já avisa ("a busca parece parada… ela retoma sozinha").
+
+**Ajuste de infraestrutura (fora do código):** a memória da função precisa caber um Chromium.
+Vercel → Projeto → Settings → Functions → Memory/CPU, no maior valor que o plano permitir
+(≥ 2 GB) para as rotas `/api/integracoes/iss/nuvem/lote` e
+`/api/clientes-contabilidade/faturamentos/iss-solicitacoes` (esta última também sobe navegador
+pelo `waitUntil` do polling).
 
 ## 9. Fora de escopo
 

@@ -4,6 +4,7 @@ import { ErroLogin } from '@cobranca/agente-iss/src/portal/portal';
 import {
   executarLoteNuvemIss,
   ORCAMENTO_LOTE_MS,
+  TETO_INVOCACAO_MS,
   type DependenciasLoteNuvem,
 } from '@/server/iss-nuvem/executar-lote-nuvem';
 import { loteNuvemDisponivel, MAQUINA_NUVEM_LIVRE } from '@/server/repositories/iss-solicitacao-repository';
@@ -34,16 +35,38 @@ function solicitacao(extra: Partial<SolicitacaoIss> = {}): SolicitacaoIss {
   };
 }
 
-function montar(opcoes: { s?: SolicitacaoIss | null; alvos?: AlvoIss[]; lidos?: string[]; loginFalha?: Error; msPorEmpresa?: number } = {}) {
+function montar(
+  opcoes: {
+    s?: SolicitacaoIss | null;
+    alvos?: AlvoIss[];
+    lidos?: string[];
+    loginFalha?: Error;
+    msPorEmpresa?: number;
+    /** Empresas (1-based) cuja leitura nunca termina — para exercitar o prazo por empresa. */
+    empresasTravadas?: number[];
+    /** Empresa (1-based) em que a instância fica sem recursos no meio da leitura. */
+    empresaSemRecursos?: number;
+  } = {},
+) {
   let relogio = Date.parse('2026-09-29T10:00:00.000Z');
+  let lidas = 0;
+  let selecionadas = 0;
   const portal = {
     login: vi.fn(async () => {
       if (opcoes.loginFalha) throw opcoes.loginFalha;
     }),
     sessaoPerdida: vi.fn(() => false),
     recuperar: vi.fn(async () => undefined),
-    selecionarEmpresa: vi.fn(async () => ({ inscricao: '1', razaoSocial: 'X' })),
+    selecionarEmpresa: vi.fn(async () => {
+      selecionadas += 1;
+      if (selecionadas === opcoes.empresaSemRecursos) {
+        throw new Error('page.goto: net::ERR_INSUFFICIENT_RESOURCES at https://iss.fortaleza.ce.gov.br/');
+      }
+      return { inscricao: '1', razaoSocial: 'X' };
+    }),
     lerCompetencia: vi.fn(async () => {
+      lidas += 1;
+      if (opcoes.empresasTravadas?.includes(lidas)) await new Promise(() => undefined); // nunca resolve
       relogio += opcoes.msPorEmpresa ?? 20_000;
       return { tipo: 'capturado' as const, valor: 1000, quantidade: 2, situacao: 'Fechada', fechada: true };
     }),
@@ -126,6 +149,71 @@ describe('executarLoteNuvemIss', () => {
     expect(erro).toContain('não tenta de novo');
     expect(erro).not.toContain('segredo-ok');
     expect(deps.anexar).not.toHaveBeenCalled();
+  });
+
+  it('erro de infraestrutura no login adia o lote — não mata a solicitação nem libera o lease', async () => {
+    const { deps } = montar({
+      loginFalha: new Error('page.goto: net::ERR_INSUFFICIENT_RESOURCES at https://iss.fortaleza.ce.gov.br/'),
+    });
+    expect(await executarLoteNuvemIss(deps)).toBe('adiada');
+    expect(deps.concluir).not.toHaveBeenCalled();
+    expect(deps.anexar).not.toHaveBeenCalled();
+    // sem `liberar`: o lease precisa VENCER antes de outra invocação retomar (dá tempo de a
+    // instância sem recursos ser reciclada em vez de pegar o lote de novo na hora)
+    const liberou = vi.mocked(deps.renovar!).mock.calls.some((c) => (c[2] as { liberar?: boolean } | undefined)?.liberar);
+    expect(liberou).toBe(false);
+  });
+
+  it('busca aberta há tempo demais tropeçando na infraestrutura: encerra como falhou', async () => {
+    const { deps } = montar({
+      s: solicitacao({ iniciadoEm: '2026-09-29T08:00:00.000Z' }), // 2 h antes do relógio do teste
+      loginFalha: new Error('net::ERR_INSUFFICIENT_RESOURCES'),
+    });
+    expect(await executarLoteNuvemIss(deps)).toBe('falhou');
+    const erro = (vi.mocked(deps.concluir!).mock.calls[0]![1] as { erro: string }).erro;
+    expect(erro).toContain('aberta há 120 min');
+  });
+
+  it('data de início inválida não vira retentativa sem fim', async () => {
+    const { deps } = montar({
+      s: solicitacao({ iniciadoEm: 'não é data', solicitadoEm: 'nem isto' }),
+      loginFalha: new Error('net::ERR_INSUFFICIENT_RESOURCES'),
+    });
+    expect(await executarLoteNuvemIss(deps)).toBe('falhou');
+  });
+
+  it('instância sem recursos no meio do lote: guarda o lido, não queima o resto como erro', async () => {
+    const { deps } = montar({ alvos: [alvo(1), alvo(2), alvo(3)], empresaSemRecursos: 2 });
+    expect(await executarLoteNuvemIss(deps)).toBe('adiada');
+    // a empresa 1 foi gravada; a 2 e a 3 continuam por ler (não viraram captura `erro`)
+    const gravadas = vi.mocked(deps.anexar!).mock.calls[0]![0].capturas;
+    expect(gravadas).toHaveLength(1);
+    expect(gravadas[0]!.status).toBe('capturado');
+    // o execucaoId precisa ficar na solicitação, senão o próximo lote relê tudo numa execução nova
+    expect(deps.renovar).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ execucaoId: 'exec-1' }),
+      expect.any(Date),
+    );
+    expect(deps.concluir).not.toHaveBeenCalled();
+  });
+
+  it('leitura travada encerra o lote no teto da invocação, sem esperar a função ser derrubada', async () => {
+    vi.useFakeTimers();
+    try {
+      const { deps } = montar({ alvos: [alvo(1), alvo(2)], empresasTravadas: [1] });
+      const rodando = executarLoteNuvemIss(deps);
+      await vi.advanceTimersByTimeAsync(TETO_INVOCACAO_MS + 1_000);
+      expect(await rodando).toBe('lote_ok');
+      const gravadas = vi.mocked(deps.anexar!).mock.calls[0]![0].capturas;
+      expect(gravadas).toHaveLength(1);
+      expect(gravadas[0]!.status).toBe('erro');
+      expect(gravadas[0]!.mensagemErro).toContain('interrompida');
+      expect(deps.dispararProximo).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('solicitação cancelada no meio: para sem gravar', async () => {
