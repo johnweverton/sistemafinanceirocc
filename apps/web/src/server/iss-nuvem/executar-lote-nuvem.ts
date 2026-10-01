@@ -46,13 +46,14 @@ export const VERSAO_NUVEM = 'nuvem-1';
 /** Não começa empresa nova depois disto: sobra folga para terminar a atual dentro dos 300 s. */
 export const ORCAMENTO_LOTE_MS = 150_000;
 /**
- * Prazo MÁXIMO de uma leitura, contado do início do lote: `maxDuration` da rota é 300 s e o que
- * sobra depois disto é para fechar o navegador, gravar as capturas e disparar o próximo lote.
+ * Prazo MÁXIMO de uma leitura, contado do início do lote. O `maxDuration` da rota é 300 s e o que
+ * sobra depois disto é o encerramento: fechar o navegador (até 10 s), gravar as capturas e
+ * disparar o próximo lote (até 15 s no fetch) — por isso 240 s, e não um número colado no limite.
  * Uma empresa pode encostar nos timeouts do portal (60 s na troca de inscrição, 90 s na
  * visualização, tudo isso duas vezes quando a sessão cai) e passar de 150 s sozinha — sem este
  * teto a função era derrubada no meio e o Chromium ficava para trás na instância.
  */
-export const TETO_INVOCACAO_MS = 255_000;
+export const TETO_INVOCACAO_MS = 240_000;
 /** Leitura que estourou o prazo tendo este tanto disponível é problema DELA, não falta de tempo. */
 const PRAZO_EMPRESA_CHEIO_MS = 180_000;
 /** Depois disto insistindo contra erro de infraestrutura, a solicitação falha de vez. */

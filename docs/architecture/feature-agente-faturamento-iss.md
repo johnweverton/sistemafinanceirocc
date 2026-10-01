@@ -260,7 +260,8 @@ em `/tmp` para o próximo lote.
 
 **Três defesas (em `server/iss-nuvem/executar-lote-nuvem.ts`).**
 
-1. `TETO_INVOCACAO_MS` (255 s): toda leitura corre contra o relógio da invocação. Estourou, o lote
+1. `TETO_INVOCACAO_MS` (240 s, com os 60 s restantes reservados para fechar o navegador, gravar as
+   capturas e disparar o próximo lote): toda leitura corre contra o relógio da invocação. Estourou, o lote
    encerra sozinho e grava o que leu — a função nunca mais é derrubada no meio. Empresa que
    estourou tendo o lote inteiro pela frente vira captura `erro` (é ela que está travando); as
    outras ficam para o lote seguinte, com a janela inteira.
