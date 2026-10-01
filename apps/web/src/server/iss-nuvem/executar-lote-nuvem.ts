@@ -56,8 +56,22 @@ export const ORCAMENTO_LOTE_MS = 150_000;
 export const TETO_INVOCACAO_MS = 240_000;
 /** Leitura que estourou o prazo tendo este tanto disponível é problema DELA, não falta de tempo. */
 const PRAZO_EMPRESA_CHEIO_MS = 180_000;
-/** Depois disto insistindo contra erro de infraestrutura, a solicitação falha de vez. */
-export const TETO_ADIAMENTO_MS = 30 * 60_000;
+/**
+ * Idade máxima de uma solicitação ABERTA — passou disto tropeçando na infraestrutura, encerra.
+ * Cuidado com a leitura: `reivindicarLoteNuvemIss` preserva `iniciado_em` a cada lote, então isto
+ * mede há quanto tempo a busca existe, NÃO quanto tempo ela passou insistindo. Uma carteira
+ * inteira leva ~15 min; 1 h aberta sem conseguir logar é sinal de que insistir não resolve.
+ * Contar adiamentos de verdade pediria coluna nova em `iss_solicitacoes` — ver seção 8.1 da
+ * arquitetura.
+ */
+export const TETO_ADIAMENTO_MS = 60 * 60_000;
+/**
+ * Erro que não é da empresa: é a instância/navegador acabando. Dentro do laço, `lerEmpresa`
+ * transforma isso em captura `erro` — e captura gravada conta como lida, então a empresa nunca
+ * mais seria tentada. Reconhecer a assinatura é o que impede a carteira inteira de virar `erro`
+ * em poucos segundos quando o recurso acaba DEPOIS do login.
+ */
+const ERRO_DE_INFRA = /ERR_INSUFFICIENT_RESOURCES|ERR_OUT_OF_MEMORY|has been closed|Target closed|Protocol error/i;
 /** Perfil em /tmp mais velho que isto é de invocação morta (> `maxDuration`), nunca de lote vivo. */
 const IDADE_RESIDUO_MS = 10 * 60_000;
 const INTERVALO_HEARTBEAT_MS = 20_000;
@@ -247,8 +261,12 @@ export async function executarLoteNuvemIss(
   const adiar = async (motivo: string): Promise<DesfechoLoteNuvem> => {
     const erro = redigirCredenciais(motivo, cpf, senha).slice(0, LIMITE_MENSAGEM);
     const desdeInicio = deps.agora().getTime() - Date.parse(s.iniciadoEm ?? s.solicitadoEm);
-    if (Number.isFinite(desdeInicio) && desdeInicio > TETO_ADIAMENTO_MS) {
-      return falhar(`${erro} — a busca insistiu por ${Math.round(desdeInicio / 60_000)} min e não passou daqui.`);
+    // Idade desconhecida não pode virar retentativa sem fim: na dúvida, encerra.
+    if (!Number.isFinite(desdeInicio)) {
+      return falhar(`${erro} — e a data de início da busca está inválida, então não dá para saber até quando insistir.`);
+    }
+    if (desdeInicio > TETO_ADIAMENTO_MS) {
+      return falhar(`${erro} — a busca está aberta há ${Math.round(desdeInicio / 60_000)} min sem passar daqui.`);
     }
     log(`adiado (${erro}) — sem renovar o lease; outra invocação retoma em ~${Math.round(LEASE_NUVEM_EXPIRADO_MS / 1000)} s`);
     return 'adiada';
@@ -348,6 +366,22 @@ export async function executarLoteNuvemIss(
         // Só ErroLogin chega aqui (relogin no meio recusado): grava o que já leu e encerra.
         if (capturas.length) await deps.anexar(dadosAnexo(s, capturas)).catch(() => undefined);
         return await falhar((e as Error).message);
+      }
+      if (captura.status === 'erro' && ERRO_DE_INFRA.test(captura.mensagemErro ?? '')) {
+        // A instância acabou DEPOIS do login. Se seguir o laço, cada empresa restante vira `erro`
+        // em 1-3 s, e `erro` gravado conta como lida: a carteira inteira se perderia em segundos,
+        // sem retentativa. Guarda o que foi lido de verdade (com o `execucaoId` na solicitação,
+        // senão o próximo lote relê tudo numa execução nova) e adia.
+        log(`  → ${captura.mensagemErro}`);
+        if (capturas.length) {
+          const execucaoId = await deps.anexar(dadosAnexo(s, capturas)).catch(() => null);
+          if (execucaoId) {
+            await deps
+              .renovar(s.id, dono, { execucaoId, progresso: { atual: lidos.size + capturas.length, total } }, deps.agora())
+              .catch(() => false);
+          }
+        }
+        return await adiar(`A instância ficou sem recursos no meio da leitura: ${captura.mensagemErro}`);
       }
       capturas.push(captura);
       log(`  → ${captura.status}${captura.status === 'capturado' ? ` R$ ${captura.valorServicosPrestados?.toFixed(2)}` : ''}`);

@@ -268,9 +268,26 @@ em `/tmp` para o próximo lote.
 2. Antes de abrir o navegador, varre o `/tmp` e apaga perfil de navegador mais velho que 10 min
    (> `maxDuration`, então nunca é de lote vivo). O fechamento também passou a ter prazo de 10 s,
    com registro no log de quanto sobrou de `/tmp` e de memória antes e depois.
-3. Erro de infraestrutura no login **adia** o lote em vez de matar a solicitação: não renova o
-   lease, e em ~90 s outra invocação retoma de onde parou. Só senha recusada (`ErroLogin`) encerra
-   na hora; insistência além de 30 min encerra como `falhou`.
+3. Erro de infraestrutura **adia** o lote em vez de matar a solicitação: não renova o lease, e em
+   ~90 s outra invocação retoma de onde parou. Vale no login e também no meio do laço — ali
+   `lerEmpresa` transforma qualquer falha em captura `erro`, e captura gravada conta como lida,
+   então sem reconhecer a assinatura (`ERRO_DE_INFRA`) a carteira inteira virava `erro` em poucos
+   segundos quando o recurso acabava depois do login. Antes de adiar, o que já foi lido é gravado
+   **com o `execucaoId` registrado na solicitação** — senão o lote seguinte releria tudo numa
+   execução nova. Só senha recusada (`ErroLogin`) encerra na hora.
+
+**Dois limites conhecidos deste desenho** (nenhum dos dois é regressão — antes a solicitação
+simplesmente morria):
+
+- *O teto de adiamento mede idade, não insistência.* `reivindicarLoteNuvemIss` preserva
+  `iniciado_em` a cada lote, então `TETO_ADIAMENTO_MS` (1 h) é a idade da solicitação aberta, não
+  o tempo tentando. Contar adiamentos de verdade pede coluna nova em `iss_solicitacoes` — vale a
+  pena se o adiamento passar a ser comum.
+- *Ninguém retoma sozinho com a tela fechada.* Depois de um `adiada`, quem dispara o próximo lote
+  é o polling de 5 s da tela (`iss-solicitacoes` GET) ou o operador clicando "Buscar no ISS" de
+  novo (o POST é idempotente e retoma a solicitação ativa). Não há cron para isso — o plano da
+  Vercel limita os crons existentes a execução diária. Com a tela aberta, que é o uso normal, a
+  retomada acontece em ~90 s e o painel já avisa ("a busca parece parada… ela retoma sozinha").
 
 **Ajuste de infraestrutura (fora do código):** a memória da função precisa caber um Chromium.
 Vercel → Projeto → Settings → Functions → Memory/CPU, no maior valor que o plano permitir

@@ -44,17 +44,26 @@ function montar(
     msPorEmpresa?: number;
     /** Empresas (1-based) cuja leitura nunca termina — para exercitar o prazo por empresa. */
     empresasTravadas?: number[];
+    /** Empresa (1-based) em que a instância fica sem recursos no meio da leitura. */
+    empresaSemRecursos?: number;
   } = {},
 ) {
   let relogio = Date.parse('2026-09-29T10:00:00.000Z');
   let lidas = 0;
+  let selecionadas = 0;
   const portal = {
     login: vi.fn(async () => {
       if (opcoes.loginFalha) throw opcoes.loginFalha;
     }),
     sessaoPerdida: vi.fn(() => false),
     recuperar: vi.fn(async () => undefined),
-    selecionarEmpresa: vi.fn(async () => ({ inscricao: '1', razaoSocial: 'X' })),
+    selecionarEmpresa: vi.fn(async () => {
+      selecionadas += 1;
+      if (selecionadas === opcoes.empresaSemRecursos) {
+        throw new Error('page.goto: net::ERR_INSUFFICIENT_RESOURCES at https://iss.fortaleza.ce.gov.br/');
+      }
+      return { inscricao: '1', razaoSocial: 'X' };
+    }),
     lerCompetencia: vi.fn(async () => {
       lidas += 1;
       if (opcoes.empresasTravadas?.includes(lidas)) await new Promise(() => undefined); // nunca resolve
@@ -155,14 +164,39 @@ describe('executarLoteNuvemIss', () => {
     expect(liberou).toBe(false);
   });
 
-  it('infraestrutura falhando desde muito tempo: encerra como falhou', async () => {
+  it('busca aberta há tempo demais tropeçando na infraestrutura: encerra como falhou', async () => {
     const { deps } = montar({
-      s: solicitacao({ iniciadoEm: '2026-09-29T09:00:00.000Z' }), // 1 h antes do relógio do teste
+      s: solicitacao({ iniciadoEm: '2026-09-29T08:00:00.000Z' }), // 2 h antes do relógio do teste
       loginFalha: new Error('net::ERR_INSUFFICIENT_RESOURCES'),
     });
     expect(await executarLoteNuvemIss(deps)).toBe('falhou');
     const erro = (vi.mocked(deps.concluir!).mock.calls[0]![1] as { erro: string }).erro;
-    expect(erro).toContain('insistiu por 60 min');
+    expect(erro).toContain('aberta há 120 min');
+  });
+
+  it('data de início inválida não vira retentativa sem fim', async () => {
+    const { deps } = montar({
+      s: solicitacao({ iniciadoEm: 'não é data', solicitadoEm: 'nem isto' }),
+      loginFalha: new Error('net::ERR_INSUFFICIENT_RESOURCES'),
+    });
+    expect(await executarLoteNuvemIss(deps)).toBe('falhou');
+  });
+
+  it('instância sem recursos no meio do lote: guarda o lido, não queima o resto como erro', async () => {
+    const { deps } = montar({ alvos: [alvo(1), alvo(2), alvo(3)], empresaSemRecursos: 2 });
+    expect(await executarLoteNuvemIss(deps)).toBe('adiada');
+    // a empresa 1 foi gravada; a 2 e a 3 continuam por ler (não viraram captura `erro`)
+    const gravadas = vi.mocked(deps.anexar!).mock.calls[0]![0].capturas;
+    expect(gravadas).toHaveLength(1);
+    expect(gravadas[0]!.status).toBe('capturado');
+    // o execucaoId precisa ficar na solicitação, senão o próximo lote relê tudo numa execução nova
+    expect(deps.renovar).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ execucaoId: 'exec-1' }),
+      expect.any(Date),
+    );
+    expect(deps.concluir).not.toHaveBeenCalled();
   });
 
   it('leitura travada encerra o lote no teto da invocação, sem esperar a função ser derrubada', async () => {
