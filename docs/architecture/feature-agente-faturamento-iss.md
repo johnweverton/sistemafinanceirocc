@@ -240,6 +240,42 @@ No fim, um `POST execucoes` com tudo. Se o POST falhar, o JSON fica salvo em
 | Login passar a exigir MFA/captcha | Hoje não exige (imagem 2). Se passar a exigir: `--headed` + o operador resolve e o agente continua (human-in-the-loop, mesmo padrão do ARCUS D8) |
 | Escrituração deixar de refletir o Emissor Nacional | Dono confirmou com a SEFIN (G1); R5 detecta automaticamente se acontecer |
 | Ler valor da empresa errada | R1 (dupla verificação de inscrição + competência) |
+| Instância da Vercel sem recursos no meio da carteira | Teto de invocação, varredura de `/tmp` e adiamento do lote — ver 8.1 |
+
+### 8.1 — Incidente 2026-10-01: `ERR_INSUFFICIENT_RESOURCES` na busca pela nuvem
+
+**O que aconteceu.** Busca de 32 empresas (competência 2026-09) começou 10:05 e leu 27 em quatro
+lotes encadeados. No quinto lote o `page.goto` do login devolveu
+`net::ERR_INSUFFICIENT_RESOURCES`; a solicitação foi encerrada como `falhou` e as 5 últimas
+ficaram sem leitura. A tentativa seguinte (10:16) morreu com o mesmo erro em 1,3 s — rápido demais
+para ser o portal: o que acabou foram os recursos da instância reaproveitada pela Vercel (memória
+e/ou os 512 MB de `/tmp`, onde moram o Chromium extraído, o perfil e o cache do navegador).
+
+**Por que a instância chegou nesse estado.** Cada lote sobe um Chromium na mesma instância morna.
+Um lote podia começar a última empresa faltando 150 s para o `maxDuration` de 300 s, e uma empresa
+sozinha passa disso quando encosta nos timeouts do portal (60 s na troca de inscrição + 90 s na
+visualização, duas vezes se a sessão cai — foi o caso das duas "Troca de inscrição não concluiu"
+dessa rodada). Função derrubada no meio não roda o `finally`: o Chromium fica vivo e o perfil fica
+em `/tmp` para o próximo lote.
+
+**Três defesas (em `server/iss-nuvem/executar-lote-nuvem.ts`).**
+
+1. `TETO_INVOCACAO_MS` (255 s): toda leitura corre contra o relógio da invocação. Estourou, o lote
+   encerra sozinho e grava o que leu — a função nunca mais é derrubada no meio. Empresa que
+   estourou tendo o lote inteiro pela frente vira captura `erro` (é ela que está travando); as
+   outras ficam para o lote seguinte, com a janela inteira.
+2. Antes de abrir o navegador, varre o `/tmp` e apaga perfil de navegador mais velho que 10 min
+   (> `maxDuration`, então nunca é de lote vivo). O fechamento também passou a ter prazo de 10 s,
+   com registro no log de quanto sobrou de `/tmp` e de memória antes e depois.
+3. Erro de infraestrutura no login **adia** o lote em vez de matar a solicitação: não renova o
+   lease, e em ~90 s outra invocação retoma de onde parou. Só senha recusada (`ErroLogin`) encerra
+   na hora; insistência além de 30 min encerra como `falhou`.
+
+**Ajuste de infraestrutura (fora do código):** a memória da função precisa caber um Chromium.
+Vercel → Projeto → Settings → Functions → Memory/CPU, no maior valor que o plano permitir
+(≥ 2 GB) para as rotas `/api/integracoes/iss/nuvem/lote` e
+`/api/clientes-contabilidade/faturamentos/iss-solicitacoes` (esta última também sobe navegador
+pelo `waitUntil` do polling).
 
 ## 9. Fora de escopo
 

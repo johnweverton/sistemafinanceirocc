@@ -10,11 +10,25 @@
 // Mesmas regras do agente local: só LÊ o portal (driver `PortalIss` compartilhado), senha
 // recusada encerra a solicitação como `falhou` sem tentar de novo (não bloquear o MASTER), e a
 // leitura de cada empresa é a mesma função (`lerEmpresa`).
+//
+// Incidente de 2026-10-01 (busca de 32 empresas, competência 2026-09): depois de ~4 lotes
+// encadeados a instância da Vercel parou de conseguir abrir conexão — `page.goto` devolveu
+// `net::ERR_INSUFFICIENT_RESOURCES` no login, e a tentativa seguinte falhou em 1,3 s (sinal de
+// instância reaproveitada já sem recursos, não de portal fora do ar). Três defesas vieram daí:
+//   1. o lote nunca pode ser derrubado no meio pelo `maxDuration` (TETO_INVOCACAO_MS), senão o
+//      Chromium fica para trás na instância e envenena o próximo lote;
+//   2. antes de abrir o navegador, varre /tmp e apaga perfil de navegador abandonado;
+//   3. erro de infraestrutura no login NÃO mata a solicitação (`adiar`): o lease vence e outra
+//      invocação retoma de onde parou — a solicitação só falha de vez por senha recusada ou
+//      depois de TETO_ADIAMENTO_MS insistindo.
 import { randomUUID } from 'node:crypto';
+import { readdirSync, rmSync, statSync, statfsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { waitUntil } from '@vercel/functions';
 import type { AlvoIss, NovaCapturaIss, SolicitacaoIss } from '@cobranca/shared';
 import { PortalIss, ErroLogin, type Diagnostico } from '@cobranca/agente-iss/src/portal/portal';
-import { lerEmpresa, type PortalParaExecucao } from '@cobranca/agente-iss/src/ler-empresa';
+import { capturaBase, lerEmpresa, type PortalParaExecucao } from '@cobranca/agente-iss/src/ler-empresa';
 import { redigirCredenciais } from '@cobranca/agente-iss/src/diagnostico';
 import {
   anexarCapturasNuvemIss,
@@ -25,11 +39,26 @@ import {
   concluirSolicitacaoIss,
   reivindicarLoteNuvemIss,
   renovarLoteNuvemIss,
+  LEASE_NUVEM_EXPIRADO_MS,
 } from '@/server/repositories/iss-solicitacao-repository';
 
 export const VERSAO_NUVEM = 'nuvem-1';
 /** Não começa empresa nova depois disto: sobra folga para terminar a atual dentro dos 300 s. */
 export const ORCAMENTO_LOTE_MS = 150_000;
+/**
+ * Prazo MÁXIMO de uma leitura, contado do início do lote: `maxDuration` da rota é 300 s e o que
+ * sobra depois disto é para fechar o navegador, gravar as capturas e disparar o próximo lote.
+ * Uma empresa pode encostar nos timeouts do portal (60 s na troca de inscrição, 90 s na
+ * visualização, tudo isso duas vezes quando a sessão cai) e passar de 150 s sozinha — sem este
+ * teto a função era derrubada no meio e o Chromium ficava para trás na instância.
+ */
+export const TETO_INVOCACAO_MS = 255_000;
+/** Leitura que estourou o prazo tendo este tanto disponível é problema DELA, não falta de tempo. */
+const PRAZO_EMPRESA_CHEIO_MS = 180_000;
+/** Depois disto insistindo contra erro de infraestrutura, a solicitação falha de vez. */
+export const TETO_ADIAMENTO_MS = 30 * 60_000;
+/** Perfil em /tmp mais velho que isto é de invocação morta (> `maxDuration`), nunca de lote vivo. */
+const IDADE_RESIDUO_MS = 10 * 60_000;
 const INTERVALO_HEARTBEAT_MS = 20_000;
 const LIMITE_MENSAGEM = 1000;
 
@@ -57,10 +86,50 @@ export interface DependenciasLoteNuvem {
   intervaloHeartbeatMs?: number;
 }
 
+/** Quanto resta do /tmp (512 MB na Lambda) — Chromium extraído, perfil e cache moram todos lá. */
+function recursosDaInstancia(): string {
+  const partes = [`rss ${Math.round(process.memoryUsage.rss() / 1e6)} MB`];
+  try {
+    const fs = statfsSync(tmpdir());
+    partes.push(`tmp ${Math.round((fs.bavail * fs.bsize) / 1e6)}/${Math.round((fs.blocks * fs.bsize) / 1e6)} MB livres`);
+  } catch {
+    partes.push('tmp ?');
+  }
+  return partes.join(', ');
+}
+
+/**
+ * Apaga perfil de navegador que o Playwright não conseguiu remover (invocação derrubada no meio).
+ * Só mexe no que é mais velho que `IDADE_RESIDUO_MS` — mais que o `maxDuration` da rota, então
+ * nunca é o perfil de um lote que ainda está rodando em outra invocação da mesma instância.
+ */
+function limparPerfisAbandonados(log: (m: string) => void): void {
+  const base = tmpdir();
+  let apagados = 0;
+  try {
+    for (const nome of readdirSync(base)) {
+      if (!/^playwright.*profile/i.test(nome) && !/^\.org\.chromium\.Chromium\./.test(nome)) continue;
+      const caminho = join(base, nome);
+      try {
+        if (Date.now() - statSync(caminho).mtimeMs < IDADE_RESIDUO_MS) continue;
+        rmSync(caminho, { recursive: true, force: true });
+        apagados += 1;
+      } catch {
+        // perfil em uso ou sem permissão: deixa quieto
+      }
+    }
+  } catch {
+    return; // sem /tmp legível (ambiente de teste): nada a limpar
+  }
+  if (apagados) log(`limpei ${apagados} perfil(is) de navegador abandonado(s) em ${base}`);
+}
+
 async function abrirNavegadorServerless(diag: Diagnostico): Promise<NavegadorNuvem> {
   // @sparticuz/chromium só reconhece Node 20/22 da AWS e decide NO IMPORT: na Vercel com Node 24
   // não extrai as libs do Amazon Linux 2023 e o Chromium morre sem libnss3.so.
   if (process.env.VERCEL && !process.env.AWS_LAMBDA_JS_RUNTIME) process.env.AWS_LAMBDA_JS_RUNTIME = 'nodejs22.x';
+  limparPerfisAbandonados(diag.log);
+  diag.log(`abrindo o navegador — ${recursosDaInstancia()}`);
   const [{ default: chromiumServerless }, { chromium }] = await Promise.all([
     import('@sparticuz/chromium'),
     import('playwright-core'),
@@ -70,15 +139,27 @@ async function abrirNavegadorServerless(diag: Diagnostico): Promise<NavegadorNuv
     args: chromiumServerless.args,
     headless: true,
   });
+  // `browser.close()` que não volta deixa o Chromium vivo na instância e o lote seguinte abre sem
+  // recursos: espera no máximo 10 s e segue — o /tmp fica para a varredura da próxima invocação.
+  const fechar = async () => {
+    let relogio: ReturnType<typeof setTimeout> | undefined;
+    const fechou = await Promise.race([
+      browser.close().then(() => true).catch(() => false),
+      new Promise<boolean>((r) => {
+        relogio = setTimeout(() => r(false), 10_000);
+      }),
+    ]).finally(() => clearTimeout(relogio)); // senão o timer segura a função viva por 10 s
+    diag.log(`navegador ${fechou ? 'fechado' : 'NÃO fechou em 10 s'} — ${recursosDaInstancia()}`);
+  };
   try {
     const context = await browser.newContext({ locale: 'pt-BR', acceptDownloads: false, viewport: { width: 1600, height: 1000 } });
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     // O driver foi tipado com o `Page` do pacote `playwright`; é a mesma classe do playwright-core.
     const portal = new PortalIss(page as unknown as ConstructorParameters<typeof PortalIss>[0], diag);
-    return { portal, fechar: () => browser.close() };
+    return { portal, fechar };
   } catch (e) {
-    await browser.close().catch(() => undefined);
+    await fechar().catch(() => undefined);
     throw e;
   }
 }
@@ -121,7 +202,18 @@ export const dependenciasLoteNuvemPadrao: DependenciasLoteNuvem = {
   log: (msg) => console.log(`[iss-nuvem] ${msg}`),
 };
 
-export type DesfechoLoteNuvem = 'sem_trabalho' | 'lote_ok' | 'concluida' | 'falhou' | 'cancelada';
+export type DesfechoLoteNuvem = 'sem_trabalho' | 'lote_ok' | 'concluida' | 'falhou' | 'cancelada' | 'adiada';
+
+class PrazoEmpresaEstourado extends Error {}
+
+/** `promessa` com prazo — o que estourar vira `PrazoEmpresaEstourado` (a leitura segue e morre junto com o navegador). */
+function comPrazo<T>(promessa: Promise<T>, ms: number): Promise<T> {
+  let relogio: ReturnType<typeof setTimeout>;
+  const prazo = new Promise<never>((_, rejeitar) => {
+    relogio = setTimeout(() => rejeitar(new PrazoEmpresaEstourado()), ms);
+  });
+  return Promise.race([promessa, prazo]).finally(() => clearTimeout(relogio)) as Promise<T>;
+}
 
 /** Executa (no máximo) UM lote da solicitação ativa mais antiga que estiver disponível. */
 export async function executarLoteNuvemIss(
@@ -143,6 +235,22 @@ export async function executarLoteNuvemIss(
     log(`falhou: ${erro}`);
     await deps.concluir(s.id, { erro }, deps.agora()).catch((e) => log(`não consegui concluir: ${(e as Error).message}`));
     return 'falhou';
+  };
+
+  /**
+   * Tropeço de infraestrutura (instância sem recursos, portal fora do ar) — nada disso é culpa do
+   * operador nem da senha, e a solicitação já pode ter dezenas de empresas lidas. Não conclui: só
+   * para de renovar o lease, e quando ele vencer outra invocação retoma do ponto em que parou.
+   * Insistir tem hora para acabar — passado `TETO_ADIAMENTO_MS` desde o início, falha de vez.
+   */
+  const adiar = async (motivo: string): Promise<DesfechoLoteNuvem> => {
+    const erro = redigirCredenciais(motivo, cpf, senha).slice(0, LIMITE_MENSAGEM);
+    const desdeInicio = deps.agora().getTime() - Date.parse(s.iniciadoEm ?? s.solicitadoEm);
+    if (Number.isFinite(desdeInicio) && desdeInicio > TETO_ADIAMENTO_MS) {
+      return falhar(`${erro} — a busca insistiu por ${Math.round(desdeInicio / 60_000)} min e não passou daqui.`);
+    }
+    log(`adiado (${erro}) — sem renovar o lease; outra invocação retoma em ~${Math.round(LEASE_NUVEM_EXPIRADO_MS / 1000)} s`);
+    return 'adiada';
   };
 
   // 1. O que falta ler: alvos da solicitação menos o que já está gravado na execução dela.
@@ -182,37 +290,60 @@ export async function executarLoteNuvemIss(
   const diag: Diagnostico = { log, reconhecer: false, snapshot: async () => null };
   let navegador: NavegadorNuvem | null = null;
   try {
-    // 3. Portal: um login por lote. Senha recusada ou portal fora do ar encerram a solicitação.
+    // 3. Portal: um login por lote. Senha recusada encerra a solicitação; o resto só adia o lote.
     try {
       navegador = await deps.abrirNavegador(diag);
       await navegador.portal.login(cpf, senha);
     } catch (e) {
-      return await falhar(
-        e instanceof ErroLogin
-          ? `${(e as Error).message} A busca não tenta de novo sozinha, para não bloquear o usuário do ISS.`
-          : `Não foi possível entrar no portal do ISS: ${(e as Error).message}`,
-      );
+      // Senha recusada é definitivo (não arriscar bloquear o MASTER). Qualquer outro tropeço aqui
+      // é infraestrutura — ERR_INSUFFICIENT_RESOURCES da instância, portal fora do ar — e merece
+      // outra invocação em vez de matar a busca inteira.
+      if (e instanceof ErroLogin) {
+        return await falhar(`${e.message} A busca não tenta de novo sozinha, para não bloquear o usuário do ISS.`);
+      }
+      return await adiar(`Não foi possível entrar no portal do ISS: ${(e as Error).message}`);
     }
 
     for (const alvo of restantes) {
-      if (deps.agora().getTime() - inicio > ORCAMENTO_LOTE_MS) break;
+      const decorrido = deps.agora().getTime() - inicio;
+      if (decorrido > ORCAMENTO_LOTE_MS) break;
       if (!ativo) {
         log('solicitação cancelada ou lote tomado — parando');
         return 'cancelada';
       }
       log(`(${lidos.size + capturas.length + 1}/${total}) ${alvo.nome}`);
       let captura: NovaCapturaIss;
+      const prazoEmpresa = TETO_INVOCACAO_MS - decorrido;
       try {
-        captura = await lerEmpresa({
-          portal: navegador.portal,
-          alvo,
-          competencia: s.competencia,
-          cpf,
-          senha,
-          agora: deps.agora,
-          log,
-        });
+        captura = await comPrazo(
+          lerEmpresa({
+            portal: navegador.portal,
+            alvo,
+            competencia: s.competencia,
+            cpf,
+            senha,
+            agora: deps.agora,
+            log,
+          }),
+          prazoEmpresa,
+        );
       } catch (e) {
+        if (e instanceof PrazoEmpresaEstourado) {
+          // Encerra o lote em vez de deixar a função ser derrubada pelo `maxDuration` — invocação
+          // derrubada deixa o Chromium vivo na instância e o lote seguinte abre sem recursos.
+          const segundos = Math.round(prazoEmpresa / 1000);
+          log(`  → leitura passou de ${segundos} s; encerrando o lote antes do limite da função`);
+          if (prazoEmpresa >= PRAZO_EMPRESA_CHEIO_MS) {
+            // Teve o lote inteiro e não terminou: é esta empresa que está travando. Vira `erro`
+            // para não prender a busca num laço de lotes relendo sempre a mesma.
+            capturas.push({
+              ...capturaBase(alvo, deps.agora()),
+              status: 'erro',
+              mensagemErro: `Leitura passou de ${segundos} s no portal e foi interrompida.`,
+            });
+          }
+          break; // sem prazo cheio: o próximo lote recomeça esta empresa com a janela inteira
+        }
         // Só ErroLogin chega aqui (relogin no meio recusado): grava o que já leu e encerra.
         if (capturas.length) await deps.anexar(dadosAnexo(s, capturas)).catch(() => undefined);
         return await falhar((e as Error).message);
